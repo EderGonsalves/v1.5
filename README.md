@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Onboarding multi-etapas
 
-## Getting Started
+Fluxo em Next.js + shadcn/ui para coletar dados de novos tenants, validar
+cada etapa com react-hook-form/zod e enviar tudo para o fluxo de automacao. Os
+arquivos enviados para RAG são hospedados localmente (em
+`public/rag-uploads`) apenas até que um worker externo gere embeddings e
+salve nas suas bases vetoriais.
 
-First, run the development server:
+## Requisitos
+
+- Node 20+
+
+## Variáveis de ambiente
+
+Copie `.env.example` para `.env` e ajuste de acordo com seu ambiente:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- `NEXT_PUBLIC_ONBOARDING_API_URL`: endpoint usado no frontend (padrão:
+  `/api/onboarding`);
+- `AUTOMATION_ENDPOINT_URL`: URL da sua automação principal (recebe o payload completo);
+- `RAG_WORKER_ENDPOINT_URL`: endpoint opcional para processar anexos e gerar embeddings.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Desenvolvimento
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm install
+npm run dev
+```
 
-## Learn More
+Abra <http://localhost:3000>. O wizard mantém todo o estado no frontend
+e, ao finalizar, faz `POST /api/onboarding`, que valida os dados e
+replica a mesma carga para os endpoints configurados.
 
-To learn more about Next.js, take a look at the following resources:
+## Teste de UX
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Existe um teste automatizado com Vitest + Testing Library simulando o
+fluxo completo do wizard (preenche cada etapa e valida a mensagem de
+sucesso). Rode:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm run test
+# ou modo watch
+npm run test:watch
+```
 
-## Deploy on Vercel
+## Lint
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run lint
+```

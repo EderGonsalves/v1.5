@@ -1,0 +1,68 @@
+version: "3.8"
+
+services:
+  onboarding-app:
+    image: onboarding-app:latest
+    # ou use uma imagem de registry: registry.example.com/onboarding-app:latest
+    # image: registry.example.com/onboarding-app:latest
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      # placement:
+      #   constraints:
+      #     - node.role == worker
+      # Descomente e ajuste conforme seus nodes disponíveis
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=minha_rede"
+        - "traefik.http.routers.onboarding-app.rule=Host(`onboarding.example.com`)"
+        - "traefik.http.routers.onboarding-app.entrypoints=websecure"
+        - "traefik.http.routers.onboarding-app.tls.certresolver=letsencrypt"
+        - "traefik.http.routers.onboarding-app.service=onboarding-app"
+        - "traefik.http.services.onboarding-app.loadbalancer.server.port=3000"
+        - "traefik.http.routers.onboarding-app.middlewares=onboarding-app-headers"
+        - "traefik.http.middlewares.onboarding-app-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
+        - "traefik.http.middlewares.onboarding-app-headers.headers.customrequestheaders.X-Forwarded-For="
+        - "traefik.http.middlewares.onboarding-app-headers.headers.sslredirect=true"
+        - "traefik.http.middlewares.onboarding-app-headers.headers.browserxssfilter=true"
+        - "traefik.http.middlewares.onboarding-app-headers.headers.contenttypenosniff=true"
+        - "traefik.http.middlewares.onboarding-app-headers.headers.forcestsheader=true"
+        - "traefik.http.middlewares.onboarding-app-headers.headers.sslhost=onboarding.example.com"
+        - "traefik.http.middlewares.onboarding-app-headers.headers.stsseconds=31536000"
+        - "traefik.http.middlewares.onboarding-app-headers.headers.stsincludesubdomains=true"
+        - "traefik.http.middlewares.onboarding-app-headers.headers.stspreload=true"
+        - "traefik.http.middlewares.onboarding-app-headers.headers.isdevelopment=false"
+    environment:
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+      # Ajustar conforme necessário
+      - NEXT_PUBLIC_ONBOARDING_API_URL=${NEXT_PUBLIC_ONBOARDING_API_URL:-/api/onboarding}
+      - NEXT_PUBLIC_LOGIN_WEBHOOK_URL=${NEXT_PUBLIC_LOGIN_WEBHOOK_URL}
+    networks:
+      - minha_rede
+    volumes:
+      # Volume para uploads persistentes (opcional)
+      - onboarding-uploads:/app/public/rag-uploads
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => {let data='';r.on('data',(c)=>{data+=c});r.on('end',()=>{try{const json=JSON.parse(data);process.exit(json.status==='ok'?0:1)}catch(e){process.exit(r.statusCode===200?0:1)}})}).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  onboarding-uploads:
+    driver: local
+
+networks:
+  minha_rede:
+    external: true
+
