@@ -22,6 +22,7 @@ import { ConversationView } from "@/components/casos/ConversationView";
 import { cn } from "@/lib/utils";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import { useRouter } from "next/navigation";
+import { LoadingScreen } from "@/components/ui/loading-screen";
 
 type CaseStage = "DepoimentoInicial" | "EtapaPerguntas" | "EtapaFinal";
 
@@ -97,17 +98,7 @@ export default function CasosPage() {
   };
 
   if (isLoading) {
-    return (
-      <main className="min-h-screen bg-white py-8 dark:bg-zinc-900">
-        <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4">
-          <Card>
-            <CardContent className="flex items-center justify-center py-12">
-              <p className="text-muted-foreground">Carregando casos...</p>
-            </CardContent>
-          </Card>
-        </div>
-      </main>
-    );
+    return <LoadingScreen message="Carregando casos..." />;
   }
 
   if (error) {
@@ -250,4 +241,3 @@ export default function CasosPage() {
     </main>
   );
 }
-

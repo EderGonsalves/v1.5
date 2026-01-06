@@ -24,6 +24,7 @@ import { getBaserowConfigs, updateBaserowConfig, updateConfig, type BaserowConfi
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import type { OnboardingPayload } from "@/lib/validations";
 import { onboardingPayloadSchema } from "@/lib/validations";
+import { LoadingScreen } from "@/components/ui/loading-screen";
 
 type EditableField = {
   key: string;
@@ -643,17 +644,7 @@ export default function ConfiguracoesPage() {
   };
 
   if (isLoading) {
-    return (
-      <main className="min-h-screen bg-white py-8 dark:bg-zinc-900">
-        <div className="mx-auto flex max-w-5xl flex-col gap-8 px-4">
-          <Card>
-            <CardContent className="flex items-center justify-center py-12">
-              <p className="text-muted-foreground">Carregando configurações...</p>
-            </CardContent>
-          </Card>
-        </div>
-      </main>
-    );
+    return <LoadingScreen message="Carregando configurações..." />;
   }
 
   return (

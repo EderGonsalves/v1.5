@@ -15,18 +15,7 @@ import { Separator } from "@/components/ui/separator";
 import { getConfig, updateConfig } from "@/services/api";
 import { buildOnboardingPayload, type OnboardingData } from "@/lib/validations";
 import { DashboardContent } from "@/components/dashboard/DashboardContent";
-
-const LoadingState = ({ message }: { message: string }) => (
-  <main className="min-h-screen bg-white py-8 dark:bg-zinc-900">
-    <div className="mx-auto flex max-w-5xl flex-col gap-8 px-4">
-      <Card>
-        <CardContent className="flex items-center justify-center py-12">
-          <p className="text-muted-foreground">{message}</p>
-        </CardContent>
-      </Card>
-    </div>
-  </main>
-);
+import { LoadingScreen } from "@/components/ui/loading-screen";
 
 const DashboardPageContent = () => {
   const searchParams = useSearchParams();
@@ -161,7 +150,7 @@ const DashboardPageContent = () => {
   };
 
   if (isLoading) {
-    return <LoadingState message="Carregando configura????es..." />;
+    return <LoadingScreen message="Carregando configurações..." />;
   }
 
   if (error && !config) {
@@ -237,7 +226,7 @@ const DashboardPageContent = () => {
 
 export default function DashboardPage() {
   return (
-    <Suspense fallback={<LoadingState message="Preparando dashboard..." />}>
+    <Suspense fallback={<LoadingScreen message="Preparando dashboard..." />}>
       <DashboardPageContent />
     </Suspense>
   );
