@@ -629,6 +629,7 @@ export type BaserowCaseRow = {
   EtapaFinal?: string;
   Conversa?: string;
   Resumo?: string;
+  BJCaseId?: string | number;
   InstitutionID?: number;
   [key: string]: unknown;
 };

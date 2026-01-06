@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import {
@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import { useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/ui/loading-screen";
+import { MessageCircle } from "lucide-react";
 
 type CaseStage = "DepoimentoInicial" | "EtapaPerguntas" | "EtapaFinal";
 
@@ -65,7 +66,7 @@ export default function CasosPage() {
 
   const loadCases = async () => {
     if (!data.auth?.institutionId) {
-      setError("ID da instituição não encontrado");
+      setError("ID da instituiÃ§Ã£o nÃ£o encontrado");
       setIsLoading(false);
       return;
     }
@@ -124,7 +125,7 @@ export default function CasosPage() {
       <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4">
         <section className="space-y-3 text-center sm:text-left">
           <p className="text-sm font-semibold uppercase tracking-wide text-primary">
-            Gestão de Casos
+            GestÃ£o de Casos
           </p>
           <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-4xl">
             Casos de Atendimento
@@ -181,11 +182,45 @@ export default function CasosPage() {
                             )}
                           </div>
                           <p className="text-sm text-muted-foreground">
-                            {caseRow.CustumerPhone || "Sem telefone"}
+                            {caseRow.CustumerPhone ? (
+                              <a
+                                href={`https://staging-app.riasistemas.com.br/whatsapp${caseRow.CustumerPhone ? `?phone=${encodeURIComponent(caseRow.CustumerPhone)}` : ""}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center justify-center rounded-full border border-green-500/30 bg-green-50 p-2 text-green-600 transition hover:bg-green-100 dark:border-green-500/50 dark:bg-green-900/30 dark:text-green-300"
+                                aria-label={`Conversar via WhatsApp com ${caseRow.CustumerName || "cliente"} (${caseRow.CustumerPhone})`}
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                <MessageCircle className="h-4 w-4" />
+                              </a>
+                            ) : (
+                              "Sem telefone"
+                            )}
                           </p>
                         </div>
-                        <div className="text-sm text-muted-foreground">
-                          ID: {caseRow.CaseId || caseRow.id}
+                        <div className="text-sm text-muted-foreground text-right space-y-1">
+                          <div>ID: {caseRow.CaseId || caseRow.id}</div>
+                          {caseRow.BJCaseId ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              asChild
+                              className="h-7 px-3"
+                            >
+                              <a
+                                href={`https://staging-app.riasistemas.com.br/case/edit/${caseRow.BJCaseId}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                Editar
+                              </a>
+                            </Button>
+                          ) : (
+                            <span className="text-muted-foreground/70">
+                              BJCaseId não informado
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -241,3 +276,4 @@ export default function CasosPage() {
     </main>
   );
 }
+
