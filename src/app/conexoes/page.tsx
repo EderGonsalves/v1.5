@@ -249,7 +249,7 @@ export default function ConexoesPage() {
                         type="button"
                         onClick={handleWhatsAppConnect}
                         disabled={isConnecting || !data.auth?.institutionId}
-                        className="bg-green-600 hover:bg-green-700"
+                        className="bg-green-600 hover:bg-green-700 text-white"
                       >
                         {isConnecting ? "Conectando..." : "Conectar"}
                       </Button>
@@ -318,5 +318,4 @@ export default function ConexoesPage() {
     </main>
   );
 }
-
 

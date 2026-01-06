@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
@@ -15,48 +15,53 @@ interface ConversationViewProps {
   className?: string;
 }
 
+const prefixPatterns: Array<{ pattern: RegExp; type: MessageType }> = [
+  { pattern: /^Cliente\s*:/i, type: "cliente" },
+  { pattern: /^Mensagem\s+User\s*:/i, type: "cliente" },
+  { pattern: /^Agente\s*:/i, type: "agente" },
+  { pattern: /^Mensagem\s+Bot\s*:/i, type: "agente" },
+];
+
 export function ConversationView({ conversation, className }: ConversationViewProps) {
   const messages = useMemo(() => {
     if (!conversation || !conversation.trim()) {
       return [];
     }
 
-    const lines = conversation.split("\n").filter((line) => line.trim());
+    const lines = conversation
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
     const parsedMessages: Message[] = [];
     let currentMessage: Message | null = null;
 
     for (const line of lines) {
-      const trimmedLine = line.trim();
+      if (/^(null|undefined)$/i.test(line)) {
+        continue;
+      }
 
-      if (trimmedLine.startsWith("Cliente:")) {
-        // Finalizar mensagem anterior se existir
+      const matchedPrefix = prefixPatterns.find(({ pattern }) => pattern.test(line));
+
+      if (matchedPrefix) {
         if (currentMessage) {
           parsedMessages.push(currentMessage);
         }
-        // Iniciar nova mensagem do cliente
-        const content = trimmedLine.replace(/^Cliente:\s*/, "").trim();
+
+        const content = line.replace(matchedPrefix.pattern, "").trim();
         currentMessage = {
-          type: "cliente",
+          type: matchedPrefix.type,
           content: content || "",
         };
-      } else if (trimmedLine.startsWith("Agente:")) {
-        // Finalizar mensagem anterior se existir
-        if (currentMessage) {
-          parsedMessages.push(currentMessage);
-        }
-        // Iniciar nova mensagem do agente
-        const content = trimmedLine.replace(/^Agente:\s*/, "").trim();
-        currentMessage = {
-          type: "agente",
-          content: content || "",
-        };
-      } else if (currentMessage && trimmedLine) {
-        // Continuar a mensagem atual (pode ter múltiplas linhas)
-        currentMessage.content += (currentMessage.content ? " " : "") + trimmedLine;
+        continue;
+      }
+
+      if (currentMessage) {
+        // Continue current speaker message even if it spans multiple lines
+        currentMessage.content += (currentMessage.content ? " " : "") + line;
       }
     }
 
-    // Adicionar última mensagem se existir
+    // Finalize last message if needed
     if (currentMessage) {
       parsedMessages.push(currentMessage);
     }
@@ -113,4 +118,3 @@ export function ConversationView({ conversation, className }: ConversationViewPr
     </div>
   );
 }
-

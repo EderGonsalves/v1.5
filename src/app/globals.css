@@ -1,4 +1,4 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
@@ -129,25 +129,64 @@
   }
   
   /* Cores para fontes menores */
-  p, span, label, small,
-  .text-sm, .text-xs, .text-base,
-  [class*="text-sm"], [class*="text-xs"], [class*="text-base"],
-  .text-muted-foreground {
+  :is(
+    p,
+    span,
+    label,
+    small,
+    .text-sm,
+    .text-xs,
+    .text-base,
+    [class*="text-sm"],
+    [class*="text-xs"],
+    [class*="text-base"],
+    .text-muted-foreground
+  ):not(button):not([role="button"]):not([data-slot="button"]) {
     color: #646464 !important;
   }
   
-  /* Aplicar cor também em modo escuro */
+  /* Aplicar cor tambÃ©m em modo escuro */
   .dark h1, .dark h2, .dark h3,
   .dark .text-3xl, .dark .text-4xl, .dark .text-2xl,
   .dark [class*="text-3xl"], .dark [class*="text-4xl"], .dark [class*="text-2xl"] {
     color: #113264 !important;
   }
   
-  .dark p, .dark span, .dark label, .dark small,
-  .dark .text-sm, .dark .text-xs, .dark .text-base,
-  .dark [class*="text-sm"], .dark [class*="text-xs"], .dark [class*="text-base"],
-  .dark .text-muted-foreground {
+  .dark :is(
+    p,
+    span,
+    label,
+    small,
+    .text-sm,
+    .text-xs,
+    .text-base,
+    [class*="text-sm"],
+    [class*="text-xs"],
+    [class*="text-base"],
+    .text-muted-foreground
+  ):not(button):not([role="button"]):not([data-slot="button"]) {
     color: #646464 !important;
+  }
+
+  /* Contraste apenas para botÃµes com fundo escuro */
+  :is(
+    button,
+    [role="button"],
+    a[role="button"],
+    .btn,
+    .button
+  ):is(
+    [class*="bg-black"],
+    [class*="bg-zinc-9"],
+    [class*="bg-neutral-9"],
+    [class*="bg-stone-9"],
+    [class*="bg-slate-9"],
+    [class*="bg-primary"],
+    [class*="bg-card"],
+    [class*="bg-muted"],
+    [class*="bg-foreground"]
+  ) {
+    color: #ffffff !important;
   }
 }
 
@@ -176,3 +215,4 @@
 .animate-accordion-up {
   animation: accordion-up 0.2s ease-out;
 }
+
