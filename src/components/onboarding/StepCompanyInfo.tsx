@@ -14,7 +14,6 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { companyInfoSchema, type CompanyInfo } from "@/lib/validations";
 
 import { StepActions } from "./StepActions";
@@ -26,43 +25,37 @@ export const StepCompanyInfo = () => {
 
   const form = useForm<CompanyInfo>({
     resolver: zodResolver(companyInfoSchema),
-    defaultValues: data.companyInfo,
+    defaultValues: {
+      ...data.companyInfo,
+      wabaPhoneNumber:
+        data.companyInfo.wabaPhoneNumber || data.companyInfo.phoneNumber || "",
+    },
   });
 
   useEffect(() => {
-    form.reset(data.companyInfo);
+    form.reset({
+      ...data.companyInfo,
+      wabaPhoneNumber:
+        data.companyInfo.wabaPhoneNumber || data.companyInfo.phoneNumber || "",
+    });
   }, [data.companyInfo, form]);
 
   const onSubmit = async (values: CompanyInfo) => {
-    updateSection({ companyInfo: values });
+    const normalizedValues = {
+      ...values,
+      phoneNumber: values.wabaPhoneNumber,
+    };
+    updateSection({ companyInfo: normalizedValues });
     await nextStep();
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1">
-          <h3 className="text-lg font-semibold">Sobre a sua empresa</h3>
-          <p className="text-sm text-muted-foreground">
-            Conte como o seu escritório ou negócio se apresenta para que possamos criar a experiência certa nas próximas etapas.
-          </p>
-        </div>
-        <div className="flex flex-col items-end gap-1.5 pt-1">
-          <Switch
-            checked={data.includedSteps.companyInfo}
-            onCheckedChange={(checked) => {
-              updateSection({
-                includedSteps: {
-                  ...data.includedSteps,
-                  companyInfo: checked,
-                },
-              });
-            }}
-          />
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
-            {data.includedSteps.companyInfo ? "Incluído" : "Excluído"}
-          </span>
-        </div>
+      <div className="space-y-2">
+        <h3 className="text-lg font-semibold">Sobre a sua empresa</h3>
+        <p className="text-sm text-muted-foreground">
+          Conte como o seu escritório ou negócio se apresenta para que possamos criar a experiência certa nas próximas etapas.
+        </p>
       </div>
 
       <Form {...form}>
@@ -97,10 +90,10 @@ export const StepCompanyInfo = () => {
 
           <FormField
             control={form.control}
-            name="phoneNumber"
+            name="wabaPhoneNumber"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Número de telefone conectado à API</FormLabel>
+                <FormLabel>Número do WhatsApp conectado a Meta</FormLabel>
                 <FormControl>
                   <Input placeholder="+5511999999999" {...field} />
                 </FormControl>

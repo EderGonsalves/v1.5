@@ -63,7 +63,8 @@ type Feedback = {
 
 export const StepRagUpload = () => {
   const { data, updateSection } = useOnboarding();
-  const { nextStep } = useWizard();
+  const { nextStep, previousStep } = useWizard();
+  const isIncluded = data.includedSteps.ragUpload;
   const [isUploading, setIsUploading] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
 
@@ -134,32 +135,56 @@ export const StepRagUpload = () => {
     await nextStep();
   };
 
-  return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1">
-          <h3 className="text-lg font-semibold">Arquivos de apoio</h3>
-          <p className="text-sm text-muted-foreground">
-            Envie laudos, contratos, planilhas ou apresentações que o agente possa consultar durante o atendimento. Assim que o cadastro terminar, esses materiais serão enviados para o seu motor de RAG.
-          </p>
-        </div>
-        <div className="flex flex-col items-end gap-1.5 pt-1">
-          <Switch
-            checked={data.includedSteps.ragUpload}
-            onCheckedChange={(checked) => {
-              updateSection({
-                includedSteps: {
-                  ...data.includedSteps,
-                  ragUpload: checked,
-                },
-              });
-            }}
-          />
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
-            {data.includedSteps.ragUpload ? "Incluído" : "Excluído"}
-          </span>
+  const header = (
+    <div className="flex items-start justify-between gap-4">
+      <div className="flex-1">
+        <h3 className="text-lg font-semibold">Arquivos de apoio</h3>
+        <p className="text-sm text-muted-foreground">
+          Envie laudos, contratos, planilhas ou apresentações que o agente possa consultar durante o atendimento. Assim que o cadastro terminar, esses materiais serão enviados para o seu motor de RAG.
+        </p>
+      </div>
+      <div className="flex flex-col items-end gap-1.5 pt-1">
+        <Switch
+          checked={data.includedSteps.ragUpload}
+          onCheckedChange={(checked) => {
+            updateSection({
+              includedSteps: {
+                ...data.includedSteps,
+                ragUpload: checked,
+              },
+            });
+          }}
+        />
+        <span className="text-xs text-muted-foreground whitespace-nowrap">
+          {data.includedSteps.ragUpload ? "Incluído" : "Excluído"}
+        </span>
+      </div>
+    </div>
+  );
+
+  if (!isIncluded) {
+    return (
+      <div className="space-y-6">
+        {header}
+        <div className="rounded-lg border border-dashed border-border/60 bg-muted/30 p-6 text-sm text-muted-foreground">
+          <p className="font-medium text-foreground">Etapa opcional desativada</p>
+          <p>Ative o interruptor acima para enviar os arquivos do RAG quando desejar.</p>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <Button type="button" variant="outline" onClick={previousStep}>
+              Voltar
+            </Button>
+            <Button type="button" onClick={nextStep}>
+              Pular etapa
+            </Button>
+          </div>
         </div>
       </div>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      {header}
 
       <div className="rounded-lg border border-dashed border-border/60 bg-muted/30 p-6 text-center hidden">
         <p className="text-sm font-medium text-muted-foreground">Arraste e solte ou selecione os arquivos</p>

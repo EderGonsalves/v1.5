@@ -535,7 +535,10 @@ export const getBaserowConfigs = async (institutionId?: number): Promise<Baserow
     
     // Filtrar pelo body.auth.institutionId se fornecido
     // O Baserow retorna campos com nomes como "body.auth.institutionId" (string literal)
-    if (institutionId && results.length > 0) {
+    const shouldFilterByInstitution =
+      typeof institutionId === "number" && institutionId !== 4 && results.length > 0;
+
+    if (shouldFilterByInstitution) {
       results = results.filter((row: BaserowConfigRow) => {
         const rowData = row as Record<string, unknown>;
         
@@ -631,6 +634,7 @@ export type BaserowCaseRow = {
   Resumo?: string;
   BJCaseId?: string | number;
   InstitutionID?: number;
+  IApause?: string;
   [key: string]: unknown;
 };
 
@@ -654,7 +658,10 @@ export const getBaserowCases = async (institutionId?: number): Promise<BaserowCa
     console.log(`Total de casos retornados: ${results.length}`);
     
     // Filtrar pelo InstitutionID se fornecido
-    if (institutionId && results.length > 0) {
+    const shouldFilterByInstitution =
+      typeof institutionId === "number" && institutionId !== 4 && results.length > 0;
+
+    if (shouldFilterByInstitution) {
       results = results.filter((row: BaserowCaseRow) => {
         const rowInstitutionId = row.InstitutionID;
         
@@ -690,5 +697,41 @@ export const getBaserowCases = async (institutionId?: number): Promise<BaserowCa
       throw new Error(error.message || "Erro ao configurar a requisição");
     }
     throw new Error(error instanceof Error ? error.message : "Erro desconhecido ao buscar casos");
+  }
+};
+
+export const updateBaserowCase = async (
+  rowId: number,
+  data: Partial<BaserowCaseRow>,
+): Promise<BaserowCaseRow> => {
+  try {
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASES_TABLE_ID}/${rowId}/?user_field_names=true`;
+
+    console.log("Atualizando caso do Baserow:", rowId, "Dados:", data);
+
+    const response = await axios.patch(url, data, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+    });
+
+    console.log("Caso atualizado com sucesso:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("Erro ao atualizar caso do Baserow:", error);
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        console.error("Detalhes do erro:", error.response.data);
+        const errorMessage =
+          error.response.data?.message || error.message || "Erro ao atualizar caso do Baserow";
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error("N�o foi poss�vel conectar ao Baserow");
+      }
+      throw new Error(error.message || "Erro ao configurar a requisi��o");
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido ao atualizar caso");
   }
 };

@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useWizard } from "react-use-wizard";
 
+import { Button } from "@/components/ui/button";
 import {
   Form,
   FormControl,
@@ -27,7 +28,8 @@ import { useOnboarding } from "./onboarding-context";
 
 export const StepAgentTone = () => {
   const { data, updateSection } = useOnboarding();
-  const { nextStep } = useWizard();
+  const { nextStep, previousStep } = useWizard();
+  const isIncluded = data.includedSteps.agentPersonality;
 
   const form = useForm<AgentPersonalityFormValues>({
     resolver: zodResolver(agentPersonalityFormSchema),
@@ -72,8 +74,9 @@ export const StepAgentTone = () => {
         </div>
       </div>
 
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+      {isIncluded ? (
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
           <FormField
             control={form.control}
             name="greeting"
@@ -133,7 +136,21 @@ export const StepAgentTone = () => {
             isSubmitting={form.formState.isSubmitting}
           />
         </form>
-      </Form>
+        </Form>
+      ) : (
+        <div className="rounded-lg border border-dashed border-border/60 bg-muted/30 p-6 text-sm text-muted-foreground">
+          <p className="font-medium text-foreground">Etapa opcional desativada</p>
+          <p>Ative o interruptor acima para definir o tom de voz e as mensagens-chave quando quiser.</p>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <Button type="button" variant="outline" onClick={previousStep}>
+              Voltar
+            </Button>
+            <Button type="button" onClick={nextStep}>
+              Pular etapa
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

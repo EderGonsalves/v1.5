@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Card,
   CardContent,
@@ -17,13 +17,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { getBaserowCases, type BaserowCaseRow } from "@/services/api";
+import { getBaserowCases, updateBaserowCase, type BaserowCaseRow } from "@/services/api";
 import { ConversationView } from "@/components/casos/ConversationView";
 import { cn } from "@/lib/utils";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import { useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/ui/loading-screen";
 import { MessageCircle } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 
 type CaseStage = "DepoimentoInicial" | "EtapaPerguntas" | "EtapaFinal";
 
@@ -54,6 +55,40 @@ export default function CasosPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [updatingCaseId, setUpdatingCaseId] = useState<number | null>(null);
+  const [pauseErrors, setPauseErrors] = useState<Record<number, string | null>>({});
+  const isSysAdmin = data.auth?.institutionId === 4;
+  const [selectedInstitution, setSelectedInstitution] = useState<string>("all");
+  const institutionOptions = useMemo(() => {
+    if (!cases.length) return [];
+    const unique = new Set<string>();
+    cases.forEach((row) => {
+      if (row.InstitutionID !== undefined && row.InstitutionID !== null) {
+        unique.add(String(row.InstitutionID));
+      }
+    });
+    return Array.from(unique).sort((a, b) => Number(a) - Number(b));
+  }, [cases]);
+
+  const visibleCases = useMemo(() => {
+    if (!isSysAdmin) {
+      return cases;
+    }
+    if (selectedInstitution === "all") {
+      return cases;
+    }
+    return cases.filter((row) => String(row.InstitutionID ?? "") === selectedInstitution);
+  }, [cases, isSysAdmin, selectedInstitution]);
+
+  useEffect(() => {
+    if (!isSysAdmin) return;
+    if (
+      selectedInstitution !== "all" &&
+      !institutionOptions.includes(selectedInstitution)
+    ) {
+      setSelectedInstitution("all");
+    }
+  }, [institutionOptions, isSysAdmin, selectedInstitution]);
 
   useEffect(() => {
     if (!data.auth) {
@@ -66,7 +101,7 @@ export default function CasosPage() {
 
   const loadCases = async () => {
     if (!data.auth?.institutionId) {
-      setError("ID da instituiÃ§Ã£o nÃ£o encontrado");
+      setError("ID da instituiÃ§Ã£o não encontrado");
       setIsLoading(false);
       return;
     }
@@ -93,9 +128,44 @@ export default function CasosPage() {
     setIsDialogOpen(true);
   };
 
-  const handleCloseDialog = () => {
-    setIsDialogOpen(false);
-    setSelectedCase(null);
+  const handleDialogOpenChange = (open: boolean) => {
+    setIsDialogOpen(open);
+    if (!open) {
+      setSelectedCase(null);
+    }
+  };
+
+  const handleToggleIAPause = async (
+    caseRow: BaserowCaseRow | null,
+    enabled: boolean,
+  ) => {
+    if (!caseRow) return;
+    setPauseErrors((prev) => ({ ...prev, [caseRow.id]: null }));
+    setUpdatingCaseId(caseRow.id);
+    try {
+      const payload = enabled ? { IApause: "SIM" } : { IApause: "" };
+      const updatedCase = await updateBaserowCase(caseRow.id, payload);
+
+      setCases((prevCases) =>
+        prevCases.map((row) =>
+          row.id === caseRow.id ? { ...row, ...payload, ...updatedCase } : row,
+        ),
+      );
+
+      setSelectedCase((prevCase) =>
+        prevCase && prevCase.id === caseRow.id
+          ? { ...prevCase, ...payload, ...updatedCase }
+          : prevCase,
+      );
+    } catch (err) {
+      setPauseErrors((prev) => ({
+        ...prev,
+        [caseRow.id]:
+          err instanceof Error ? err.message : "Erro ao atualizar IApause",
+      }));
+    } finally {
+      setUpdatingCaseId(null);
+    }
   };
 
   if (isLoading) {
@@ -141,23 +211,51 @@ export default function CasosPage() {
               <div>
                 <CardTitle>Lista de Casos</CardTitle>
                 <CardDescription>
-                  {cases.length} {cases.length === 1 ? "caso encontrado" : "casos encontrados"}
+                  {visibleCases.length}{" "}
+                  {visibleCases.length === 1 ? "caso encontrado" : "casos encontrados"}
                 </CardDescription>
               </div>
-              <Button variant="outline" onClick={loadCases}>
-                Atualizar
-              </Button>
+              <div className="flex flex-wrap items-center gap-3">
+                {isSysAdmin && (
+                  <div className="flex flex-col gap-1 text-right">
+                    <label
+                      htmlFor="institution-filter"
+                      className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                    >
+                      Filtrar por instituição
+                    </label>
+                    <select
+                      id="institution-filter"
+                      value={selectedInstitution}
+                      onChange={(event) => setSelectedInstitution(event.target.value)}
+                      className="rounded-md border border-input bg-background px-3 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                    >
+                      <option value="all">Todas</option>
+                      {institutionOptions.map((option) => (
+                        <option key={option} value={option}>
+                          Instituição #{option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <Button variant="outline" onClick={loadCases}>
+                  Atualizar
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
-            {cases.length === 0 ? (
+            {visibleCases.length === 0 ? (
               <div className="py-12 text-center text-muted-foreground">
                 Nenhum caso encontrado.
               </div>
             ) : (
               <div className="space-y-4">
-                {cases.map((caseRow) => {
+                {visibleCases.map((caseRow) => {
                   const stage = getCaseStage(caseRow);
+                  const isPaused = caseRow.IApause === "SIM";
+                  const pauseError = pauseErrors[caseRow.id];
                   return (
                     <div
                       key={caseRow.id}
@@ -166,7 +264,7 @@ export default function CasosPage() {
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex-1 space-y-2">
-                          <div className="flex items-center gap-3">
+                          <div className="flex flex-wrap items-center gap-3">
                             <h3 className="text-lg font-semibold">
                               {caseRow.CustumerName || "Sem nome"}
                             </h3>
@@ -181,10 +279,10 @@ export default function CasosPage() {
                               </span>
                             )}
                           </div>
-                          <p className="text-sm text-muted-foreground">
+                          <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
                             {caseRow.CustumerPhone ? (
                               <a
-                                href={`https://staging-app.riasistemas.com.br/whatsapp${caseRow.CustumerPhone ? `?phone=${encodeURIComponent(caseRow.CustumerPhone)}` : ""}`}
+                                href={`https://app.riasistemas.com.br/whatsapp${caseRow.CustumerPhone ? `?phone=${encodeURIComponent(caseRow.CustumerPhone)}` : ""}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center justify-center rounded-full border border-green-500/30 bg-green-50 p-2 text-green-600 transition hover:bg-green-100 dark:border-green-500/50 dark:bg-green-900/30 dark:text-green-300"
@@ -194,9 +292,31 @@ export default function CasosPage() {
                                 <MessageCircle className="h-4 w-4" />
                               </a>
                             ) : (
-                              "Sem telefone"
+                              <span>Sem telefone</span>
                             )}
-                          </p>
+                            <div
+                              className="flex items-center gap-2"
+                              onClick={(event) => event.stopPropagation()}
+                              onPointerDown={(event) => event.stopPropagation()}
+                            >
+                              <span className="text-xs font-medium uppercase tracking-wide">
+                                Pausar IA
+                              </span>
+                              <Switch
+                                checked={isPaused}
+                                onCheckedChange={(checked) =>
+                                  handleToggleIAPause(caseRow, checked)
+                                }
+                                disabled={updatingCaseId === caseRow.id}
+                                aria-label="Alternar pausa da IA neste caso"
+                              />
+                            </div>
+                          </div>
+                          {pauseError && (
+                            <p className="text-xs text-destructive">
+                              {pauseError}
+                            </p>
+                          )}
                         </div>
                         <div className="text-sm text-muted-foreground text-right space-y-1">
                           <div>ID: {caseRow.CaseId || caseRow.id}</div>
@@ -208,7 +328,7 @@ export default function CasosPage() {
                               className="h-7 px-3"
                             >
                               <a
-                                href={`https://staging-app.riasistemas.com.br/case/edit/${caseRow.BJCaseId}`}
+                                href={`https://app.riasistemas.com.br/case/edit/${caseRow.BJCaseId}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 onClick={(event) => event.stopPropagation()}
@@ -232,7 +352,7 @@ export default function CasosPage() {
         </Card>
 
         {selectedCase && (
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <Dialog open={isDialogOpen} onOpenChange={handleDialogOpenChange}>
             <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>
@@ -276,4 +396,3 @@ export default function CasosPage() {
     </main>
   );
 }
-

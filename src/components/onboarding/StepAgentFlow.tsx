@@ -17,45 +17,35 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import {
-  agentFlowSchema,
-  commitmentTypes,
-  type AgentFlow,
-} from "@/lib/validations";
+import { agentFlowSchema, type AgentFlow } from "@/lib/validations";
 
 import { StepActions } from "./StepActions";
 import { useOnboarding } from "./onboarding-context";
 
+const MAX_DIRECTED_QUESTIONS = 5;
+
 export const StepAgentFlow = () => {
   const { data, updateSection } = useOnboarding();
-  const { nextStep } = useWizard();
+  const { nextStep, previousStep } = useWizard();
+  const isIncluded = data.includedSteps.agentFlow;
 
   const form = useForm<AgentFlow>({
     resolver: zodResolver(agentFlowSchema),
     defaultValues: data.agentFlow,
   });
 
-  const viabilityArray = useFieldArray({
-    name: "viabilityQuestions",
+  const directedQuestionsArray = useFieldArray({
+    name: "directedQuestions",
     control: form.control,
   });
+  const canAddMoreQuestions =
+    directedQuestionsArray.fields.length < MAX_DIRECTED_QUESTIONS;
 
-  const documents = form.watch("documentsChecklist");
-
-  const handleAddDocument = () => {
-    const currentDocs = form.getValues("documentsChecklist");
-    form.setValue("documentsChecklist", [...currentDocs, ""]);
-  };
-
-  const handleRemoveDocument = (index: number) => {
-    const currentDocs = form.getValues("documentsChecklist");
-    if (currentDocs.length <= 1) {
-      return;
-    }
-    form.setValue(
-      "documentsChecklist",
-      currentDocs.filter((_, docIndex) => docIndex !== index),
-    );
+  const handleAddQuestion = () => {
+    directedQuestionsArray.append({
+      prompt: "",
+      objective: "",
+    });
   };
 
   useEffect(() => {
@@ -71,10 +61,9 @@ export const StepAgentFlow = () => {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1">
-          <h3 className="text-lg font-semibold">Fluxo de atendimento</h3>
+          <h3 className="text-lg font-semibold">Briefing juridico estruturado</h3>
           <p className="text-sm text-muted-foreground">
-            Monte o roteiro que o agente vai seguir na conversa com o seu cliente — do primeiro oi ao encerramento. Isso ajuda o assistente a agir exatamente como você faria.
-          </p>
+            Defina o escopo, o limite de perguntas e as informacoes que sustentam o novo prompt juridico.</p>
         </div>
         <div className="flex flex-col items-end gap-1.5 pt-1">
           <Switch
@@ -89,285 +78,180 @@ export const StepAgentFlow = () => {
             }}
           />
           <span className="text-xs text-muted-foreground whitespace-nowrap">
-            {data.includedSteps.agentFlow ? "Incluído" : "Excluído"}
+            {data.includedSteps.agentFlow ? "Incluido" : "Excluido"}
           </span>
         </div>
       </div>
 
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-2">
-            <FormField
-              control={form.control}
-              name="greetingsScript"
-              render={({ field }) => (
-                <FormItem className="md:col-span-2">
-                  <FormLabel>Mensagem de recepção</FormLabel>
-                  <FormControl>
-                    <Textarea rows={3} placeholder="Ex.: Olá! Somos especialistas..." {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+      {isIncluded ? (
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            <div className="grid gap-4 md:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="briefingScope"
+                render={({ field }) => (
+                  <FormItem className="md:col-span-2">
+                    <FormLabel>Escopo do briefing</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        rows={3}
+                        placeholder="Resuma o que deve ser coletado antes da analise humana"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            <FormField
-              control={form.control}
-              name="companyOfferings"
-              render={({ field }) => (
-                <FormItem className="md:col-span-2">
-                  <FormLabel>Produtos e nichos atendidos</FormLabel>
-                  <FormControl>
-                    <Textarea rows={2} placeholder="Liste rapidamente os serviços ofertados" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="qualificationPrompt"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Pergunta de qualificação</FormLabel>
-                  <FormControl>
-                    <Textarea rows={3} placeholder="Posso fazer a análise gratuita agora mesmo?" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="qualificationFallback"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Resposta quando o lead não quer seguir</FormLabel>
-                  <FormControl>
-                    <Textarea rows={3} placeholder="Sem problemas, mantenho o canal aberto..." {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-
-          <div className="space-y-3 rounded-lg border border-border/50 p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-semibold">Perguntas de viabilidade</p>
-                <p className="text-xs text-muted-foreground">
-                  Liste as perguntas essenciais que você faz para entender se o caso é viável e explique rapidamente por que cada pergunta é importante.
-                </p>
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                onClick={() =>
-                  viabilityArray.append({
-                    prompt: "",
-                    objective: "",
-                  })
-                }
-              >
-                Adicionar pergunta
-              </Button>
+              <FormField
+                control={form.control}
+                name="maxQuestions"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Limite maximo de perguntas</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={field.value ?? ""}
+                        onChange={(event) => {
+                          const rawValue = event.target.value;
+                          field.onChange(
+                            rawValue === "" ? undefined : Number(rawValue),
+                          );
+                        }}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                    <p className="text-xs text-muted-foreground">
+                      O assistente encerra a etapa direcionada ao atingir esse limite.
+                    </p>
+                  </FormItem>
+                )}
+              />
             </div>
 
-            {viabilityArray.fields.map((field, index) => (
-              <div key={field.id} className="rounded-md border border-border/40 p-3 space-y-3">
-                <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
-                  <span>Pergunta {index + 1}</span>
-                  {viabilityArray.fields.length > 2 ? (
-                    <button
-                      type="button"
-                      className="text-destructive hover:underline"
-                      onClick={() => viabilityArray.remove(index)}
-                    >
-                      Remover
-                    </button>
-                  ) : null}
+            <div className="space-y-3 rounded-lg border border-border/50 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold">Perguntas direcionadas</p>
+                  <p className="text-xs text-muted-foreground">
+                    Configure perguntas especificas para o briefing. Se a lista ficar vazia, o agente gera perguntas automaticamente com base no nicho configurado.
+                  </p>
                 </div>
-
-                <FormField
-                  control={form.control}
-                  name={`viabilityQuestions.${index}.prompt`}
-                  render={({ field: promptField }) => (
-                    <FormItem>
-                      <FormLabel>Pergunta</FormLabel>
-                      <FormControl>
-                        <Textarea rows={2} placeholder="Qual é o percentual do salário comprometido?" {...promptField} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name={`viabilityQuestions.${index}.objective`}
-                  render={({ field: objectiveField }) => (
-                    <FormItem>
-                      <FormLabel>Objetivo</FormLabel>
-                      <FormControl>
-                        <Textarea rows={2} placeholder="Descobrir se ultrapassa o limite legal..." {...objectiveField} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={handleAddQuestion}
+                  disabled={!canAddMoreQuestions}
+                >
+                  Adicionar pergunta
+                </Button>
               </div>
-            ))}
-          </div>
 
-          <FormField
-            control={form.control}
-            name="disqualificationRules"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Regras de desqualificação</FormLabel>
-                <FormControl>
-                  <Textarea rows={3} placeholder="Explique quando encerrar o atendimento e como comunicar" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <FormField
-              control={form.control}
-              name="commitmentType"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Tipo de compromisso</FormLabel>
-                  <FormControl>
-                    <select
-                      {...field}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    >
-                      {commitmentTypes.map((type) => (
-                        <option key={type} value={type}>
-                          {type === "contrato" ? "Assinatura de contrato" : "Agendamento com advogado"}
-                        </option>
-                      ))}
-                    </select>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="commitmentScript"
-              render={({ field }) => (
-                <FormItem className="md:col-span-2">
-                  <FormLabel>Mensagem para assinatura/agendamento</FormLabel>
-                  <FormControl>
-                    <Textarea rows={3} placeholder="Descrição do próximo passo após a aprovação" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-
-          <div className="space-y-3 rounded-lg border border-border/50 p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-semibold">Checklist de documentos</p>
-                <p className="text-xs text-muted-foreground">
-                  Liste apenas o que você realmente exige para dar continuidade ao caso.
+              {directedQuestionsArray.fields.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Nenhuma pergunta configurada. O assistente segue o nicho descrito no perfil do agente.
                 </p>
-              </div>
+              ) : (
+                <div className="space-y-4">
+                  {directedQuestionsArray.fields.map((field, index) => (
+                    <div key={field.id} className="space-y-3 rounded-md border border-border/40 p-4">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold text-foreground">Pergunta {index + 1}</p>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => directedQuestionsArray.remove(index)}
+                        >
+                          Remover
+                        </Button>
+                      </div>
 
-              <Button type="button" size="sm" variant="secondary" onClick={handleAddDocument}>
-                Adicionar documento
-              </Button>
+                      <FormField
+                        control={form.control}
+                        name={`directedQuestions.${index}.prompt`}
+                        render={({ field: promptField }) => (
+                          <FormItem>
+                            <FormLabel>Texto da pergunta</FormLabel>
+                            <FormControl>
+                              <Textarea
+                                rows={2}
+                                placeholder="Ex.: Qual foi a decisao administrativa mais recente?"
+                                {...promptField}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name={`directedQuestions.${index}.objective`}
+                        render={({ field: objectiveField }) => (
+                          <FormItem>
+                            <FormLabel>Objetivo</FormLabel>
+                            <FormControl>
+                              <Textarea
+                                rows={2}
+                                placeholder="Explique por que essa informacao e importante para o advogado."
+                                {...objectiveField}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {(documents ?? []).map((_, index) => (
-              <div key={`doc-${index}`} className="flex items-center gap-3">
-                <FormField
-                  control={form.control}
-                  name={`documentsChecklist.${index}`}
-                  render={({ field: docField }) => (
-                    <FormItem className="flex-1">
-                      <FormControl>
-                        <Input placeholder="Comprovante de residência..." {...docField} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                {(documents?.length ?? 0) > 1 ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleRemoveDocument(index)}
-                  >
-                    Remover
-                  </Button>
-                ) : null}
-              </div>
-            ))}
+            <FormField
+              control={form.control}
+              name="institutionalAdditionalInfo"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Informacões institucionais adicionais</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      rows={3}
+                      placeholder="Diferenciais, prazos de resposta ou avisos que podem ser enviados quando o cliente solicitar dados do escritório."
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <StepActions
+              submitLabel="Continuar"
+              isSubmitting={form.formState.isSubmitting}
+            />
+          </form>
+        </Form>
+      ) : (
+        <div className="rounded-lg border border-dashed border-border/60 bg-muted/30 p-6 text-sm text-muted-foreground">
+          <p className="font-medium text-foreground">Etapa opcional desativada</p>
+          <p>Ative o interruptor acima para personalizar esta parte quando quiser.</p>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <Button type="button" variant="outline" onClick={previousStep}>
+              Voltar
+            </Button>
+            <Button type="button" onClick={nextStep}>
+              Pular etapa
+            </Button>
           </div>
-
-  <div className="grid gap-4">
-          <FormField
-            control={form.control}
-            name="documentConfirmationMessage"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Mensagem de confirmação de documentos</FormLabel>
-                <FormControl>
-                  <Textarea rows={3} placeholder="Confirmo cada arquivo assim que receber..." {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name="closingMessage"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Mensagem de encerramento</FormLabel>
-                <FormControl>
-                  <Textarea rows={3} placeholder="Recapitulação final mantendo o canal aberto" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name="followUpRules"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Regras de follow-up</FormLabel>
-                <FormControl>
-                  <Textarea rows={3} placeholder="Quando enviar atualizações e como transferir ao advogado" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          </div>
-
-          <StepActions
-            submitLabel="Continuar"
-            isSubmitting={form.formState.isSubmitting}
-          />
-        </form>
-      </Form>
+        </div>
+      )}
     </div>
   );
 };

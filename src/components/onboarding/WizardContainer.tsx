@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import type { ComponentType } from "react";
 import { useRouter } from "next/navigation";
 import { Wizard, useWizard } from "react-use-wizard";
 
@@ -15,6 +16,12 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { getBaserowConfigs } from "@/services/api";
+import { cn } from "@/lib/utils";
+import {
+  defaultAgentFlow,
+  defaultAgentPersonality,
+  type OnboardingData,
+} from "@/lib/validations";
 
 import { StepAddress } from "./StepAddress";
 import { StepAgentFlow } from "./StepAgentFlow";
@@ -25,7 +32,15 @@ import { StepConfirmation } from "./StepConfirmation";
 import { StepConnections } from "./StepConnections";
 import { StepRagUpload } from "./StepRagUpload";
 import { OnboardingLogin } from "./OnboardingLogin";
-import { OnboardingProvider, useOnboarding } from "./onboarding-context";
+import { useOnboarding } from "./onboarding-context";
+
+type ConfigurationMode = "simple" | "advanced";
+type WizardStepEntry = {
+  key: string;
+  Component: ComponentType;
+};
+
+const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 
 const WizardProgressHeader = () => {
   const { activeStep, stepCount } = useWizard();
@@ -53,8 +68,75 @@ const WizardFooterNote = () => (
 );
 
 const WizardContent = () => {
-  const { data, logout } = useOnboarding();
+  const { data, logout, updateSection } = useOnboarding();
   const router = useRouter();
+  const configurationOptions: Array<{
+    id: ConfigurationMode;
+    title: string;
+    description: string;
+    helper: string;
+  }> = [
+    {
+      id: "simple",
+      title: "Configuracao simples",
+      description:
+        "Foque nos dados obrigatórios (empresa, endereço e perfil do agente) e finalize mais rápido.",
+      helper: "Ideal para ativar a operação rapidamente.",
+    },
+    {
+      id: "advanced",
+      title: "Configuracao avancada",
+      description:
+        "Libere todas as personalizações de fluxo, tom e base de conhecimento para um agente completo.",
+      helper: "Ative quando quiser ajustar o bot em todos os detalhes.",
+    },
+  ];
+
+  const baseSteps: WizardStepEntry[] = [
+    { key: "company", Component: StepCompanyInfo },
+    { key: "address", Component: StepAddress },
+    { key: "agentProfile", Component: StepAgentProfile },
+  ];
+
+  const advancedOnlySteps: WizardStepEntry[] = [
+    { key: "agentFlow", Component: StepAgentFlow },
+    { key: "agentTone", Component: StepAgentTone },
+    { key: "ragUpload", Component: StepRagUpload },
+  ];
+
+  const finalSteps: WizardStepEntry[] = [
+    { key: "confirmation", Component: StepConfirmation },
+    { key: "connections", Component: StepConnections },
+  ];
+
+  const wizardSteps: WizardStepEntry[] =
+    data.configurationMode === "advanced"
+      ? [...baseSteps, ...advancedOnlySteps, ...finalSteps]
+      : [...baseSteps, ...finalSteps];
+
+  const handleModeChange = (mode: ConfigurationMode) => {
+    const enableOptional = mode === "advanced";
+    const nextUpdate: Partial<OnboardingData> = {
+      configurationMode: mode,
+      includedSteps: {
+        ...data.includedSteps,
+        companyInfo: true,
+        address: true,
+        agentProfile: true,
+        agentFlow: enableOptional,
+        agentPersonality: enableOptional,
+        ragUpload: enableOptional,
+      },
+    };
+
+    if (!enableOptional) {
+      nextUpdate.agentFlow = clone(defaultAgentFlow);
+      nextUpdate.agentPersonality = clone(defaultAgentPersonality);
+      nextUpdate.ragFiles = [];
+    }
+
+    updateSection(nextUpdate);
+  };
 
   useEffect(() => {
     // Verificar se já existe configuração quando o componente carrega
@@ -70,7 +152,7 @@ const WizardContent = () => {
         }
       } catch (error) {
         // Se houver erro, continuar normalmente (pode ser que não exista configuração ainda)
-        console.log("Verificando configurações existentes...");
+        console.error("Falha ao verificar configurações existentes", error);
       }
     };
 
@@ -108,15 +190,57 @@ const WizardContent = () => {
         </div>
       </div>
 
+      <section className="space-y-4 rounded-lg border border-dashed border-border/60 bg-muted/20 p-4">
+        <div className="space-y-1">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Escolha o modo de configuração
+          </p>
+          <h3 className="text-base font-semibold text-foreground">
+            Como você prefere montar o agente?
+          </h3>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          {configurationOptions.map((option) => {
+            const isActive = data.configurationMode === option.id;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => handleModeChange(option.id)}
+                className={cn(
+                  "rounded-lg border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                  isActive
+                    ? "border-primary bg-primary/5 shadow-sm"
+                    : "border-border hover:border-primary/50",
+                )}
+                aria-pressed={isActive}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold text-foreground">
+                    {option.title}
+                  </span>
+                  {isActive ? (
+                    <span className="text-xs font-medium text-primary">
+                      Selecionado
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {option.description}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {option.helper}
+                </p>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
       <Wizard header={<WizardProgressHeader />} footer={<WizardFooterNote />}>
-        <StepCompanyInfo />
-        <StepAddress />
-        <StepAgentProfile />
-        <StepAgentFlow />
-        <StepAgentTone />
-        <StepRagUpload />
-        <StepConfirmation />
-        <StepConnections />
+        {wizardSteps.map(({ key, Component }) => (
+          <Component key={key} />
+        ))}
       </Wizard>
     </div>
   );
@@ -134,7 +258,7 @@ export const WizardContainer = () => {
     <Card className="mx-auto w-full max-w-4xl border-border/80 shadow-sm">
       <CardHeader>
         <CardTitle className="text-2xl font-semibold">
-          Configuracao do atendimento
+          Configuração do atendimento
         </CardTitle>
         <CardDescription>
           Preencha os dados da empresa, personalize o agente e defina o passo

@@ -14,7 +14,6 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { addressSchema, type AddressInfo } from "@/lib/validations";
 
 import { StepActions } from "./StepActions";
@@ -40,29 +39,11 @@ export const StepAddress = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1">
-          <h3 className="text-lg font-semibold">Endereço completo</h3>
-          <p className="text-sm text-muted-foreground">
-            Compartilhe o endereço oficial para personalizarmos mensagens, documentos e assinaturas enviadas aos seus clientes.
-          </p>
-        </div>
-        <div className="flex flex-col items-end gap-1.5 pt-1">
-          <Switch
-            checked={data.includedSteps.address}
-            onCheckedChange={(checked) => {
-              updateSection({
-                includedSteps: {
-                  ...data.includedSteps,
-                  address: checked,
-                },
-              });
-            }}
-          />
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
-            {data.includedSteps.address ? "Incluído" : "Excluído"}
-          </span>
-        </div>
+      <div className="space-y-2">
+        <h3 className="text-lg font-semibold">Endereço completo</h3>
+        <p className="text-sm text-muted-foreground">
+          Compartilhe o endereço oficial para personalizarmos mensagens, documentos e assinaturas enviadas aos seus clientes.
+        </p>
       </div>
 
       <Form {...form}>

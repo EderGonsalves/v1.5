@@ -14,75 +14,66 @@ export const AgentFlowSection = ({
   onChange,
 }: AgentFlowSectionProps) => {
   const [isEditing, setIsEditing] = useState(false);
+  void onChange;
 
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Fluxo Operacional</h3>
+        <h3 className="text-lg font-semibold">Briefing juridico</h3>
         <Button variant="outline" size="sm" onClick={() => setIsEditing(!isEditing)}>
           {isEditing ? "Visualizar" : "Editar"}
         </Button>
       </div>
       <div className="space-y-3 text-sm">
-        <div className="rounded-md bg-muted/40 p-3 space-y-2">
-          <p>
-            <span className="font-medium">Recepção:</span> {data.greetingsScript}
+        <div className="rounded-md bg-muted/40 p-3 space-y-1">
+          <p className="text-xs font-semibold uppercase text-muted-foreground">
+            Escopo do briefing
           </p>
-          <p>
-            <span className="font-medium">Produtos:</span> {data.companyOfferings}
+          <p className="text-foreground">{data.briefingScope || "-"}</p>
+        </div>
+        <div className="rounded-md border border-border/40 p-3">
+          <p className="text-xs font-semibold uppercase text-muted-foreground">
+            Limite de perguntas
           </p>
-          <p>
-            <span className="font-medium">Qualificação:</span> {data.qualificationPrompt}
-          </p>
-          <p>
-            <span className="font-medium">Fallback:</span> {data.qualificationFallback}
-          </p>
-          <p>
-            <span className="font-medium">Desqualificação:</span> {data.disqualificationRules}
-          </p>
-          <p>
-            <span className="font-medium">Compromisso:</span>{" "}
-            {data.commitmentType === "contrato" ? "Assinatura digital" : "Agendamento"} - {data.commitmentScript}
-          </p>
-          <p>
-            <span className="font-medium">Confirmação de documentos:</span> {data.documentConfirmationMessage}
-          </p>
-          <p>
-            <span className="font-medium">Encerramento:</span> {data.closingMessage}
-          </p>
-          <p>
-            <span className="font-medium">Follow-up:</span> {data.followUpRules}
+          <p className="text-2xl font-semibold text-foreground">
+            {data.maxQuestions}
           </p>
         </div>
         <div className="rounded-md border border-border/40 p-3">
           <p className="text-xs font-semibold uppercase text-muted-foreground">
-            Perguntas de viabilidade
+            Perguntas direcionadas
           </p>
-          <ul className="mt-2 space-y-2">
-            {data.viabilityQuestions.map((question, index) => (
-              <li key={`${question.prompt}-${index}`}>
-                <p className="font-medium">Q{index + 1}: {question.prompt}</p>
-                <p className="text-xs text-muted-foreground">
-                  Objetivo: {question.objective}
-                </p>
-              </li>
-            ))}
-          </ul>
+          {data.directedQuestions.length > 0 ? (
+            <ul className="mt-2 space-y-2">
+              {data.directedQuestions.map((question, index) => (
+                <li key={`${question.prompt}-${index}`}>
+                  <p className="font-medium">Q{index + 1}: {question.prompt}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Objetivo: {question.objective}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Sem perguntas cadastradas. O agente gerara perguntas automaticamente com base no nicho informado no perfil.
+            </p>
+          )}
         </div>
-        <div className="rounded-md border border-border/40 p-3">
-          <p className="text-xs font-semibold uppercase text-muted-foreground">
-            Checklist de documentos
-          </p>
-          <ul className="mt-2 list-disc pl-5 space-y-1">
-            {data.documentsChecklist.map((doc, index) => (
-              <li key={`${doc}-${index}`}>{doc}</li>
-            ))}
-          </ul>
-        </div>
+        {data.institutionalAdditionalInfo ? (
+          <div className="rounded-md bg-muted/40 p-3">
+            <p className="text-xs font-semibold uppercase text-muted-foreground">
+              Informacoes institucionais adicionais
+            </p>
+            <p className="mt-1 text-sm text-foreground">
+              {data.institutionalAdditionalInfo}
+            </p>
+          </div>
+        ) : null}
       </div>
       {isEditing && (
         <p className="text-xs text-muted-foreground">
-          Edição detalhada do fluxo em breve
+          Edicao detalhada do fluxo em breve
         </p>
       )}
     </div>

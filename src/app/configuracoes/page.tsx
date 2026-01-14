@@ -22,8 +22,11 @@ import {
 } from "@/components/ui/accordion";
 import { getBaserowConfigs, updateBaserowConfig, updateConfig, type BaserowConfigRow } from "@/services/api";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
-import type { OnboardingPayload } from "@/lib/validations";
-import { onboardingPayloadSchema } from "@/lib/validations";
+import {
+  onboardingPayloadSchema,
+  type AgentFlow,
+  type OnboardingPayload,
+} from "@/lib/validations";
 import { LoadingScreen } from "@/components/ui/loading-screen";
 
 type EditableField = {
@@ -187,6 +190,8 @@ export default function ConfiguracoesPage() {
     "body.tenant.companyName": "Nome do escritório",
     "body.tenant.businessHours": "Horários de atendimento",
     "body.tenant.phoneNumber": "Número de telefone conectado à API",
+    "body.tenant.wabaPhoneNumber": "Numero do WhatsApp conectado a Meta",
+    "body.waba_phone_number": "Numero do WhatsApp conectado a Meta",
     
     // Endereço
     "body.tenant.address.street": "Rua",
@@ -224,24 +229,20 @@ export default function ConfiguracoesPage() {
     "body.agentSettings.stages.3.script": "Etapa 4 - Script",
     
     // Fluxo do agente
-    "body.agentSettings.flow.greetingsScript": "Mensagem de recepção",
-    "body.agentSettings.flow.companyOfferings": "Produtos e nichos atendidos",
-    "body.agentSettings.flow.qualificationPrompt": "Pergunta de qualificação",
-    "body.agentSettings.flow.qualificationFallback": "Resposta quando o lead não quer seguir",
-    "body.agentSettings.flow.viabilityQuestions.0.prompt": "Pergunta de viabilidade 1",
-    "body.agentSettings.flow.viabilityQuestions.0.objective": "Objetivo da pergunta 1",
-    "body.agentSettings.flow.viabilityQuestions.1.prompt": "Pergunta de viabilidade 2",
-    "body.agentSettings.flow.viabilityQuestions.1.objective": "Objetivo da pergunta 2",
-    "body.agentSettings.flow.disqualificationRules": "Regras de desqualificação",
-    "body.agentSettings.flow.commitmentType": "Tipo de compromisso",
-    "body.agentSettings.flow.commitmentScript": "Mensagem para assinatura/agendamento",
-    "body.agentSettings.flow.documentsChecklist.0": "Documento 1",
-    "body.agentSettings.flow.documentsChecklist.1": "Documento 2",
-    "body.agentSettings.flow.documentsChecklist.2": "Documento 3",
-    "body.agentSettings.flow.documentConfirmationMessage": "Mensagem de confirmação de documentos",
-    "body.agentSettings.flow.closingMessage": "Mensagem de encerramento",
-    "body.agentSettings.flow.followUpRules": "Regras de follow-up",
-    
+    "body.agentSettings.flow.briefingScope": "Escopo do briefing",
+    "body.agentSettings.flow.maxQuestions": "Limite maximo de perguntas",
+    "body.agentSettings.flow.directedQuestions.0.prompt": "Pergunta direcionada 1",
+    "body.agentSettings.flow.directedQuestions.0.objective": "Objetivo da pergunta direcionada 1",
+    "body.agentSettings.flow.directedQuestions.1.prompt": "Pergunta direcionada 2",
+    "body.agentSettings.flow.directedQuestions.1.objective": "Objetivo da pergunta direcionada 2",
+    "body.agentSettings.flow.directedQuestions.2.prompt": "Pergunta direcionada 3",
+    "body.agentSettings.flow.directedQuestions.2.objective": "Objetivo da pergunta direcionada 3",
+    "body.agentSettings.flow.directedQuestions.3.prompt": "Pergunta direcionada 4",
+    "body.agentSettings.flow.directedQuestions.3.objective": "Objetivo da pergunta direcionada 4",
+    "body.agentSettings.flow.directedQuestions.4.prompt": "Pergunta direcionada 5",
+    "body.agentSettings.flow.directedQuestions.4.objective": "Objetivo da pergunta direcionada 5",
+    "body.agentSettings.flow.institutionalAdditionalInfo": "Informacoes institucionais adicionais",
+
     // Auth
     "body.auth.institutionId": "ID da Instituição",
   };
@@ -359,6 +360,11 @@ export default function ConfiguracoesPage() {
     const companyName = ensureMinLength(row["body.tenant.companyName"], 2, "Empresa");
     const businessHours = ensureMinLength(row["body.tenant.businessHours"], 2, "Segunda a Sexta, 9h às 18h");
     const phoneNumber = ensureMinLength(row["body.tenant.phoneNumber"], 10, "+5511999999999");
+    const wabaPhoneNumber = ensureMinLength(
+      row["body.tenant.wabaPhoneNumber"] ?? row["body.waba_phone_number"],
+      10,
+      "+5511999999999",
+    );
     const addressStreet = ensureMinLength(row["body.tenant.address.street"], 2, "Rua");
     const addressCity = ensureMinLength(row["body.tenant.address.city"], 2, "Cidade");
     const addressState = ensureMinLength(row["body.tenant.address.state"], 2, "Estado");
@@ -411,46 +417,27 @@ export default function ConfiguracoesPage() {
       });
     }
 
-    // Extrair flow (greetingsScript min 10, companyOfferings min 5, qualificationPrompt min 5, etc.)
-    const greetingsScript = ensureMinLength(row["body.agentSettings.flow.greetingsScript"], 10, "Olá! Seja bem-vindo ao nosso atendimento.");
-    const companyOfferings = ensureMinLength(row["body.agentSettings.flow.companyOfferings"], 5, "Serviços diversos");
-    const qualificationPrompt = ensureMinLength(row["body.agentSettings.flow.qualificationPrompt"], 5, "Você gostaria de continuar?");
-    const qualificationFallback = ensureMinLength(row["body.agentSettings.flow.qualificationFallback"], 5, "Sem problemas, pode retornar quando quiser.");
-    const disqualificationRules = ensureMinLength(row["body.agentSettings.flow.disqualificationRules"], 5, "Regras de desqualificação padrão");
-    const commitmentTypeValue = row["body.agentSettings.flow.commitmentType"] as string;
-    const commitmentType = (commitmentTypeValue === "contrato" || commitmentTypeValue === "agendamento")
-      ? commitmentTypeValue as "contrato" | "agendamento"
-      : "contrato";
-    const commitmentScript = ensureMinLength(row["body.agentSettings.flow.commitmentScript"], 10, "Vou encaminhar o próximo passo para você.");
-    const documentConfirmationMessage = ensureMinLength(row["body.agentSettings.flow.documentConfirmationMessage"], 5, "Documento recebido e confirmado.");
-    const closingMessage = ensureMinLength(row["body.agentSettings.flow.closingMessage"], 5, "Obrigado pelo contato!");
-    const followUpRules = ensureMinLength(row["body.agentSettings.flow.followUpRules"], 5, "Manter contato regular.");
+    // Extrair flow simplificado
+    const briefingScope = ensureMinLength(row["body.agentSettings.flow.briefingScope"], 10, "Briefing juridico padrao");
+    const rawMaxQuestions = Number(row["body.agentSettings.flow.maxQuestions"]);
+    const maxQuestions = Number.isFinite(rawMaxQuestions) && rawMaxQuestions > 0 ? rawMaxQuestions : 5;
 
-    // Extrair viability questions (0, 1) - prompt min 5, objective min 5
-    const viabilityQuestions = [];
-    for (let i = 0; i < 2; i++) {
-      const promptValue = row[`body.agentSettings.flow.viabilityQuestions.${i}.prompt`] as string;
-      const objectiveValue = row[`body.agentSettings.flow.viabilityQuestions.${i}.objective`] as string;
-      
-      const prompt = ensureMinLength(promptValue, 5, `Pergunta de viabilidade ${i + 1}`);
-      const objective = ensureMinLength(objectiveValue, 5, `Objetivo da pergunta ${i + 1}`);
-      
-      viabilityQuestions.push({ prompt, objective });
-    }
-
-    // Extrair documents checklist (0, 1, 2) - cada documento min 3 caracteres
-    const documentsChecklist = [];
-    for (let i = 0; i < 3; i++) {
-      const docValue = row[`body.agentSettings.flow.documentsChecklist.${i}`] as string;
-      if (docValue && docValue.trim().length >= 3) {
-        documentsChecklist.push(docValue.trim());
+    const directedQuestions: AgentFlow["directedQuestions"] = [];
+    const MAX_DIRECTED_QUESTIONS = 5;
+    for (let i = 0; i < MAX_DIRECTED_QUESTIONS; i++) {
+      const promptValue = row[`body.agentSettings.flow.directedQuestions.${i}.prompt`] as string;
+      const objectiveValue = row[`body.agentSettings.flow.directedQuestions.${i}.objective`] as string;
+      const prompt = (promptValue || "").trim();
+      const objective = (objectiveValue || "").trim();
+      if (prompt.length >= 3 && objective.length >= 3) {
+        directedQuestions.push({ prompt, objective });
       }
     }
-    
-    // Garantir que documentsChecklist tenha pelo menos 1 item com min 3 caracteres
-    const finalDocumentsChecklist = documentsChecklist.length > 0 
-      ? documentsChecklist 
-      : ["Documento de identificação"];
+
+    const institutionalAdditionalInfo = (row["body.agentSettings.flow.institutionalAdditionalInfo"] as string)?.trim() || "";
+
+
+
 
     return {
       auth: {
@@ -460,6 +447,7 @@ export default function ConfiguracoesPage() {
         companyName,
         businessHours,
         phoneNumber,
+        wabaPhoneNumber,
         address: {
           street: addressStreet,
           city: addressCity,
@@ -467,7 +455,8 @@ export default function ConfiguracoesPage() {
           zipCode: addressZipCode,
         },
       },
-      agentSettings: {
+      waba_phone_number: wabaPhoneNumber,
+    agentSettings: {
         profile: {
           agentName,
           language: language as "Português (Brasil)" | "Inglês (EUA)" | "Espanhol (Latam)",
@@ -481,19 +470,10 @@ export default function ConfiguracoesPage() {
         },
         stages,
         flow: {
-          greetingsScript,
-          companyOfferings,
-          qualificationPrompt,
-          qualificationFallback,
-          viabilityQuestions,
-          disqualificationRules,
-          commitmentType,
-          commitmentScript,
-          documentsChecklist: finalDocumentsChecklist,
-          documentConfirmationMessage,
-          closingMessage,
-          followUpRules,
-          skippableStages: [],
+          briefingScope,
+          directedQuestions,
+          maxQuestions,
+          institutionalAdditionalInfo,
         },
       },
       ragFiles: [],
@@ -703,94 +683,133 @@ export default function ConfiguracoesPage() {
           </Card>
         )}
 
-        {configs.map((config, index) => {
-          // Agrupar campos por seção
-          const sections: Record<string, Array<[string, unknown]>> = {
-            "Informações da Empresa": [],
-            "Endereço": [],
-            "Perfil do Agente": [],
-            "Personalidade do Agente": [],
-            "Etapas do Agente": [],
-            "Fluxo de Atendimento": [],
-            "Outros": [],
-          };
+        <Accordion type="multiple" className="space-y-4">
+          {configs.map((config, index) => {
+            const rowData = config as Record<string, unknown>;
+            const institutionFromRow = rowData["body.auth.institutionId"];
+            const institutionLabel =
+              typeof institutionFromRow === "number" || typeof institutionFromRow === "string"
+                ? String(institutionFromRow)
+                : "N/D";
+            const fallbackCompanyName =
+              typeof config.id === "number" || typeof config.id === "string"
+                ? "Escritorio " + String(config.id)
+                : "Escritorio " + String(index + 1);
+            const companyName =
+              (rowData["body.tenant.companyName"] as string | undefined) ||
+              fallbackCompanyName;
 
-          Object.entries(config)
-            .filter(([key]) => key !== "id" && key !== "order")
-            .forEach(([key, value]) => {
-              if (key.startsWith("body.tenant.companyName") || key.startsWith("body.tenant.businessHours") || key.startsWith("body.tenant.phoneNumber")) {
-                sections["Informações da Empresa"].push([key, value]);
-              } else if (key.startsWith("body.tenant.address.")) {
-                sections["Endereço"].push([key, value]);
-              } else if (key.startsWith("body.agentSettings.profile.")) {
-                sections["Perfil do Agente"].push([key, value]);
-              } else if (key.startsWith("body.agentSettings.personality.")) {
-                sections["Personalidade do Agente"].push([key, value]);
-              } else if (key.startsWith("body.agentSettings.stages.")) {
-                sections["Etapas do Agente"].push([key, value]);
-              } else if (key.startsWith("body.agentSettings.flow.")) {
-                sections["Fluxo de Atendimento"].push([key, value]);
-              } else {
-                sections["Outros"].push([key, value]);
-              }
-            });
+            const sections: Record<string, Array<[string, unknown]>> = {
+              "Informacoes da Empresa": [],
+              "Endereco": [],
+              "Perfil do Agente": [],
+              "Personalidade do Agente": [],
+              "Etapas do Agente": [],
+              "Fluxo de Atendimento": [],
+              "Outros": [],
+            };
 
-          return (
-            <Card key={config.id || index}>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>Configuração #{config.id || index + 1}</CardTitle>
-                    <CardDescription>
-                      ID: {config.id} | Instituição: {data.auth?.institutionId}
-                    </CardDescription>
+            Object.entries(config)
+              .filter(([key]) => key !== "id" && key !== "order")
+              .forEach(([key, value]) => {
+                if (
+                  key.startsWith("body.tenant.companyName") ||
+                  key.startsWith("body.tenant.businessHours") ||
+                  key.startsWith("body.tenant.phoneNumber") ||
+                  key.startsWith("body.tenant.wabaPhoneNumber")
+                ) {
+                  sections["Informacoes da Empresa"].push([key, value]);
+                } else if (key.startsWith("body.tenant.address.")) {
+                  sections["Endereco"].push([key, value]);
+                } else if (key.startsWith("body.agentSettings.profile.")) {
+                  sections["Perfil do Agente"].push([key, value]);
+                } else if (key.startsWith("body.agentSettings.personality.")) {
+                  sections["Personalidade do Agente"].push([key, value]);
+                } else if (key.startsWith("body.agentSettings.stages.")) {
+                  sections["Etapas do Agente"].push([key, value]);
+                } else if (key.startsWith("body.agentSettings.flow.")) {
+                  sections["Fluxo de Atendimento"].push([key, value]);
+                } else {
+                  sections["Outros"].push([key, value]);
+                }
+              });
+
+            return (
+              <AccordionItem
+                key={config.id ? "office-" + String(config.id) : "office-" + String(index)}
+                value={"office-" + String(config.id ?? index)}
+                className="rounded-lg border border-border/70 bg-background px-0"
+              >
+                <AccordionTrigger className="w-full px-4 py-3 text-left hover:no-underline">
+                  <div className="flex flex-col">
+                    <span className="text-base font-semibold text-foreground">
+                      {companyName}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Instituicao #{institutionLabel} - Registro #{config.id}
+                    </span>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={loadConfigs}
-                  >
-                    Atualizar
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <Accordion type="single" collapsible className="w-full">
-                  {Object.entries(sections)
-                    .filter(([, fields]) => fields.length > 0)
-                    .map(([sectionName, fields], sectionIndex) => (
-                      <AccordionItem
-                        key={sectionName}
-                        value={`section-${config.id}-${sectionIndex}`}
-                        className="border-b border-border/50"
-                      >
-                        <AccordionTrigger className="text-left font-semibold hover:no-underline">
-                          {sectionName}
-                        </AccordionTrigger>
-                        <AccordionContent>
-                          <div className="space-y-4 pt-2">
-                            {fields.map(([key, value]) => (
-                              <div key={key} className="space-y-2">
-                                <div className="flex items-center justify-between">
-                                  <Label className="text-sm font-semibold text-foreground">
-                                    {formatFieldName(key)}
-                                  </Label>
+                </AccordionTrigger>
+                <AccordionContent className="px-0">
+                  <Card className="border-none shadow-none">
+                    <CardHeader className="pb-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle>Dados do escritorio</CardTitle>
+                          <CardDescription>
+                            ID do registro: {config.id} | Instituicao #{institutionLabel}
+                          </CardDescription>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={loadConfigs}
+                        >
+                          Atualizar
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <Accordion type="single" collapsible className="w-full">
+                        {Object.entries(sections)
+                          .filter(([, fields]) => fields.length > 0)
+                          .map(([sectionName, fields], sectionIndex) => (
+                            <AccordionItem
+                              key={sectionName}
+                              value={"section-" + String(config.id ?? index) + "-" + String(sectionIndex)}
+                              className="border-b border-border/50"
+                            >
+                              <AccordionTrigger className="text-left font-semibold hover:no-underline">
+                                {sectionName}
+                              </AccordionTrigger>
+                              <AccordionContent>
+                                <div className="space-y-4 pt-2">
+                                  {fields.map(([key, value]) => (
+                                    <div key={key} className="space-y-2">
+                                      <div className="flex items-center justify-between">
+                                        <Label className="text-sm font-semibold text-foreground">
+                                          {formatFieldName(key)}
+                                        </Label>
+                                      </div>
+                                      <div className="rounded-md border border-border/50 bg-muted/30 p-3">
+                                        {renderFieldValue(config.id, key, value)}
+                                      </div>
+                                    </div>
+                                  ))}
                                 </div>
-                                <div className="rounded-md border border-border/50 bg-muted/30 p-3">
-                                  {renderFieldValue(config.id, key, value)}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </AccordionContent>
-                      </AccordionItem>
-                    ))}
-                </Accordion>
-              </CardContent>
-            </Card>
-          );
-        })}
+                              </AccordionContent>
+                            </AccordionItem>
+                          ))}
+                      </Accordion>
+                    </CardContent>
+                  </Card>
+                </AccordionContent>
+              </AccordionItem>
+            );
+          })}
+        </Accordion>
+
 
         <Card>
           <CardContent className="flex items-center justify-center gap-4 py-6">

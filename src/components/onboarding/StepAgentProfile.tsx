@@ -15,7 +15,6 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
 import {
   agentLanguages,
   agentProfileSchema,
@@ -48,29 +47,11 @@ export const StepAgentProfile = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1">
-          <h3 className="text-lg font-semibold">Quem fala com o seu cliente</h3>
-          <p className="text-sm text-muted-foreground">
-            Descreva o agente que vai conduzir o atendimento para que possamos usar o mesmo tom, idioma e repertório em todas as conversas.
-          </p>
-        </div>
-        <div className="flex flex-col items-end gap-1.5 pt-1">
-          <Switch
-            checked={data.includedSteps.agentProfile}
-            onCheckedChange={(checked) => {
-              updateSection({
-                includedSteps: {
-                  ...data.includedSteps,
-                  agentProfile: checked,
-                },
-              });
-            }}
-          />
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
-            {data.includedSteps.agentProfile ? "Incluído" : "Excluído"}
-          </span>
-        </div>
+      <div className="space-y-2">
+        <h3 className="text-lg font-semibold">Quem fala com o seu cliente</h3>
+        <p className="text-sm text-muted-foreground">
+          Descreva o agente que vai conduzir o atendimento para que possamos usar o mesmo tom, idioma e repertório em todas as conversas.
+        </p>
       </div>
 
       <Form {...form}>
@@ -80,7 +61,7 @@ export const StepAgentProfile = () => {
             name="agentName"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Nome do agente orquestrador</FormLabel>
+                <FormLabel>Nome do agente</FormLabel>
                 <FormControl>
                   <Input placeholder="Assistente RIA" {...field} />
                 </FormControl>

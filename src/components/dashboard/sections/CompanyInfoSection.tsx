@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Pencil, Check, X } from "lucide-react";
@@ -22,26 +22,41 @@ type CompanyInfoSectionProps = {
   onChange: (data: CompanyInfo) => void;
 };
 
+const withWhatsAppFallback = (info: CompanyInfo): CompanyInfo => ({
+  ...info,
+  wabaPhoneNumber: info.wabaPhoneNumber || info.phoneNumber || "",
+});
+
 export const CompanyInfoSection = ({
   data,
   onChange,
 }: CompanyInfoSectionProps) => {
   const [isEditing, setIsEditing] = useState(false);
-
   const form = useForm<CompanyInfo>({
     resolver: zodResolver(companyInfoSchema),
-    defaultValues: data,
+    defaultValues: withWhatsAppFallback(data),
   });
 
+  useEffect(() => {
+    form.reset(withWhatsAppFallback(data));
+  }, [data, form]);
+
   const handleSave = (values: CompanyInfo) => {
-    onChange(values);
+    const normalizedValues = {
+      ...values,
+      phoneNumber: values.wabaPhoneNumber,
+    };
+    onChange(normalizedValues);
     setIsEditing(false);
   };
 
   const handleCancel = () => {
-    form.reset(data);
+    form.reset(withWhatsAppFallback(data));
     setIsEditing(false);
   };
+
+  const displayedWhatsapp =
+    data.wabaPhoneNumber || data.phoneNumber || "-";
 
   if (isEditing) {
     return (
@@ -96,10 +111,10 @@ export const CompanyInfoSection = ({
 
           <FormField
             control={form.control}
-            name="phoneNumber"
+            name="wabaPhoneNumber"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Número de telefone conectado à API</FormLabel>
+                <FormLabel>Número do WhatsApp conectado à Meta</FormLabel>
                 <FormControl>
                   <Input placeholder="+5511999999999" {...field} />
                 </FormControl>
@@ -134,18 +149,10 @@ export const CompanyInfoSection = ({
           {data.businessHours || "-"}
         </p>
         <p>
-          <span className="font-medium">Telefone conectado à API:</span>{" "}
-          {data.phoneNumber || "-"}
+          <span className="font-medium">Número do WhatsApp conectado à Meta:</span>{" "}
+          {displayedWhatsapp}
         </p>
       </div>
     </div>
   );
 };
-
-
-
-
-
-
-
-

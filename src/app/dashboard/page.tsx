@@ -11,9 +11,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { getConfig, updateConfig } from "@/services/api";
-import { buildOnboardingPayload, type OnboardingData } from "@/lib/validations";
+import {
+  buildOnboardingPayload,
+  type AgentFlow,
+  type OnboardingData,
+} from "@/lib/validations";
 import { DashboardContent } from "@/components/dashboard/DashboardContent";
 import { LoadingScreen } from "@/components/ui/loading-screen";
 
@@ -55,12 +58,37 @@ const DashboardPageContent = () => {
         return;
       }
 
+      type LegacyFlow = Partial<AgentFlow> & {
+        greetingsScript?: string;
+        viabilityQuestions?: AgentFlow["directedQuestions"];
+      };
+      const rawFlow: LegacyFlow =
+        (data.agentSettings?.flow as LegacyFlow) || {};
+
+      const normalizedAgentFlow: AgentFlow = {
+        briefingScope: rawFlow.briefingScope || rawFlow.greetingsScript || "",
+        directedQuestions:
+          rawFlow.directedQuestions && rawFlow.directedQuestions.length > 0
+            ? rawFlow.directedQuestions
+            : rawFlow.viabilityQuestions || [],
+        maxQuestions:
+          typeof rawFlow.maxQuestions === "number" && rawFlow.maxQuestions > 0
+            ? rawFlow.maxQuestions
+            : 5,
+        institutionalAdditionalInfo:
+          rawFlow.institutionalAdditionalInfo || "",
+      };
+
       // Converter o payload retornado para OnboardingData
       const onboardingData: OnboardingData = {
         companyInfo: {
           companyName: data.tenant?.companyName || "",
           businessHours: data.tenant?.businessHours || "",
           phoneNumber: data.tenant?.phoneNumber || "",
+          wabaPhoneNumber:
+            data.tenant?.wabaPhoneNumber ||
+            data.waba_phone_number ||
+            "",
         },
         address: data.tenant?.address || {
           street: "",
@@ -80,26 +108,13 @@ const DashboardPageContent = () => {
           closing: "",
           forbiddenWords: [],
         },
-        agentFlow: data.agentSettings?.flow || {
-          greetingsScript: "",
-          companyOfferings: "",
-          qualificationPrompt: "",
-          qualificationFallback: "",
-          viabilityQuestions: [],
-          disqualificationRules: "",
-          commitmentType: "contrato",
-          commitmentScript: "",
-          documentsChecklist: [],
-          documentConfirmationMessage: "",
-          closingMessage: "",
-          followUpRules: "",
-          skippableStages: [],
-        },
+        agentFlow: normalizedAgentFlow,
         ragFiles: data.ragFiles || [],
         connections: data.connections,
         auth: {
           institutionId: id,
         },
+        configurationMode: data.configurationMode || "advanced",
         includedSteps: data.includedSteps || {
           companyInfo: true,
           address: true,
