@@ -24,17 +24,41 @@ import { useOnboarding } from "./onboarding-context";
 
 const MAX_DIRECTED_QUESTIONS = 5;
 
+type LegacyDirectedQuestion = { prompt?: string; objective?: string };
+type AgentFlowFormValues = AgentFlow & Record<string, any>;
+
+const normalizeDirectedQuestions = (
+  value: Array<string | LegacyDirectedQuestion>,
+): string[] => {
+  return value
+    .map((item) => {
+      if (typeof item === "string") {
+        return item.trim();
+      }
+      if (item && typeof item === "object") {
+        return String(item.prompt ?? item.objective ?? "").trim();
+      }
+      return "";
+    })
+    .filter((question) => question.length > 0);
+};
+
 export const StepAgentFlow = () => {
   const { data, updateSection } = useOnboarding();
   const { nextStep, previousStep } = useWizard();
   const isIncluded = data.includedSteps.agentFlow;
 
-  const form = useForm<AgentFlow>({
+  const form = useForm<AgentFlowFormValues>({
     resolver: zodResolver(agentFlowSchema),
-    defaultValues: data.agentFlow,
+    defaultValues: {
+      ...data.agentFlow,
+      directedQuestions: normalizeDirectedQuestions(
+        data.agentFlow.directedQuestions as Array<string | LegacyDirectedQuestion>,
+      ),
+    },
   });
 
-  const directedQuestionsArray = useFieldArray({
+  const directedQuestionsArray = useFieldArray<AgentFlowFormValues, "directedQuestions">({
     name: "directedQuestions",
     control: form.control,
   });
@@ -42,18 +66,28 @@ export const StepAgentFlow = () => {
     directedQuestionsArray.fields.length < MAX_DIRECTED_QUESTIONS;
 
   const handleAddQuestion = () => {
-    directedQuestionsArray.append({
-      prompt: "",
-      objective: "",
-    });
+    directedQuestionsArray.append("");
   };
 
   useEffect(() => {
-    form.reset(data.agentFlow);
+    form.reset({
+      ...data.agentFlow,
+      directedQuestions: normalizeDirectedQuestions(
+        data.agentFlow.directedQuestions as Array<string | LegacyDirectedQuestion>,
+      ),
+    });
   }, [data.agentFlow, form]);
 
-  const onSubmit = async (values: AgentFlow) => {
-    updateSection({ agentFlow: values });
+  const onSubmit = async (values: AgentFlowFormValues) => {
+    const normalized: AgentFlow = {
+      briefingScope: values.briefingScope,
+      directedQuestions: normalizeDirectedQuestions(
+        values.directedQuestions as Array<string | LegacyDirectedQuestion>,
+      ),
+      maxQuestions: values.maxQuestions,
+      institutionalAdditionalInfo: values.institutionalAdditionalInfo,
+    };
+    updateSection({ agentFlow: normalized });
     await nextStep();
   };
 
@@ -175,33 +209,15 @@ export const StepAgentFlow = () => {
 
                       <FormField
                         control={form.control}
-                        name={`directedQuestions.${index}.prompt`}
-                        render={({ field: promptField }) => (
+                        name={`directedQuestions.${index}`}
+                        render={({ field: questionField }) => (
                           <FormItem>
                             <FormLabel>Texto da pergunta</FormLabel>
                             <FormControl>
                               <Textarea
-                                rows={2}
+                                rows={3}
                                 placeholder="Ex.: Qual foi a decisao administrativa mais recente?"
-                                {...promptField}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
-                        name={`directedQuestions.${index}.objective`}
-                        render={({ field: objectiveField }) => (
-                          <FormItem>
-                            <FormLabel>Objetivo</FormLabel>
-                            <FormControl>
-                              <Textarea
-                                rows={2}
-                                placeholder="Explique por que essa informacao e importante para o advogado."
-                                {...objectiveField}
+                                {...questionField}
                               />
                             </FormControl>
                             <FormMessage />

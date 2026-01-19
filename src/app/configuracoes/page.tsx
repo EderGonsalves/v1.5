@@ -35,6 +35,240 @@ type EditableField = {
   isEditing: boolean;
 };
 
+type SectionLabel =
+  | "Sobre a sua empresa"
+  | "Endereço completo"
+  | "Quem fala com o seu cliente"
+  | "Briefing juridico estruturado (perguntas)"
+  | "Tom de voz e mensagens-chave"
+  | "Arquivos de apoio";
+
+type SectionRule = {
+  label: SectionLabel;
+  exact?: string[];
+  dynamic?: Array<{
+    prefix: string;
+    allowedFields: string[];
+  }>;
+};
+
+const SECTION_RULES: SectionRule[] = [
+  {
+    label: "Sobre a sua empresa",
+    exact: [
+      "body.tenant.companyName",
+      "body.tenant.businessHours",
+      "body.tenant.wabaPhoneNumber",
+      "body.waba_phone_number",
+    ],
+  },
+  {
+    label: "Endereço completo",
+    exact: [
+      "body.tenant.address.street",
+      "body.tenant.address.city",
+      "body.tenant.address.state",
+      "body.tenant.address.zipCode",
+    ],
+  },
+  {
+    label: "Quem fala com o seu cliente",
+    exact: [
+      "body.agentSettings.profile.agentName",
+      "body.agentSettings.profile.language",
+      "body.agentSettings.profile.personalityDescription",
+      "body.agentSettings.profile.expertiseArea",
+    ],
+  },
+  {
+    label: "Briefing juridico estruturado (perguntas)",
+    exact: [
+      "body.agentSettings.flow.briefingScope",
+      "body.agentSettings.flow.maxQuestions",
+      "perguntas",
+      "quantidadePerguntas",
+      "body.agentSettings.flow.directedQuestionsList",
+      "body.agentSettings.flow.companyOfferings",
+      "body.agentSettings.flow.institutionalAdditionalInfo",
+    ],
+  },
+  {
+    label: "Tom de voz e mensagens-chave",
+    exact: [
+      "body.agentSettings.personality.greeting",
+      "body.agentSettings.personality.closing",
+      "body.agentSettings.personality.forbiddenWords.0",
+    ],
+  },
+  {
+    label: "Arquivos de apoio",
+    dynamic: [
+      {
+        prefix: "body.ragFiles.",
+        allowedFields: ["name", "mime", "size", "storagePath", "tempUrl"],
+      },
+    ],
+  },
+];
+
+const SECTION_ORDER: SectionLabel[] = [
+  "Sobre a sua empresa",
+  "Endereço completo",
+  "Quem fala com o seu cliente",
+  "Briefing juridico estruturado (perguntas)",
+  "Tom de voz e mensagens-chave",
+  "Arquivos de apoio",
+];
+
+const SECTION_METADATA: Record<
+  SectionLabel,
+  { title: string; description: string; fieldOrder: string[] }
+> = {
+  "Sobre a sua empresa": {
+    title: "Sobre a sua empresa",
+    description:
+      "Conte como o seu escritorio ou negocio se apresenta para que possamos criar a experiencia certa nas proximas etapas.",
+    fieldOrder: [
+      "body.tenant.companyName",
+      "body.tenant.businessHours",
+      "body.tenant.wabaPhoneNumber",
+      "body.waba_phone_number",
+    ],
+  },
+  "Endereço completo": {
+    title: "Endereço completo",
+    description:
+      "Compartilhe o endereco oficial para personalizarmos mensagens, documentos e assinaturas enviadas aos seus clientes.",
+    fieldOrder: [
+      "body.tenant.address.street",
+      "body.tenant.address.city",
+      "body.tenant.address.state",
+      "body.tenant.address.zipCode",
+    ],
+  },
+  "Quem fala com o seu cliente": {
+    title: "Quem fala com o seu cliente",
+    description:
+      "Descreva o agente que vai conduzir o atendimento para que possamos usar o mesmo tom, idioma e repertorio em todas as conversas.",
+    fieldOrder: [
+      "body.agentSettings.profile.agentName",
+      "body.agentSettings.profile.language",
+      "body.agentSettings.profile.personalityDescription",
+      "body.agentSettings.profile.expertiseArea",
+    ],
+  },
+  "Briefing juridico estruturado (perguntas)": {
+    title: "Briefing juridico estruturado (perguntas)",
+    description:
+      "Defina o escopo, o limite de perguntas e as informacoes que sustentam o novo prompt juridico.",
+    fieldOrder: [
+      "perguntas",
+      "quantidadePerguntas",
+      "body.agentSettings.flow.companyOfferings",
+      "body.agentSettings.flow.briefingScope",
+      "body.agentSettings.flow.maxQuestions",
+      "body.agentSettings.flow.directedQuestionsList",
+      "body.agentSettings.flow.institutionalAdditionalInfo",
+    ],
+  },
+  "Tom de voz e mensagens-chave": {
+    title: "Tom de voz e mensagens-chave",
+    description:
+      "Escreva como o agente deve iniciar e encerrar as conversas e quais palavras prefere evitar.",
+    fieldOrder: [
+      "body.agentSettings.personality.greeting",
+      "body.agentSettings.personality.closing",
+      "body.agentSettings.personality.forbiddenWords.0",
+    ],
+  },
+  "Arquivos de apoio": {
+    title: "Arquivos de apoio",
+    description:
+      "Envie laudos, contratos, planilhas ou apresentacoes que o agente possa consultar durante o atendimento.",
+    fieldOrder: ["body.ragFiles."],
+  },
+};
+
+const EXACT_FIELD_SECTION = new Map<string, SectionLabel>();
+const DYNAMIC_FIELD_RULES = SECTION_RULES.flatMap((rule) => {
+  rule.exact?.forEach((key) => EXACT_FIELD_SECTION.set(key, rule.label));
+  return (rule.dynamic ?? []).map((dynamicRule) => ({
+    label: rule.label,
+    prefix: dynamicRule.prefix,
+    allowedFields: new Set(dynamicRule.allowedFields),
+  }));
+});
+
+const getSectionLabelForKey = (key: string): SectionLabel | null => {
+  const exact = EXACT_FIELD_SECTION.get(key);
+  if (exact) {
+    return exact;
+  }
+
+  for (const { prefix, allowedFields, label } of DYNAMIC_FIELD_RULES) {
+    if (!key.startsWith(prefix)) continue;
+    const remainder = key.slice(prefix.length);
+    const [index, field, ...extra] = remainder.split(".");
+    if (!index || Number.isNaN(Number.parseInt(index, 10))) {
+      continue;
+    }
+
+    if (!field || extra.length > 0) {
+      continue;
+    }
+
+    if (allowedFields.has(field)) {
+      return label;
+    }
+  }
+
+  return null;
+};
+
+const isOnboardingFieldKey = (key: string): boolean => {
+  if (key === "id" || key === "order") {
+    return false;
+  }
+
+  return getSectionLabelForKey(key) !== null;
+};
+
+const getFieldOrderValue = (label: SectionLabel, key: string): number => {
+  const metadata = SECTION_METADATA[label];
+  const order = metadata?.fieldOrder ?? [];
+
+  for (let index = 0; index < order.length; index++) {
+    const entry = order[index];
+    if (entry.endsWith(".")) {
+      if (key.startsWith(entry)) {
+        const remainder = key.slice(entry.length);
+        const [itemIndex, field] = remainder.split(".");
+        const parsedIndex = Number.parseInt(itemIndex, 10);
+        const base = Number.isFinite(parsedIndex) ? parsedIndex / 100 : 0;
+        const fieldWeight = field === "objective" ? 0.5 : 0;
+        return index + base + fieldWeight;
+      }
+    } else if (entry === key) {
+      return index;
+    }
+  }
+
+  return order.length + 1;
+};
+
+const sortSectionFields = (
+  label: SectionLabel,
+  fields: Array<[string, unknown]>,
+) =>
+  [...fields].sort((a, b) => {
+    const diff =
+      getFieldOrderValue(label, a[0]) - getFieldOrderValue(label, b[0]);
+    if (diff !== 0) {
+      return diff;
+    }
+    return a[0].localeCompare(b[0]);
+  });
+
 export default function ConfiguracoesPage() {
   const router = useRouter();
   const { data } = useOnboarding();
@@ -73,13 +307,15 @@ export default function ConfiguracoesPage() {
       results.forEach((config) => {
         initialEditing[config.id] = {};
         Object.entries(config).forEach(([key, value]) => {
-          if (key !== "id") {
-            initialEditing[config.id][key] = {
-              key,
-              value,
-              isEditing: false,
-            };
+          if (!isOnboardingFieldKey(key)) {
+            return;
           }
+
+          initialEditing[config.id][key] = {
+            key,
+            value,
+            isEditing: false,
+          };
         });
       });
       setEditingFields(initialEditing);
@@ -186,88 +422,65 @@ export default function ConfiguracoesPage() {
 
   // Mapeamento dos campos do Baserow para os nomes usados no onboarding
   const fieldNameMap: Record<string, string> = {
-    // Informações da empresa
-    "body.tenant.companyName": "Nome do escritório",
-    "body.tenant.businessHours": "Horários de atendimento",
-    "body.tenant.phoneNumber": "Número de telefone conectado à API",
+    "body.tenant.companyName": "Nome do escritorio",
+    "body.tenant.businessHours": "Horarios de atendimento",
     "body.tenant.wabaPhoneNumber": "Numero do WhatsApp conectado a Meta",
     "body.waba_phone_number": "Numero do WhatsApp conectado a Meta",
-    
-    // Endereço
     "body.tenant.address.street": "Rua",
     "body.tenant.address.city": "Cidade",
     "body.tenant.address.state": "Estado",
     "body.tenant.address.zipCode": "CEP",
-    
-    // Perfil do agente
-    "body.agentSettings.profile.agentName": "Nome do agente orquestrador",
+    "body.agentSettings.profile.agentName": "Nome do agente",
     "body.agentSettings.profile.language": "Idioma principal",
-    "body.agentSettings.profile.personalityDescription": "Descrição da personalidade",
-    "body.agentSettings.profile.expertiseArea": "Área de expertise",
-    
-    // Personalidade do agente
-    "body.agentSettings.personality.greeting": "Saudação inicial",
-    "body.agentSettings.personality.closing": "Frase de despedida",
-    "body.agentSettings.personality.forbiddenWords.0": "Palavras proibidas",
-    
-    // Etapas do agente
-    "body.agentSettings.stages.0.stage": "Etapa 1 - Nome",
-    "body.agentSettings.stages.0.agent": "Etapa 1 - Agente",
-    "body.agentSettings.stages.0.mission": "Etapa 1 - Missão",
-    "body.agentSettings.stages.0.script": "Etapa 1 - Script",
-    "body.agentSettings.stages.1.stage": "Etapa 2 - Nome",
-    "body.agentSettings.stages.1.agent": "Etapa 2 - Agente",
-    "body.agentSettings.stages.1.mission": "Etapa 2 - Missão",
-    "body.agentSettings.stages.1.script": "Etapa 2 - Script",
-    "body.agentSettings.stages.2.stage": "Etapa 3 - Nome",
-    "body.agentSettings.stages.2.agent": "Etapa 3 - Agente",
-    "body.agentSettings.stages.2.mission": "Etapa 3 - Missão",
-    "body.agentSettings.stages.2.script": "Etapa 3 - Script",
-    "body.agentSettings.stages.3.stage": "Etapa 4 - Nome",
-    "body.agentSettings.stages.3.agent": "Etapa 4 - Agente",
-    "body.agentSettings.stages.3.mission": "Etapa 4 - Missão",
-    "body.agentSettings.stages.3.script": "Etapa 4 - Script",
-    
-    // Fluxo do agente
+    "body.agentSettings.profile.personalityDescription": "Descricao da personalidade",
+    "body.agentSettings.profile.expertiseArea": "Area de expertise",
     "body.agentSettings.flow.briefingScope": "Escopo do briefing",
     "body.agentSettings.flow.maxQuestions": "Limite maximo de perguntas",
-    "body.agentSettings.flow.directedQuestions.0.prompt": "Pergunta direcionada 1",
-    "body.agentSettings.flow.directedQuestions.0.objective": "Objetivo da pergunta direcionada 1",
-    "body.agentSettings.flow.directedQuestions.1.prompt": "Pergunta direcionada 2",
-    "body.agentSettings.flow.directedQuestions.1.objective": "Objetivo da pergunta direcionada 2",
-    "body.agentSettings.flow.directedQuestions.2.prompt": "Pergunta direcionada 3",
-    "body.agentSettings.flow.directedQuestions.2.objective": "Objetivo da pergunta direcionada 3",
-    "body.agentSettings.flow.directedQuestions.3.prompt": "Pergunta direcionada 4",
-    "body.agentSettings.flow.directedQuestions.3.objective": "Objetivo da pergunta direcionada 4",
-    "body.agentSettings.flow.directedQuestions.4.prompt": "Pergunta direcionada 5",
-    "body.agentSettings.flow.directedQuestions.4.objective": "Objetivo da pergunta direcionada 5",
+    "perguntas": "Perguntas direcionadas",
+    "quantidadePerguntas": "Quantidade de perguntas",
+    "body.agentSettings.flow.directedQuestionsList": "Perguntas direcionadas (JSON)",
     "body.agentSettings.flow.institutionalAdditionalInfo": "Informacoes institucionais adicionais",
-
-    // Auth
-    "body.auth.institutionId": "ID da Instituição",
+    "body.agentSettings.flow.companyOfferings": "Informacoes institucionais adicionais (legado)",
+    "body.agentSettings.personality.greeting": "Saudacao inicial",
+    "body.agentSettings.personality.closing": "Frase de despedida",
+    "body.agentSettings.personality.forbiddenWords.0": "Palavras proibidas",
   };
 
   const formatFieldName = (fieldName: string): string => {
-    // Verificar se existe mapeamento direto
     if (fieldNameMap[fieldName]) {
       return fieldNameMap[fieldName];
     }
-    
-    // Se não houver mapeamento, formatar automaticamente
+
+    const questionMatch = fieldName.match(
+      /^body\.agentSettings\.flow\.directedQuestions\.(\d+)\.(prompt|objective)$/,
+    );
+    if (questionMatch) {
+      const index = Number.parseInt(questionMatch[1], 10) + 1;
+      const label =
+        questionMatch[2] === "objective" ? "Objetivo" : "Texto da pergunta";
+      return `Pergunta ${index} - ${label}`;
+    }
+
+    const ragMatch = fieldName.match(
+      /^body\.ragFiles\.(\d+)\.(name|mime|size|storagePath|tempUrl)$/,
+    );
+    if (ragMatch) {
+      const index = Number.parseInt(ragMatch[1], 10) + 1;
+      const propertyMap: Record<string, string> = {
+        "name": "Nome",
+        "mime": "Tipo do arquivo",
+        "size": "Tamanho (bytes)",
+        "storagePath": "Caminho",
+        "tempUrl": "URL temporaria",
+      };
+      const propertyLabel =
+        propertyMap[ragMatch[2]] ?? ragMatch[2];
+      return `Arquivo ${index} - ${propertyLabel}`;
+    }
+
     return fieldName
       .replace(/body\./g, "")
-      .replace(/tenant\./g, "Empresa → ")
-      .replace(/agentSettings\./g, "Agente → ")
-      .replace(/profile\./g, "Perfil → ")
-      .replace(/personality\./g, "Personalidade → ")
-      .replace(/stages\./g, "Etapas → ")
-      .replace(/flow\./g, "Fluxo → ")
-      .replace(/address\./g, "Endereço → ")
-      .replace(/auth\./g, "Autenticação → ")
-      .replace(/\./g, " → ")
-      .replace(/([A-Z])/g, " $1")
-      .replace(/^./, (str) => str.toUpperCase())
-      .trim();
+      .replace(/\./g, " -> ");
   };
 
   const formatValue = (value: unknown): string => {
@@ -310,6 +523,45 @@ export default function ConfiguracoesPage() {
 
   const transformBaserowToPayload = (config: BaserowConfigRow): OnboardingPayload => {
     const row = config as Record<string, unknown>;
+
+    const parseQuestionList = (value: unknown): string[] => {
+      if (!value) {
+        return [];
+      }
+      if (Array.isArray(value)) {
+        return value
+          .map((entry) => {
+            if (typeof entry === "string") {
+              return entry.trim();
+            }
+            if (entry && typeof entry === "object") {
+              const legacy = entry as { prompt?: string; objective?: string };
+              return String(legacy.prompt ?? legacy.objective ?? "").trim();
+            }
+            return "";
+          })
+          .filter((question) => question.length > 0);
+      }
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (!trimmed) {
+          return [];
+        }
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) {
+            return parseQuestionList(parsed);
+          }
+        } catch {
+          // ignore parse error
+        }
+        return trimmed
+          .split(/\r?\n|,|;/)
+          .map((entry) => entry.trim())
+          .filter((entry) => entry.length > 0);
+      }
+      return [];
+    };
     
     // Função auxiliar para converter valor para número
     const asNumber = (value: unknown): number | null => {
@@ -392,49 +644,48 @@ export default function ConfiguracoesPage() {
     // Garantir que forbiddenWords tenha pelo menos 1 item
     const finalForbiddenWords = forbiddenWords.length > 0 ? forbiddenWords : ["palavra"];
 
-    // Extrair stages (0, 1, 2, 3) - cada stage precisa: agent min 2, mission min 10, script min 10
-    const stageNames = ["Saudação", "Depoimento", "Perguntas", "Fechamento"] as const;
-    const stages = [];
-    for (let i = 0; i < 4; i++) {
-      const stageValue = row[`body.agentSettings.stages.${i}.stage`] as string;
-      const agentValue = row[`body.agentSettings.stages.${i}.agent`] as string;
-      const missionValue = row[`body.agentSettings.stages.${i}.mission`] as string;
-      const scriptValue = row[`body.agentSettings.stages.${i}.script`] as string;
-      
-      const stage = stageValue && stageNames.includes(stageValue as typeof stageNames[number])
-        ? (stageValue as typeof stageNames[number])
-        : stageNames[i];
-      
-      const agent = ensureMinLength(agentValue, 2, `Agente ${i + 1}`);
-      const mission = ensureMinLength(missionValue, 10, `Missão da etapa ${i + 1}: realizar a tarefa necessária`);
-      const script = ensureMinLength(scriptValue, 10, `Script da etapa ${i + 1}: seguir o protocolo estabelecido`);
-      
-      stages.push({
-        stage,
-        agent,
-        mission,
-        script,
-      });
-    }
-
     // Extrair flow simplificado
-    const briefingScope = ensureMinLength(row["body.agentSettings.flow.briefingScope"], 10, "Briefing juridico padrao");
+    const rawBriefingScope =
+      row["body.agentSettings.flow.briefingScope"] ??
+      row["body.agentSettings.flow.greetingsScript"];
+    const briefingScope = ensureMinLength(rawBriefingScope, 10, "Briefing juridico padrao");
     const rawMaxQuestions = Number(row["body.agentSettings.flow.maxQuestions"]);
-    const maxQuestions = Number.isFinite(rawMaxQuestions) && rawMaxQuestions > 0 ? rawMaxQuestions : 5;
+    const fallbackMaxQuestions = asNumber(row["quantidadePerguntas"]);
+    const maxQuestions =
+      Number.isFinite(rawMaxQuestions) && rawMaxQuestions > 0
+        ? rawMaxQuestions
+        : fallbackMaxQuestions && fallbackMaxQuestions > 0
+          ? fallbackMaxQuestions
+          : 5;
 
-    const directedQuestions: AgentFlow["directedQuestions"] = [];
-    const MAX_DIRECTED_QUESTIONS = 5;
-    for (let i = 0; i < MAX_DIRECTED_QUESTIONS; i++) {
-      const promptValue = row[`body.agentSettings.flow.directedQuestions.${i}.prompt`] as string;
-      const objectiveValue = row[`body.agentSettings.flow.directedQuestions.${i}.objective`] as string;
-      const prompt = (promptValue || "").trim();
-      const objective = (objectiveValue || "").trim();
-      if (prompt.length >= 3 && objective.length >= 3) {
-        directedQuestions.push({ prompt, objective });
+    let directedQuestions: AgentFlow["directedQuestions"] = parseQuestionList(
+      row["body.agentSettings.flow.directedQuestionsList"],
+    );
+    if (!directedQuestions.length) {
+      directedQuestions = parseQuestionList(row["perguntas"]);
+    }
+    if (!directedQuestions.length) {
+      const MAX_DIRECTED_QUESTIONS = 5;
+      const fallback: string[] = [];
+      for (let i = 0; i < MAX_DIRECTED_QUESTIONS; i++) {
+        const promptValue =
+          (row[`body.agentSettings.flow.directedQuestions.${i}.prompt`] as string) ??
+          (row[`body.agentSettings.flow.viabilityQuestions.${i}.prompt`] as string);
+        const objectiveValue =
+          (row[`body.agentSettings.flow.directedQuestions.${i}.objective`] as string) ??
+          (row[`body.agentSettings.flow.viabilityQuestions.${i}.objective`] as string);
+        const question = (promptValue || objectiveValue || "").trim();
+        if (question.length >= 3) {
+          fallback.push(question);
+        }
       }
+      directedQuestions = fallback;
     }
 
-    const institutionalAdditionalInfo = (row["body.agentSettings.flow.institutionalAdditionalInfo"] as string)?.trim() || "";
+    const institutionalAdditionalInfo =
+      (row["body.agentSettings.flow.institutionalAdditionalInfo"] as string)?.trim() ||
+      (row["body.agentSettings.flow.companyOfferings"] as string)?.trim() ||
+      "";
 
 
 
@@ -456,10 +707,11 @@ export default function ConfiguracoesPage() {
         },
       },
       waba_phone_number: wabaPhoneNumber,
-    agentSettings: {
+      agentSettings: {
         profile: {
           agentName,
-          language: language as "Português (Brasil)" | "Inglês (EUA)" | "Espanhol (Latam)",
+          language:
+            language as "Português (Brasil)" | "Inglês (EUA)" | "Espanhol (Latam)",
           personalityDescription,
           expertiseArea,
         },
@@ -468,7 +720,6 @@ export default function ConfiguracoesPage() {
           closing,
           forbiddenWords: finalForbiddenWords,
         },
-        stages,
         flow: {
           briefingScope,
           directedQuestions,
@@ -643,12 +894,12 @@ export default function ConfiguracoesPage() {
                 Visualize e edite todas as configurações que você aplicou no sistema.
               </p>
             </div>
-            <Button 
+<Button 
               onClick={handleSendToWebhook} 
               disabled={isLoading || isSendingToWebhook || configs.length === 0}
               className="bg-primary text-primary-foreground hover:bg-primary/90 whitespace-nowrap"
             >
-              {isSendingToWebhook ? "Enviando..." : "Atualizar e Enviar ao Webhook"}
+              {isSendingToWebhook ? "Enviando..." : "Atualizar e Enviar"}
             </Button>
           </div>
         </section>
@@ -699,40 +950,26 @@ export default function ConfiguracoesPage() {
               (rowData["body.tenant.companyName"] as string | undefined) ||
               fallbackCompanyName;
 
-            const sections: Record<string, Array<[string, unknown]>> = {
-              "Informacoes da Empresa": [],
-              "Endereco": [],
-              "Perfil do Agente": [],
-              "Personalidade do Agente": [],
-              "Etapas do Agente": [],
-              "Fluxo de Atendimento": [],
-              "Outros": [],
-            };
+            const sections = SECTION_ORDER.reduce(
+              (acc, label) => {
+                acc[label] = [];
+                return acc;
+              },
+              {} as Record<SectionLabel, Array<[string, unknown]>>,
+            );
 
-            Object.entries(config)
-              .filter(([key]) => key !== "id" && key !== "order")
-              .forEach(([key, value]) => {
-                if (
-                  key.startsWith("body.tenant.companyName") ||
-                  key.startsWith("body.tenant.businessHours") ||
-                  key.startsWith("body.tenant.phoneNumber") ||
-                  key.startsWith("body.tenant.wabaPhoneNumber")
-                ) {
-                  sections["Informacoes da Empresa"].push([key, value]);
-                } else if (key.startsWith("body.tenant.address.")) {
-                  sections["Endereco"].push([key, value]);
-                } else if (key.startsWith("body.agentSettings.profile.")) {
-                  sections["Perfil do Agente"].push([key, value]);
-                } else if (key.startsWith("body.agentSettings.personality.")) {
-                  sections["Personalidade do Agente"].push([key, value]);
-                } else if (key.startsWith("body.agentSettings.stages.")) {
-                  sections["Etapas do Agente"].push([key, value]);
-                } else if (key.startsWith("body.agentSettings.flow.")) {
-                  sections["Fluxo de Atendimento"].push([key, value]);
-                } else {
-                  sections["Outros"].push([key, value]);
-                }
-              });
+            Object.entries(config).forEach(([key, value]) => {
+              if (!isOnboardingFieldKey(key)) {
+                return;
+              }
+              const sectionLabel = getSectionLabelForKey(key);
+              if (!sectionLabel) {
+                return;
+              }
+              sections[sectionLabel].push([key, value]);
+            });
+
+            let sectionRenderIndex = 0;
 
             return (
               <AccordionItem
@@ -771,37 +1008,49 @@ export default function ConfiguracoesPage() {
                       </div>
                     </CardHeader>
                     <CardContent>
-                      <Accordion type="single" collapsible className="w-full">
-                        {Object.entries(sections)
-                          .filter(([, fields]) => fields.length > 0)
-                          .map(([sectionName, fields], sectionIndex) => (
-                            <AccordionItem
-                              key={sectionName}
-                              value={"section-" + String(config.id ?? index) + "-" + String(sectionIndex)}
-                              className="border-b border-border/50"
-                            >
-                              <AccordionTrigger className="text-left font-semibold hover:no-underline">
-                                {sectionName}
-                              </AccordionTrigger>
-                              <AccordionContent>
-                                <div className="space-y-4 pt-2">
-                                  {fields.map(([key, value]) => (
-                                    <div key={key} className="space-y-2">
-                                      <div className="flex items-center justify-between">
-                                        <Label className="text-sm font-semibold text-foreground">
-                                          {formatFieldName(key)}
-                                        </Label>
-                                      </div>
-                                      <div className="rounded-md border border-border/50 bg-muted/30 p-3">
-                                        {renderFieldValue(config.id, key, value)}
-                                      </div>
-                                    </div>
-                                  ))}
+                      {SECTION_ORDER.map((label) => {
+                        const fields = sections[label];
+                        if (!fields.length) {
+                          return null;
+                        }
+                        const blockIndex = sectionRenderIndex++;
+                        const metadata = SECTION_METADATA[label];
+                        const sortedFields = sortSectionFields(label, fields);
+
+                        return (
+                          <div
+                            key={label}
+                            className={`space-y-4 ${
+                              blockIndex > 0 ? "mt-6 border-t border-border/60 pt-6" : ""
+                            }`}
+                          >
+                            <div className="space-y-1">
+                              <p className="text-base font-semibold text-foreground">
+                                {metadata?.title ?? label}
+                              </p>
+                              {metadata?.description ? (
+                                <p className="text-sm text-muted-foreground">
+                                  {metadata.description}
+                                </p>
+                              ) : null}
+                            </div>
+                            <div className="space-y-4">
+                              {sortedFields.map(([key, value]) => (
+                                <div key={key} className="space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <Label className="text-sm font-semibold text-foreground">
+                                      {formatFieldName(key)}
+                                    </Label>
+                                  </div>
+                                  <div className="rounded-md border border-border/50 bg-muted/30 p-3">
+                                    {renderFieldValue(config.id, key, value)}
+                                  </div>
                                 </div>
-                              </AccordionContent>
-                            </AccordionItem>
-                          ))}
-                      </Accordion>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </CardContent>
                   </Card>
                 </AccordionContent>
@@ -821,7 +1070,7 @@ export default function ConfiguracoesPage() {
               disabled={isLoading || isSendingToWebhook || configs.length === 0}
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              {isSendingToWebhook ? "Enviando..." : "Atualizar e Enviar ao Webhook"}
+              {isSendingToWebhook ? "Enviando..." : "Atualizar e Enviar"}
             </Button>
           </CardContent>
         </Card>

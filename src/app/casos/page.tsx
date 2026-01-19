@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -23,7 +23,7 @@ import { cn } from "@/lib/utils";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import { useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/ui/loading-screen";
-import { MessageCircle } from "lucide-react";
+import { MessageCircle, RefreshCw } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 
 type CaseStage = "DepoimentoInicial" | "EtapaPerguntas" | "EtapaFinal";
@@ -57,6 +57,9 @@ export default function CasosPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [updatingCaseId, setUpdatingCaseId] = useState<number | null>(null);
   const [pauseErrors, setPauseErrors] = useState<Record<number, string | null>>({});
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const isSysAdmin = data.auth?.institutionId === 4;
   const [selectedInstitution, setSelectedInstitution] = useState<string>("all");
   const institutionOptions = useMemo(() => {
@@ -71,13 +74,22 @@ export default function CasosPage() {
   }, [cases]);
 
   const visibleCases = useMemo(() => {
+    let filteredCases = cases;
+    
     if (!isSysAdmin) {
-      return cases;
+      filteredCases = cases;
+    } else {
+      if (selectedInstitution !== "all") {
+        filteredCases = cases.filter((row) => String(row.InstitutionID ?? "") === selectedInstitution);
+      }
     }
-    if (selectedInstitution === "all") {
-      return cases;
-    }
-    return cases.filter((row) => String(row.InstitutionID ?? "") === selectedInstitution);
+    
+    // Ordenar por ID (maior ID primeiro)
+    return filteredCases.sort((a, b) => {
+      const idA = a.CaseId || a.id || 0;
+      const idB = b.CaseId || b.id || 0;
+      return idB - idA; // Ordenar do maior para o menor ID
+    });
   }, [cases, isSysAdmin, selectedInstitution]);
 
   useEffect(() => {
@@ -99,7 +111,7 @@ export default function CasosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.auth]);
 
-  const loadCases = async () => {
+  const loadCases = async (page: number = 1, append: boolean = false) => {
     if (!data.auth?.institutionId) {
       setError("ID da instituiÃ§Ã£o não encontrado");
       setIsLoading(false);
@@ -107,12 +119,26 @@ export default function CasosPage() {
     }
 
     try {
-      setIsLoading(true);
+      if (!append) {
+        setIsLoading(true);
+        setCurrentPage(1);
+        setHasMore(true);
+        setCases([]);
+      } else {
+        setIsLoadingMore(true);
+      }
       setError(null);
-      console.log("Carregando casos do Baserow para institutionId:", data.auth.institutionId);
-      const results = await getBaserowCases(data.auth.institutionId);
-      console.log("Casos encontrados:", results);
-      setCases(results);
+      console.log("Carregando casos do Baserow para institutionId:", data.auth.institutionId, "page:", page);
+      const response = await getBaserowCases({ institutionId: data.auth.institutionId, page, pageSize: 50 });
+      console.log("Casos encontrados:", response);
+      
+      if (append) {
+        setCases(prev => [...prev, ...response.results]);
+        setHasMore(response.results.length === 50);
+      } else {
+        setCases(response.results);
+        setHasMore(response.results.length === 50);
+      }
     } catch (err) {
       console.error("Erro ao carregar casos:", err);
       setError(
@@ -120,6 +146,15 @@ export default function CasosPage() {
       );
     } finally {
       setIsLoading(false);
+      setIsLoadingMore(false);
+    }
+  };
+
+  const loadMoreCases = () => {
+    if (hasMore && !isLoadingMore) {
+      const nextPage = currentPage + 1;
+      setCurrentPage(nextPage);
+      loadCases(nextPage, true);
     }
   };
 
@@ -182,7 +217,7 @@ export default function CasosPage() {
               <CardDescription>{error}</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button onClick={loadCases}>Tentar Novamente</Button>
+              <Button onClick={() => loadCases()}>Tentar Novamente</Button>
             </CardContent>
           </Card>
         </div>
@@ -201,7 +236,7 @@ export default function CasosPage() {
             Casos de Atendimento
           </h1>
           <p className="text-base text-zinc-600 dark:text-zinc-300">
-            Visualize e gerencie todos os casos de atendimento.
+            Visualize e gerencie todos os casos de atendimento. Ordenados do mais recente para o mais antigo.
           </p>
         </section>
 
@@ -239,8 +274,25 @@ export default function CasosPage() {
                     </select>
                   </div>
                 )}
-                <Button variant="outline" onClick={loadCases}>
-                  Atualizar
+                {hasMore && (
+                  <Button 
+                    onClick={loadMoreCases}
+                    disabled={isLoadingMore}
+                    variant="outline"
+                    size="sm"
+                  >
+                    {isLoadingMore ? (
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Carregar mais ({50 * currentPage})
+                      </>
+                    )}
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" onClick={() => loadCases()}>
+                  <RefreshCw className="h-4 w-4" />
                 </Button>
               </div>
             </div>
@@ -280,6 +332,11 @@ export default function CasosPage() {
                             )}
                           </div>
                           <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+                            {caseRow.Data && (
+                              <span className="text-xs">
+                                Data: {caseRow.Data}
+                              </span>
+                            )}
                             {caseRow.CustumerPhone ? (
                               <a
                                 href={`https://app.riasistemas.com.br/whatsapp${caseRow.CustumerPhone ? `?phone=${encodeURIComponent(caseRow.CustumerPhone)}` : ""}`}
@@ -346,6 +403,11 @@ export default function CasosPage() {
                     </div>
                   );
                 })}
+              </div>
+            )}
+            {!hasMore && visibleCases.length > 0 && (
+              <div className="py-4 text-center text-muted-foreground text-sm">
+                ✅ Todos os {visibleCases.length} casos foram carregados
               </div>
             )}
           </CardContent>

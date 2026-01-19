@@ -5,8 +5,9 @@ import { useWizard } from "react-use-wizard";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { buildOnboardingPayload } from "@/lib/validations";
-import { submitOnboarding } from "@/services/api";
+import { buildBaserowRowFromPayload } from "@/lib/baserow";
+import { buildOnboardingPayload, type OnboardingPayload } from "@/lib/validations";
+import { createBaserowConfig, getBaserowConfigs, submitOnboarding, updateBaserowConfig } from "@/services/api";
 
 import { useOnboarding } from "./onboarding-context";
 
@@ -16,6 +17,27 @@ export const StepConfirmation = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
+
+  const syncBaserowConfig = async (payload: OnboardingPayload) => {
+    if (!data.auth?.institutionId) {
+      console.warn("Nao foi possivel sincronizar com o Baserow: institutionId ausente");
+      return;
+    }
+
+    const baserowPayload = buildBaserowRowFromPayload(payload);
+    const baserowRows = await getBaserowConfigs(data.auth.institutionId);
+    if (baserowRows.length === 0) {
+      await createBaserowConfig(baserowPayload);
+      return;
+    }
+
+    const latestRow = baserowRows.reduce(
+      (current, candidate) => (candidate.id > current.id ? candidate : current),
+      baserowRows[0],
+    );
+
+    await updateBaserowConfig(latestRow.id, baserowPayload);
+  };
 
   const handleSubmit = async () => {
     setIsSubmitting(true);
@@ -27,6 +49,8 @@ export const StepConfirmation = () => {
       console.log("Payload construído:", payload);
       const response = await submitOnboarding(payload);
       console.log("Resposta do servidor:", response.data);
+      console.log("Sincronizando configurações no Baserow...");
+      await syncBaserowConfig(payload);
       setStatus("success");
       
       // Avançar para a próxima etapa (Conexões) após 2 segundos
@@ -41,10 +65,10 @@ export const StepConfirmation = () => {
       } else if (typeof error === "object" && error !== null && "response" in error) {
         const axiosError = error as { response?: { data?: { message?: string } } };
         setErrorMessage(
-          axiosError.response?.data?.message || "Não foi possível registrar o onboarding"
+          axiosError.response?.data?.message || "Nǜo foi poss��vel registrar o onboarding"
         );
       } else {
-        setErrorMessage("Não foi possível registrar o onboarding");
+        setErrorMessage("Nǜo foi poss��vel registrar o onboarding");
       }
     } finally {
       setIsSubmitting(false);
@@ -112,23 +136,6 @@ export const StepConfirmation = () => {
 
   if (data.includedSteps.agentFlow) {
     sections.push({
-      key: "agent-stages",
-      content: (
-        <div className="space-y-2">
-          <h4 className="text-sm font-semibold text-muted-foreground">Fluxo por agentes</h4>
-          {data.agentStages.map((stage) => (
-            <div key={stage.stage} className="rounded-md border border-border/40 p-3 text-sm">
-              <p className="font-medium text-foreground">{stage.stage}</p>
-              <p className="text-xs text-muted-foreground">Responsável: {stage.agent}</p>
-              <p className="text-xs text-muted-foreground mt-1">Missão: {stage.mission}</p>
-              <p className="text-xs text-muted-foreground mt-1">Roteiro: {stage.script}</p>
-            </div>
-          ))}
-        </div>
-      ),
-    });
-
-    sections.push({
       key: "agent-flow",
       content: (
         <div className="space-y-3">
@@ -141,23 +148,22 @@ export const StepConfirmation = () => {
             <p className="text-xs font-semibold uppercase text-muted-foreground">Limite de perguntas</p>
             <p className="mt-1 text-foreground">{data.agentFlow.maxQuestions} perguntas</p>
           </div>
-          {data.agentFlow.directedQuestions.length > 0 ? (
-            <div className="rounded-md border border-border/40 p-3 text-sm">
-              <p className="text-xs font-semibold uppercase text-muted-foreground">Perguntas direcionadas</p>
+          <div className="rounded-md border border-border/40 p-3 text-sm">
+            <p className="text-xs font-semibold uppercase text-muted-foreground">Perguntas direcionadas</p>
+            {data.agentFlow.directedQuestions.length > 0 ? (
               <ul className="mt-2 space-y-2">
                 {data.agentFlow.directedQuestions.map((question, index) => (
-                  <li key={`${question.prompt}-${index}`}>
-                    <p className="font-medium">Q{index + 1}: {question.prompt}</p>
-                    <p className="text-xs text-muted-foreground">Objetivo: {question.objective}</p>
+                  <li key={`${question}-${index}`}>
+                    <p className="font-medium">Q{index + 1}: {question}</p>
                   </li>
                 ))}
               </ul>
-            </div>
-          ) : (
-            <div className="rounded-md border border-dashed border-border/60 p-3 text-xs text-muted-foreground">
-              Nenhuma pergunta direcionada cadastrada. O agente gera perguntas automáticas com base no nicho configurado.
-            </div>
-          )}
+            ) : (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Nenhuma pergunta configurada. O agente gera perguntas automaticamente com base no nicho configurado.
+              </p>
+            )}
+          </div>
           {data.agentFlow.institutionalAdditionalInfo ? (
             <div className="rounded-md bg-muted/40 p-3 text-sm">
               <p className="text-xs font-semibold uppercase text-muted-foreground">Informações institucionais adicionais</p>

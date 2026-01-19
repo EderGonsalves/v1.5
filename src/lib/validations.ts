@@ -62,7 +62,7 @@ export const agentProfileSchema = z.object({
 
 
 
-export const stageNames = ["SaudaAAo", "Depoimento", "Perguntas", "Fechamento"] as const;
+export const stageNames = ["Saudação", "Depoimento", "Perguntas", "Fechamento"] as const;
 
 
 
@@ -96,56 +96,31 @@ export const commitmentTypes = ["contrato", "agendamento"] as const;
 
 
 
-export const directedQuestionSchema = z.object({
-
-  prompt: z.string().min(5, "Descreva a pergunta com clareza"),
-
-  objective: z.string().min(5, "Explique o motivo da pergunta"),
-
-});
+export const directedQuestionSchema = z
+  .string()
+  .min(5, "Descreva a pergunta com clareza");
 
 
 
 export const agentFlowSchema = z.object({
-
   briefingScope: z
-
     .string()
-
     .min(10, "Explique qual e o foco do briefing")
-
-    .transform((value) => value.trim()),
+    .trim(),
 
   directedQuestions: z
-
     .array(directedQuestionSchema)
+    .max(20, "Cadastre no maximo 20 perguntas"),
 
-    .max(20, "Cadastre no maximo 20 perguntas")
-
-    .default([]),
-
-  maxQuestions: z.coerce
-
+  maxQuestions: z
     .number({
-
-      invalid_type_error: "Informe o limite maximo de perguntas",
-
+      message: "Informe o limite maximo de perguntas",
     })
-
     .int("Use apenas numeros inteiros")
-
     .min(1, "Defina ao menos uma pergunta")
-
     .max(20, "Use no maximo 20 perguntas"),
 
-  institutionalAdditionalInfo: z
-
-    .string()
-
-    .optional()
-
-    .transform((value) => (value ?? "").trim()),
-
+  institutionalAdditionalInfo: z.string().trim(),
 });
 
 
@@ -434,25 +409,15 @@ export const defaultAgentPersonality: AgentPersonality = {
 
 export const defaultAgentFlow: AgentFlow = {
   briefingScope:
-    "Coletar dados essenciais para briefings jurídicos antes da revisão humana, garantindo que o cliente saiba que atuamos em todo o Brasil.",
+    "Coletar dados essenciais para briefings juridicos antes da revisao humana, garantindo que o cliente saiba que atuamos em todo o Brasil.",
   directedQuestions: [
-    {
-      prompt: "Quando o problema jurídico começou e qual foi o gatilho principal?",
-      objective: "Organizar a linha do tempo inicial e identificar o contexto antes das perguntas automáticas.",
-    },
-    {
-      prompt: "Você já acionou algum órgão, advogado ou protocolo oficial?",
-      objective: "Saber se existe histórico formal que precise ser anexado ao briefing.",
-    },
+    "Quando o problema juridico comecou e qual foi o gatilho principal?",
+    "Voce ja acionou algum orgao, advogado ou protocolo oficial?",
   ],
   maxQuestions: 6,
   institutionalAdditionalInfo:
-    "Atendimento 100% digital com especialistas dedicados e canal direto para documentação complementar.",
+    "Atendimento 100% digital com especialistas dedicados e canal direto para documentacao complementar.",
 };
-
-
-
-
 
 export const defaultOnboardingData: OnboardingData = {
 
@@ -567,15 +532,9 @@ export const onboardingPayloadSchema = z.object({
   waba_phone_number: companyInfoSchema.shape.wabaPhoneNumber,
 
   agentSettings: z.object({
-
     profile: agentProfileSchema,
-
     personality: agentPersonalitySchema,
-
-    stages: agentStagesFormSchema.shape.stages,
-
     flow: agentFlowSchema,
-
   }),
 
   ragFiles: z.array(ragFileSchema),
@@ -639,15 +598,9 @@ export const buildOnboardingPayload = (
     waba_phone_number: data.companyInfo.wabaPhoneNumber,
 
     agentSettings: {
-
       profile: data.agentProfile,
-
       personality: data.agentPersonality,
-
-      stages: data.agentStages,
-
       flow: data.agentFlow,
-
     },
 
     ragFiles: data.ragFiles,

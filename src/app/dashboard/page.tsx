@@ -20,6 +20,52 @@ import {
 import { DashboardContent } from "@/components/dashboard/DashboardContent";
 import { LoadingScreen } from "@/components/ui/loading-screen";
 
+type LegacyDirectedQuestion = { prompt?: string; objective?: string };
+
+const normalizeQuestionList = (value: unknown): string[] => {
+  if (!value) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => {
+        if (typeof entry === "string") {
+          return entry.trim();
+        }
+        if (entry && typeof entry === "object") {
+          const legacy = entry as LegacyDirectedQuestion;
+          return String(legacy.prompt ?? legacy.objective ?? "").trim();
+        }
+        return "";
+      })
+      .filter((question) => question.length > 0);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return normalizeQuestionList(parsed);
+      }
+    } catch {
+      // Ignora falha no JSON e tenta quebrar por linha
+    }
+
+    return trimmed
+      .split(/\r?\n|,|;/)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+  }
+
+  return [];
+};
+
 const DashboardPageContent = () => {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -60,17 +106,31 @@ const DashboardPageContent = () => {
 
       type LegacyFlow = Partial<AgentFlow> & {
         greetingsScript?: string;
-        viabilityQuestions?: AgentFlow["directedQuestions"];
+        viabilityQuestions?: unknown;
+        perguntas?: unknown;
+        directedQuestionsList?: unknown;
       };
       const rawFlow: LegacyFlow =
         (data.agentSettings?.flow as LegacyFlow) || {};
 
+      const questionSources = [
+        rawFlow.directedQuestions,
+        rawFlow.directedQuestionsList,
+        rawFlow.perguntas,
+        rawFlow.viabilityQuestions,
+      ];
+      let directedQuestions: string[] = [];
+      for (const source of questionSources) {
+        const parsed = normalizeQuestionList(source);
+        if (parsed.length > 0) {
+          directedQuestions = parsed;
+          break;
+        }
+      }
+
       const normalizedAgentFlow: AgentFlow = {
         briefingScope: rawFlow.briefingScope || rawFlow.greetingsScript || "",
-        directedQuestions:
-          rawFlow.directedQuestions && rawFlow.directedQuestions.length > 0
-            ? rawFlow.directedQuestions
-            : rawFlow.viabilityQuestions || [],
+        directedQuestions,
         maxQuestions:
           typeof rawFlow.maxQuestions === "number" && rawFlow.maxQuestions > 0
             ? rawFlow.maxQuestions

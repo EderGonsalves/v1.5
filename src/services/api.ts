@@ -592,7 +592,7 @@ export const updateBaserowConfig = async (
     console.log("Atualizando linha do Baserow:", rowId, "Dados:", data);
     
     // O Baserow espera os campos com os nomes exatos como "body.auth.institutionId"
-    // NÃ£o precisamos transformar nada, apenas enviar os dados como estÃ£o
+    // Não precisamos transformar nada, apenas enviar os dados como estão
     const response = await axios.patch(url, data, {
       headers: {
         Authorization: `Token ${BASEROW_API_KEY}`,
@@ -604,29 +604,198 @@ export const updateBaserowConfig = async (
     console.log("Linha atualizada com sucesso:", response.data);
     return response.data;
   } catch (error) {
-    console.error("Erro ao atualizar configuraÃ§Ã£o do Baserow:", error);
+    console.error("Erro ao atualizar configuração do Baserow:", error);
     if (axios.isAxiosError(error)) {
       if (error.response) {
         console.error("Detalhes do erro:", error.response.data);
         const errorMessage =
-          error.response.data?.message || error.message || "Erro ao atualizar configuraÃ§Ã£o do Baserow";
+          error.response.data?.message || error.message || "Erro ao atualizar configuração do Baserow";
         throw new Error(errorMessage);
       } else if (error.request) {
-        throw new Error("NÃ£o foi possÃ­vel conectar ao Baserow");
+        throw new Error("Não foi possível conectar ao Baserow");
       }
-      throw new Error(error.message || "Erro ao configurar a requisiÃ§Ã£o");
+      throw new Error(error.message || "Erro ao configurar a requisição");
     }
-    throw new Error(error instanceof Error ? error.message : "Erro desconhecido ao atualizar configuraÃ§Ã£o");
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido ao atualizar configuração");
   }
 };
 
+export const updateIaAtivada = async (
+  institutionId: number,
+  iaAtivada: "sim" | "não",
+): Promise<BaserowConfigRow> => {
+  try {
+    console.log("Atualizando ia_ativada para institutionId:", institutionId, "Valor:", iaAtivada);
+    
+    // Buscar a linha mais recente para o institutionId
+    const configs = await getBaserowConfigs(institutionId);
+    
+    if (!configs.length) {
+      throw new Error("Nenhuma configuração encontrada para o institutionId");
+    }
+    
+    // Pegar a linha mais recente (maior ID)
+    const latestRow = configs.reduce(
+      (current, candidate) => (candidate.id > current.id ? candidate : current),
+      configs[0],
+    );
+    
+    console.log("Atualizando linha:", latestRow.id, "com ia_ativada:", iaAtivada);
+    
+    // Atualizar o campo ia_ativada
+    const updatedRow = await updateBaserowConfig(latestRow.id, {
+      ia_ativada: iaAtivada,
+    });
+    
+    console.log("Campo ia_ativada atualizado com sucesso:", updatedRow);
+    return updatedRow;
+  } catch (error) {
+    console.error("Erro ao atualizar ia_ativada:", error);
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Erro desconhecido ao atualizar ia_ativada");
+  }
+};
+
+export const createBaserowConfig = async (
+  data: Partial<BaserowConfigRow>,
+): Promise<BaserowConfigRow> => {
+  try {
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_TABLE_ID}/?user_field_names=true`;
+    console.log("Criando linha no Baserow:", data);
+    const response = await axios.post(url, data, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+    });
+
+    console.log("Linha criada com sucesso:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("Erro ao criar configuração no Baserow:", error);
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        console.error("Detalhes do erro:", error.response.data);
+        const errorMessage =
+          error.response.data?.message || error.message || "Erro ao criar configuração no Baserow";
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error("Não foi possível conectar ao Baserow");
+      }
+      throw new Error(error.message || "Erro ao configurar a requisição");
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido ao criar configuração");
+  }
+};
+
+const BASEROW_AGENT_STATE_TABLE_ID = 226;
+const BASEROW_AGENT_STATE_NUMBER_FIELD_ID = 1695;
 const BASEROW_CASES_TABLE_ID = 225;
+
+export type AgentStateRow = {
+  id: number;
+  numero?: string;
+  estado?: string;
+  [key: string]: unknown;
+};
+
+const buildAgentStateUrl = (phoneNumber?: string) => {
+  const baseUrl = `${BASEROW_API_URL}/database/rows/table/${BASEROW_AGENT_STATE_TABLE_ID}/?user_field_names=true`;
+  if (!phoneNumber) {
+    return baseUrl;
+  }
+
+  const trimmed = phoneNumber.trim();
+  if (!trimmed) {
+    return baseUrl;
+  }
+
+  const query = `&filter__field_${BASEROW_AGENT_STATE_NUMBER_FIELD_ID}__equal=${encodeURIComponent(trimmed)}`;
+  return `${baseUrl}${query}`;
+};
+
+export const getAgentStateRows = async (phoneNumber?: string): Promise<AgentStateRow[]> => {
+  try {
+    const url = buildAgentStateUrl(phoneNumber);
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 15000,
+    });
+
+    const results = Array.isArray(response.data?.results)
+      ? response.data.results
+      : [];
+    return results as AgentStateRow[];
+  } catch (error) {
+    console.error("Erro ao buscar EstadoAgente no Baserow:", error);
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        console.error("Detalhes do erro:", error.response.data);
+        const errorMessage =
+          error.response.data?.message ||
+          error.message ||
+          "Erro ao buscar registros de EstadoAgente";
+        throw new Error(errorMessage);
+      }
+      if (error.request) {
+        throw new Error("Nao foi possivel conectar ao Baserow para ler EstadoAgente");
+      }
+      throw new Error(error.message || "Erro ao configurar requisicao para EstadoAgente");
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido ao buscar EstadoAgente");
+  }
+};
+
+export const registerAgentState = async (data: { numero: string; estado: string }): Promise<AgentStateRow> => {
+  try {
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_AGENT_STATE_TABLE_ID}/?user_field_names=true`;
+    const payload = {
+      numero: data.numero?.trim() ?? "",
+      estado: data.estado?.trim() ?? "",
+    };
+
+    const response = await axios.post(url, payload, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 15000,
+    });
+
+    return response.data as AgentStateRow;
+  } catch (error) {
+    console.error("Erro ao registrar EstadoAgente no Baserow:", error);
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        console.error("Detalhes do erro:", error.response.data);
+        const errorMessage =
+          error.response.data?.message ||
+          error.message ||
+          "Erro ao registrar estado do agente";
+        throw new Error(errorMessage);
+      }
+      if (error.request) {
+        throw new Error("Nao foi possivel conectar ao Baserow para registrar EstadoAgente");
+      }
+      throw new Error(error.message || "Erro ao configurar requisicao para EstadoAgente");
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido ao registrar estado do agente");
+  }
+};
 
 export type BaserowCaseRow = {
   id: number;
   CaseId?: number;
   CustumerName?: string;
   CustumerPhone?: string;
+  Data?: string | null;
+  data?: string | null;
   DepoimentoInicial?: string;
   EtapaPerguntas?: string;
   EtapaFinal?: string;
@@ -638,11 +807,34 @@ export type BaserowCaseRow = {
   [key: string]: unknown;
 };
 
-export const getBaserowCases = async (institutionId?: number): Promise<BaserowCaseRow[]> => {
+export type GetBaserowCasesParams = {
+  institutionId?: number;
+  page?: number;
+  pageSize?: number;
+};
+
+export type BaserowCasesResponse = {
+  results: BaserowCaseRow[];
+  totalCount: number;
+  hasNextPage: boolean;
+};
+
+export const getBaserowCases = async ({
+  institutionId,
+  page = 1,
+  pageSize = 50,
+}: GetBaserowCasesParams = {}): Promise<BaserowCasesResponse> => {
   try {
-    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASES_TABLE_ID}/?user_field_names=true`;
+    const params = new URLSearchParams({
+      user_field_names: "true",
+      page: String(page),
+      size: String(pageSize),
+    });
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASES_TABLE_ID}/?${params.toString()}`;
     
-    console.log("Buscando casos do Baserow para institutionId:", institutionId);
+    console.log(
+      `Buscando casos do Baserow para institutionId: ${institutionId} (pagina ${page}, tamanho ${pageSize})`,
+    );
     
     const response = await axios.get(url, {
       headers: {
@@ -682,7 +874,11 @@ export const getBaserowCases = async (institutionId?: number): Promise<BaserowCa
       console.log(`Filtrados ${results.length} casos para institutionId ${institutionId}`);
     }
     
-    return results;
+    return {
+      results,
+      totalCount: typeof response.data.count === "number" ? response.data.count : results.length,
+      hasNextPage: Boolean(response.data.next),
+    };
   } catch (error) {
     console.error("Erro ao buscar casos do Baserow:", error);
     if (axios.isAxiosError(error)) {

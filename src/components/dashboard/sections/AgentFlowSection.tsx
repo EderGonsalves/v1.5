@@ -46,11 +46,8 @@ export const AgentFlowSection = ({
           {data.directedQuestions.length > 0 ? (
             <ul className="mt-2 space-y-2">
               {data.directedQuestions.map((question, index) => (
-                <li key={`${question.prompt}-${index}`}>
-                  <p className="font-medium">Q{index + 1}: {question.prompt}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Objetivo: {question.objective}
-                  </p>
+                <li key={`${question}-${index}`}>
+                  <p className="font-medium">Q{index + 1}: {question}</p>
                 </li>
               ))}
             </ul>

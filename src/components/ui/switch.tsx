@@ -10,9 +10,15 @@ export interface SwitchProps
 }
 
 const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(
-  ({ className, onCheckedChange, checked, ...props }, ref) => {
+  ({ className, onCheckedChange, checked, disabled, ...props }, ref) => {
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      console.log("Switch handleChange chamado, checked:", e.target.checked, "disabled:", disabled);
+      if (disabled) {
+        e.preventDefault();
+        return;
+      }
       if (onCheckedChange) {
+        console.log("Chamando onCheckedChange com:", e.target.checked);
         onCheckedChange(e.target.checked);
       }
       if (props.onChange) {
@@ -21,12 +27,16 @@ const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(
     };
 
     return (
-      <label className="relative inline-flex items-center cursor-pointer group">
+      <label className={cn(
+        "relative inline-flex items-center cursor-pointer group",
+        disabled && "cursor-not-allowed opacity-50"
+      )}>
         <input
           type="checkbox"
           className="sr-only peer"
           ref={ref}
-          checked={checked}
+          checked={checked ?? false}
+          disabled={disabled}
           {...props}
           onChange={handleChange}
         />
@@ -37,6 +47,7 @@ const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(
             "after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all after:duration-200 after:shadow-sm",
             "peer-checked:after:translate-x-full peer-checked:after:border-white",
             "group-hover:bg-gray-300 peer-checked:group-hover:bg-primary/90",
+            disabled && "opacity-50 cursor-not-allowed",
             className
           )}
         />

@@ -1,0 +1,27 @@
+field_key,section,description
+body.auth.institutionId,Autenticacao,"ID numerico da instituicao obtido no login"
+body.tenant.companyName,Sobre a sua empresa,"Nome publico do escritorio"
+body.tenant.businessHours,Sobre a sua empresa,"Horario de atendimento divulgado"
+body.tenant.phoneNumber,Sobre a sua empresa,"Telefone interno (mantido para compatibilidade)"
+body.tenant.wabaPhoneNumber,Sobre a sua empresa,"Numero do WhatsApp conectado a Meta"
+body.waba_phone_number,Sobre a sua empresa,"Alias usado pelo backend para o mesmo numero do WhatsApp"
+body.tenant.address.street,Endereco completo,Rua e numero
+body.tenant.address.city,Endereco completo,Cidade
+body.tenant.address.state,Endereco completo,Estado
+body.tenant.address.zipCode,Endereco completo,CEP
+body.agentSettings.profile.agentName,Quem fala com o seu cliente,Nome do agente
+body.agentSettings.profile.language,Quem fala com o seu cliente,Idioma principal
+body.agentSettings.profile.personalityDescription,Quem fala com o seu cliente,Resumo da personalidade
+body.agentSettings.profile.expertiseArea,Quem fala com o seu cliente,Area de expertise
+body.agentSettings.personality.greeting,Tom de voz e mensagens-chave,Saudacao inicial
+body.agentSettings.personality.closing,Tom de voz e mensagens-chave,Frase de despedida
+body.agentSettings.personality.forbiddenWords.0,Tom de voz e mensagens-chave,"Lista de palavras proibidas (separadas por virgula)"
+body.agentSettings.flow.briefingScope,Briefing juridico estruturado,Escopo principal do briefing
+body.agentSettings.flow.greetingsScript,Briefing juridico estruturado,"Campo legado, espelha o escopo"
+body.agentSettings.flow.maxQuestions,Briefing juridico estruturado,"Quantidade maxima de perguntas estruturadas"
+perguntas,Briefing juridico estruturado,"Lista plana de perguntas (uma por linha)"
+quantidadePerguntas,Briefing juridico estruturado,"Numero total de perguntas cadastradas"
+body.agentSettings.flow.directedQuestionsList,Briefing juridico estruturado,"Lista completa de perguntas (JSON)"
+body.agentSettings.flow.institutionalAdditionalInfo,Briefing juridico estruturado,Informacoes institucionais adicionais
+body.agentSettings.flow.companyOfferings,Briefing juridico estruturado,"Campo legado, espelha as informacoes institucionais"
+body.ragFiles.,Arquivos de apoio,"Campos dinamicos para arquivos enviados (name, mime, size, storagePath, tempUrl)"
