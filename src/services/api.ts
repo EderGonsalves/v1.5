@@ -803,6 +803,7 @@ export type BaserowCaseRow = {
   Resumo?: string;
   BJCaseId?: string | number;
   InstitutionID?: number;
+  "body.auth.institutionId"?: string | number | null;
   IApause?: string;
   [key: string]: unknown;
 };
@@ -811,6 +812,7 @@ export type GetBaserowCasesParams = {
   institutionId?: number;
   page?: number;
   pageSize?: number;
+  fetchAll?: boolean;
 };
 
 export type BaserowCasesResponse = {
@@ -819,50 +821,108 @@ export type BaserowCasesResponse = {
   hasNextPage: boolean;
 };
 
+const normalizeNextUrl = (value: unknown): string | null => {
+  if (!value || typeof value !== "string") {
+    return null;
+  }
+  try {
+    const baseUrl = new URL(BASEROW_API_URL);
+    const parsed = new URL(value, baseUrl);
+    // Garantir que usamos o mesmo protocolo/host configurado
+    parsed.protocol = baseUrl.protocol;
+    parsed.host = baseUrl.host;
+    parsed.port = baseUrl.port;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+};
+
 export const getBaserowCases = async ({
   institutionId,
   page = 1,
   pageSize = 50,
+  fetchAll = false,
 }: GetBaserowCasesParams = {}): Promise<BaserowCasesResponse> => {
   try {
-    const params = new URLSearchParams({
-      user_field_names: "true",
-      page: String(page),
-      size: String(pageSize),
-    });
-    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASES_TABLE_ID}/?${params.toString()}`;
+    const buildUrl = (targetPage: number) => {
+      const params = new URLSearchParams({
+        user_field_names: "true",
+        page: String(targetPage),
+        size: String(pageSize),
+      });
+      return `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASES_TABLE_ID}/?${params.toString()}`;
+    };
+
+    const shouldFetchAll = Boolean(fetchAll);
+    const initialUrl = buildUrl(shouldFetchAll ? 1 : page);
     
     console.log(
-      `Buscando casos do Baserow para institutionId: ${institutionId} (pagina ${page}, tamanho ${pageSize})`,
+      `Buscando casos do Baserow para institutionId: ${institutionId} (pagina ${shouldFetchAll ? "todas" : page}, tamanho ${pageSize})`,
     );
     
-    const response = await axios.get(url, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    });
+    const allResults: BaserowCaseRow[] = [];
+    let nextUrl: string | null = initialUrl;
+    let iteration = 0;
+    let hasNextPage = false;
+    let totalCount: number | null = null;
 
-    console.log("Resposta completa do Baserow:", JSON.stringify(response.data, null, 2));
-    let results = response.data.results || [];
+    while (nextUrl) {
+      iteration += 1;
+      console.log(`Carregando pagina ${iteration} da tabela de casos (${nextUrl})`);
+      const response = await axios.get(nextUrl, {
+        headers: {
+          Authorization: `Token ${BASEROW_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 30000,
+      });
+
+      const pageResults: BaserowCaseRow[] = response.data?.results || [];
+      allResults.push(...pageResults);
+      if (typeof response.data?.count === "number") {
+        totalCount = response.data.count;
+      }
+      
+      const nextFromResponse = normalizeNextUrl(response.data?.next);
+      if (shouldFetchAll) {
+        nextUrl = nextFromResponse;
+        hasNextPage = Boolean(nextFromResponse);
+      } else {
+        hasNextPage = Boolean(nextFromResponse);
+        break;
+      }
+    }
     
-    console.log(`Total de casos retornados: ${results.length}`);
+    console.log(`Total de casos retornados: ${allResults.length}`);
     
     // Filtrar pelo InstitutionID se fornecido
     const shouldFilterByInstitution =
-      typeof institutionId === "number" && institutionId !== 4 && results.length > 0;
+      typeof institutionId === "number" && institutionId !== 4 && allResults.length > 0;
 
+    let results = allResults;
     if (shouldFilterByInstitution) {
-      results = results.filter((row: BaserowCaseRow) => {
-        const rowInstitutionId = row.InstitutionID;
+      results = allResults.filter((row: BaserowCaseRow) => {
+        const rowInstitutionId =
+          row.InstitutionID ??
+          row["body.auth.institutionId"] ??
+          null;
+        const hasInstitution =
+          rowInstitutionId !== undefined &&
+          rowInstitutionId !== null &&
+          rowInstitutionId !== "";
         
-        console.log(`Caso ${row.id}: InstitutionID encontrado =`, rowInstitutionId, "Comparando com", institutionId);
+        console.log(
+          `Caso ${row.id}: InstitutionID encontrado =`,
+          rowInstitutionId,
+          "Comparando com",
+          institutionId,
+        );
         
         // Comparar o institutionId (pode ser string ou número)
-        const matches = rowInstitutionId === institutionId || 
-               Number(rowInstitutionId) === institutionId ||
-               String(rowInstitutionId) === String(institutionId);
+        const matches =
+          hasInstitution &&
+          String(rowInstitutionId) === String(institutionId);
         
         if (matches) {
           console.log(`✓ Caso ${row.id} corresponde ao institutionId ${institutionId}`);
@@ -876,8 +936,8 @@ export const getBaserowCases = async ({
     
     return {
       results,
-      totalCount: typeof response.data.count === "number" ? response.data.count : results.length,
-      hasNextPage: Boolean(response.data.next),
+      totalCount: typeof totalCount === "number" ? totalCount : results.length,
+      hasNextPage,
     };
   } catch (error) {
     console.error("Erro ao buscar casos do Baserow:", error);

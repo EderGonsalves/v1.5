@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Settings, Plug, LogOut, FileText, Loader2 } from "lucide-react";
+import { Settings, Plug, LogOut, FileText, Loader2, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
@@ -313,11 +313,23 @@ export const Header = () => {
                 variant="ghost"
                 size="sm"
                 asChild
-              className="gap-2"
-            >
+                className="gap-2"
+              >
               <Link href="/casos">
                 <FileText className="h-4 w-4" />
                 <span className="hidden sm:inline">Casos</span>
+              </Link>
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              asChild
+              className="gap-2"
+            >
+              <Link href="/estatisticas">
+                <BarChart3 className="h-4 w-4" />
+                <span className="hidden sm:inline">Estatísticas</span>
               </Link>
             </Button>
             <Button
