@@ -18,15 +18,23 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { getBaserowCases, updateBaserowCase, type BaserowCaseRow } from "@/services/api";
+import {
+  getBaserowCases,
+  getBaserowConfigs,
+  updateBaserowCase,
+  type BaserowCaseRow,
+  type BaserowConfigRow,
+} from "@/services/api";
 import { ConversationView } from "@/components/casos/ConversationView";
 import { cn } from "@/lib/utils";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import { useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/ui/loading-screen";
+import { Input } from "@/components/ui/input";
 import { MessageCircle, RefreshCw } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import {
+  CaseStage,
   computeCaseStatistics,
   getCaseInstitutionId,
   getCaseStage,
@@ -36,9 +44,22 @@ import {
   stageOrder,
 } from "@/lib/case-stats";
 
+type InstitutionOption = {
+  id: string;
+  label: string;
+};
+
 export default function CasosPage() {
   const { data } = useOnboarding();
   const router = useRouter();
+  const normalizedInstitutionId = useMemo(() => {
+    const value = data.auth?.institutionId;
+    if (value === undefined || value === null) {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }, [data.auth?.institutionId]);
   const [cases, setCases] = useState<BaserowCaseRow[]>([]);
   const [selectedCase, setSelectedCase] = useState<BaserowCaseRow | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -49,9 +70,13 @@ export default function CasosPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const isSysAdmin = data.auth?.institutionId === 4;
+  const isSysAdmin = normalizedInstitutionId === 4;
   const [selectedInstitution, setSelectedInstitution] = useState<string>("all");
-  const institutionOptions = useMemo(() => {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [stageFilter, setStageFilter] = useState<CaseStage | "all">("all");
+  const [adminInstitutions, setAdminInstitutions] = useState<InstitutionOption[]>([]);
+
+  const caseInstitutionIds = useMemo(() => {
     if (!cases.length) return [];
     const unique = new Set<string>();
     cases.forEach((row) => {
@@ -60,60 +85,171 @@ export default function CasosPage() {
         unique.add(normalizedId);
       }
     });
-    return Array.from(unique).sort((a, b) => {
-      const numA = Number(a);
-      const numB = Number(b);
-      const isNumA = Number.isFinite(numA);
-      const isNumB = Number.isFinite(numB);
-      if (isNumA && isNumB) {
-        return numA - numB;
-      }
-      if (isNumA) return -1;
-      if (isNumB) return 1;
-      return a.localeCompare(b);
-    });
+    return Array.from(unique);
   }, [cases]);
 
-  const visibleCases = useMemo(() => {
-    let filteredCases = cases;
-    
+  const institutionOptions = useMemo(() => {
+    const sortOptions = (options: InstitutionOption[]) => {
+      return options.sort((a, b) => {
+        const numA = Number(a.id);
+        const numB = Number(b.id);
+        const isNumA = Number.isFinite(numA);
+        const isNumB = Number.isFinite(numB);
+        if (isNumA && isNumB) {
+          return numA - numB;
+        }
+        if (isNumA) return -1;
+        if (isNumB) return 1;
+        return a.id.localeCompare(b.id);
+      });
+    };
+
     if (!isSysAdmin) {
-      filteredCases = cases;
-    } else {
-      if (selectedInstitution !== "all") {
-        filteredCases = cases.filter(
-          (row) => getCaseInstitutionId(row) === selectedInstitution,
-        );
-      }
+      return sortOptions(
+        caseInstitutionIds.map((id) => ({
+          id,
+          label: `Instituição #${id}`,
+        })),
+      );
     }
-    
-    // Ordenar por ID (maior ID primeiro)
+
+    const map = new Map<string, InstitutionOption>();
+    adminInstitutions.forEach((option) => {
+      map.set(option.id, option);
+    });
+    caseInstitutionIds.forEach((id) => {
+      if (!map.has(id)) {
+        map.set(id, { id, label: `Instituição #${id}` });
+      }
+    });
+    return sortOptions(Array.from(map.values()));
+  }, [adminInstitutions, caseInstitutionIds, isSysAdmin]);
+
+  const visibleCases = useMemo(() => {
+    let filteredCases = [...cases];
+
+    if (isSysAdmin && selectedInstitution !== "all") {
+      filteredCases = filteredCases.filter(
+        (row) => getCaseInstitutionId(row) === selectedInstitution,
+      );
+    }
+
+    if (stageFilter !== "all") {
+      filteredCases = filteredCases.filter(
+        (row) => getCaseStage(row) === stageFilter,
+      );
+    }
+
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    const numericQuery = normalizedQuery.replace(/\D/g, "");
+
+    if (normalizedQuery) {
+      filteredCases = filteredCases.filter((row) => {
+        const matchesText = [
+          row.CustumerName,
+          row.CaseId,
+          row.id,
+          row.BJCaseId,
+          row.CustumerPhone,
+        ].some((value) => {
+          if (value === null || value === undefined) {
+            return false;
+          }
+          return value.toString().toLowerCase().includes(normalizedQuery);
+        });
+
+        let matchesPhoneDigits = false;
+        if (numericQuery) {
+          const phoneDigits = (row.CustumerPhone ?? "").replace(/\D/g, "");
+          matchesPhoneDigits = phoneDigits.includes(numericQuery);
+        }
+
+        return matchesText || matchesPhoneDigits;
+      });
+    }
+
     return filteredCases.sort((a, b) => {
       const idA = a.CaseId || a.id || 0;
       const idB = b.CaseId || b.id || 0;
-      return idB - idA; // Ordenar do maior para o menor ID
+      return idB - idA;
     });
-  }, [cases, isSysAdmin, selectedInstitution]);
+  }, [cases, isSysAdmin, selectedInstitution, searchQuery, stageFilter]);
 
   const caseStats = useMemo(
     () => computeCaseStatistics(visibleCases),
     [visibleCases],
   );
 
+  const selectedInstitutionLabel = useMemo(() => {
+    if (selectedInstitution === "all") return null;
+    const match = institutionOptions.find(
+      (option) => option.id === selectedInstitution,
+    );
+    return match?.label ?? `Instituição #${selectedInstitution}`;
+  }, [institutionOptions, selectedInstitution]);
+
   const summaryScopeDescription = useMemo(() => {
     if (isSysAdmin) {
       return selectedInstitution === "all"
         ? "Consolidado de todas as instituições."
-        : `Instituição #${selectedInstitution}`;
+        : selectedInstitutionLabel ?? `Instituição #${selectedInstitution}`;
     }
     return "Dados da sua instituição.";
-  }, [isSysAdmin, selectedInstitution]);
+  }, [isSysAdmin, selectedInstitution, selectedInstitutionLabel]);
+
+  useEffect(() => {
+    if (!isSysAdmin) {
+      setAdminInstitutions([]);
+      return;
+    }
+
+    let isMounted = true;
+
+    const fetchInstitutions = async () => {
+      try {
+        const configs = await getBaserowConfigs();
+        if (!isMounted) return;
+
+        const unique = new Map<string, InstitutionOption>();
+        configs.forEach((row: BaserowConfigRow) => {
+          const normalizedId = getCaseInstitutionId(
+            row as unknown as BaserowCaseRow,
+          );
+          if (!normalizedId) {
+            return;
+          }
+
+          const companyName =
+            typeof row["body.tenant.companyName"] === "string"
+              ? row["body.tenant.companyName"].trim()
+              : "";
+          const label = companyName
+            ? `${companyName} (#${normalizedId})`
+            : `Instituição #${normalizedId}`;
+
+          if (!unique.has(normalizedId)) {
+            unique.set(normalizedId, { id: normalizedId, label });
+          }
+        });
+
+        setAdminInstitutions(Array.from(unique.values()));
+      } catch (err) {
+        console.error("Erro ao carregar lista de instituições:", err);
+      }
+    };
+
+    fetchInstitutions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isSysAdmin]);
 
   useEffect(() => {
     if (!isSysAdmin) return;
     if (
       selectedInstitution !== "all" &&
-      !institutionOptions.includes(selectedInstitution)
+      !institutionOptions.some((option) => option.id === selectedInstitution)
     ) {
       setSelectedInstitution("all");
     }
@@ -124,16 +260,21 @@ export default function CasosPage() {
       router.push("/");
       return;
     }
+    if (normalizedInstitutionId === null) {
+      return;
+    }
     loadCases();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.auth]);
+  }, [data.auth, normalizedInstitutionId]);
 
   const loadCases = async (page: number = 1, append: boolean = false) => {
-    if (!data.auth?.institutionId) {
-      setError("ID da instituiÃ§Ã£o não encontrado");
+    if (!Number.isFinite(normalizedInstitutionId)) {
+      setError("ID da instituicao nao encontrado");
       setIsLoading(false);
       return;
     }
+
+    const institutionId = normalizedInstitutionId!;
 
     try {
       if (!append) {
@@ -145,9 +286,14 @@ export default function CasosPage() {
         setIsLoadingMore(true);
       }
       setError(null);
-      console.log("Carregando casos do Baserow para institutionId:", data.auth.institutionId, "page:", page);
+      console.log(
+        "Carregando casos do Baserow para institutionId:",
+        institutionId,
+        "page:",
+        page,
+      );
       const response = await getBaserowCases({
-        institutionId: data.auth.institutionId,
+        institutionId,
         page,
         pageSize: 50,
         fetchAll: !append,
@@ -155,7 +301,7 @@ export default function CasosPage() {
       console.log("Atendimentos encontrados:", response);
       
       if (append) {
-        setCases(prev => [...prev, ...response.results]);
+        setCases((prev) => [...prev, ...response.results]);
         setHasMore(response.hasNextPage);
       } else {
         setCases(response.results);
@@ -348,6 +494,45 @@ export default function CasosPage() {
                 </CardDescription>
               </div>
               <div className="flex flex-wrap items-center gap-3">
+                <div className="flex flex-col gap-1">
+                  <label
+                    htmlFor="cases-search"
+                    className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                  >
+                    Buscar casos
+                  </label>
+                  <Input
+                    id="cases-search"
+                    type="search"
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="Nome, ID, BJCaseId ou telefone"
+                    className="w-full min-w-[220px]"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label
+                    htmlFor="stage-filter"
+                    className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                  >
+                    Filtrar por etapa
+                  </label>
+                  <select
+                    id="stage-filter"
+                    value={stageFilter}
+                    onChange={(event) =>
+                      setStageFilter(event.target.value as CaseStage | "all")
+                    }
+                    className="rounded-md border border-input bg-background px-3 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                  >
+                    <option value="all">Todas</option>
+                    {stageOrder.map((stage) => (
+                      <option key={stage} value={stage}>
+                        {stageLabels[stage]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 {isSysAdmin && (
                   <div className="flex flex-col gap-1 text-right">
                     <label
@@ -364,8 +549,8 @@ export default function CasosPage() {
                     >
                       <option value="all">Todas</option>
                       {institutionOptions.map((option) => (
-                        <option key={option} value={option}>
-                          Instituição #{option}
+                        <option key={option.id} value={option.id}>
+                          {option.label}
                         </option>
                       ))}
                     </select>
