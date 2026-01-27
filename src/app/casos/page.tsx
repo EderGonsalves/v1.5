@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Card,
   CardContent,
@@ -25,27 +26,15 @@ import { useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/ui/loading-screen";
 import { MessageCircle, RefreshCw } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
-
-type CaseStage = "DepoimentoInicial" | "EtapaPerguntas" | "EtapaFinal";
-
-const stageLabels: Record<CaseStage, string> = {
-  DepoimentoInicial: "Depoimento Inicial",
-  EtapaPerguntas: "Etapa Perguntas",
-  EtapaFinal: "Etapa Final",
-};
-
-const stageColors: Record<CaseStage, string> = {
-  DepoimentoInicial: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-  EtapaPerguntas: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
-  EtapaFinal: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
-};
-
-function getCaseStage(caseRow: BaserowCaseRow): CaseStage | null {
-  if (caseRow.EtapaFinal) return "EtapaFinal";
-  if (caseRow.EtapaPerguntas) return "EtapaPerguntas";
-  if (caseRow.DepoimentoInicial) return "DepoimentoInicial";
-  return null;
-}
+import {
+  computeCaseStatistics,
+  getCaseInstitutionId,
+  getCaseStage,
+  isCasePaused,
+  stageColors,
+  stageLabels,
+  stageOrder,
+} from "@/lib/case-stats";
 
 export default function CasosPage() {
   const { data } = useOnboarding();
@@ -66,11 +55,23 @@ export default function CasosPage() {
     if (!cases.length) return [];
     const unique = new Set<string>();
     cases.forEach((row) => {
-      if (row.InstitutionID !== undefined && row.InstitutionID !== null) {
-        unique.add(String(row.InstitutionID));
+      const normalizedId = getCaseInstitutionId(row);
+      if (normalizedId) {
+        unique.add(normalizedId);
       }
     });
-    return Array.from(unique).sort((a, b) => Number(a) - Number(b));
+    return Array.from(unique).sort((a, b) => {
+      const numA = Number(a);
+      const numB = Number(b);
+      const isNumA = Number.isFinite(numA);
+      const isNumB = Number.isFinite(numB);
+      if (isNumA && isNumB) {
+        return numA - numB;
+      }
+      if (isNumA) return -1;
+      if (isNumB) return 1;
+      return a.localeCompare(b);
+    });
   }, [cases]);
 
   const visibleCases = useMemo(() => {
@@ -80,7 +81,9 @@ export default function CasosPage() {
       filteredCases = cases;
     } else {
       if (selectedInstitution !== "all") {
-        filteredCases = cases.filter((row) => String(row.InstitutionID ?? "") === selectedInstitution);
+        filteredCases = cases.filter(
+          (row) => getCaseInstitutionId(row) === selectedInstitution,
+        );
       }
     }
     
@@ -91,6 +94,20 @@ export default function CasosPage() {
       return idB - idA; // Ordenar do maior para o menor ID
     });
   }, [cases, isSysAdmin, selectedInstitution]);
+
+  const caseStats = useMemo(
+    () => computeCaseStatistics(visibleCases),
+    [visibleCases],
+  );
+
+  const summaryScopeDescription = useMemo(() => {
+    if (isSysAdmin) {
+      return selectedInstitution === "all"
+        ? "Consolidado de todas as instituições."
+        : `Instituição #${selectedInstitution}`;
+    }
+    return "Dados da sua instituição.";
+  }, [isSysAdmin, selectedInstitution]);
 
   useEffect(() => {
     if (!isSysAdmin) return;
@@ -129,15 +146,20 @@ export default function CasosPage() {
       }
       setError(null);
       console.log("Carregando casos do Baserow para institutionId:", data.auth.institutionId, "page:", page);
-      const response = await getBaserowCases({ institutionId: data.auth.institutionId, page, pageSize: 50 });
-      console.log("Casos encontrados:", response);
+      const response = await getBaserowCases({
+        institutionId: data.auth.institutionId,
+        page,
+        pageSize: 50,
+        fetchAll: !append,
+      });
+      console.log("Atendimentos encontrados:", response);
       
       if (append) {
         setCases(prev => [...prev, ...response.results]);
-        setHasMore(response.results.length === 50);
+        setHasMore(response.hasNextPage);
       } else {
         setCases(response.results);
-        setHasMore(response.results.length === 50);
+        setHasMore(response.hasNextPage);
       }
     } catch (err) {
       console.error("Erro ao carregar casos:", err);
@@ -233,21 +255,96 @@ export default function CasosPage() {
             GestÃ£o de Casos
           </p>
           <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-4xl">
-            Casos de Atendimento
+            Atendimentos
           </h1>
           <p className="text-base text-zinc-600 dark:text-zinc-300">
-            Visualize e gerencie todos os casos de atendimento. Ordenados do mais recente para o mais antigo.
+            Visualize e gerencie todos os atendimentos. Ordenados do mais recente para o mais antigo.
           </p>
+        </section>
+
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-semibold text-foreground">
+                Resumo das estatísticas
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                {summaryScopeDescription}
+              </p>
+            </div>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/estatisticas">Abrir painel completo</Link>
+            </Button>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+            <Card className="border-t-4 border-primary py-3 gap-2 h-[140px]">
+              <CardHeader className="pb-1 pt-2 space-y-1">
+                <CardDescription>Total de atendimentos</CardDescription>
+                <CardTitle className="text-2xl font-bold">
+                  {caseStats.totalCases}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-1 pb-2">
+                <p className="text-xs text-muted-foreground">
+                  {caseStats.pausedCases} com IA pausada
+                </p>
+              </CardContent>
+            </Card>
+            {stageOrder.map((stage) => (
+              <Card key={stage} className="py-3 gap-2 h-[140px]">
+                <CardHeader className="pb-1 pt-2 space-y-1">
+                  <CardDescription>{stageLabels[stage]}</CardDescription>
+                  <CardTitle className="text-2xl font-semibold">
+                    {caseStats.stageCounts[stage]}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="flex items-center justify-between pt-1 pb-2">
+                  <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                    Participação
+                  </span>
+                  <span
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-xs font-semibold",
+                      stageColors[stage],
+                    )}
+                  >
+                    {caseStats.stagePercentages[stage]}%
+                  </span>
+                </CardContent>
+              </Card>
+            ))}
+            <Card className="border-dashed py-3 gap-2 h-[140px]">
+              <CardHeader className="pb-1 pt-2 space-y-1">
+                <CardDescription>IA pausada</CardDescription>
+                <CardTitle className="text-2xl font-semibold">
+                  {caseStats.pausedCases}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-1 pb-2">
+                <p className="text-xs text-muted-foreground">
+                  {caseStats.pausedPercentage}% do total
+                </p>
+                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-amber-500 transition-[width]"
+                    style={{
+                      width: `${Math.min(caseStats.pausedPercentage, 100)}%`,
+                    }}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </section>
 
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>Lista de Casos</CardTitle>
+                <CardTitle>Lista de Atendimentos</CardTitle>
                 <CardDescription>
                   {visibleCases.length}{" "}
-                  {visibleCases.length === 1 ? "caso encontrado" : "casos encontrados"}
+                  {visibleCases.length === 1 ? "atendimento" : "atendimentos"}
                 </CardDescription>
               </div>
               <div className="flex flex-wrap items-center gap-3">
@@ -306,7 +403,7 @@ export default function CasosPage() {
               <div className="space-y-4">
                 {visibleCases.map((caseRow) => {
                   const stage = getCaseStage(caseRow);
-                  const isPaused = caseRow.IApause === "SIM";
+                  const isPaused = isCasePaused(caseRow);
                   const pauseError = pauseErrors[caseRow.id];
                   return (
                     <div
@@ -407,7 +504,7 @@ export default function CasosPage() {
             )}
             {!hasMore && visibleCases.length > 0 && (
               <div className="py-4 text-center text-muted-foreground text-sm">
-                ✅ Todos os {visibleCases.length} casos foram carregados
+                ✅ Todos os {visibleCases.length} Atendimentos foram carregados
               </div>
             )}
           </CardContent>

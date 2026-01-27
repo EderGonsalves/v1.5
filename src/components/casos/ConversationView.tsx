@@ -81,40 +81,45 @@ export function ConversationView({ conversation, className }: ConversationViewPr
 
   return (
     <div className={cn("space-y-4", className)}>
-      {messages.map((message, index) => (
-        <div
-          key={index}
-          className={cn(
-            "flex w-full",
-            message.type === "cliente" ? "justify-end" : "justify-start",
-          )}
-        >
+      {messages.map((message, index) => {
+        const isClient = message.type === "cliente";
+        return (
           <div
-            className={cn(
-              "max-w-[80%] rounded-lg px-4 py-2.5 shadow-sm",
-              message.type === "cliente"
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-foreground border border-border",
-            )}
+            key={index}
+            className={cn("flex w-full", isClient ? "justify-start" : "justify-end")}
           >
-            <div className="flex items-center gap-2 mb-1">
-              <span
+            <div
+              className={cn(
+                "max-w-[80%] rounded-lg px-4 py-2.5 shadow-sm",
+                isClient
+                  ? "bg-zinc-900 text-white !text-white"
+                  : "bg-muted text-foreground border border-border",
+              )}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <span
+                  className={cn(
+                    "text-xs font-semibold uppercase",
+                    isClient
+                      ? "text-white"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {isClient ? "Cliente" : "Agente"}
+                </span>
+              </div>
+              <p
                 className={cn(
-                  "text-xs font-semibold uppercase",
-                  message.type === "cliente"
-                    ? "text-primary-foreground/80"
-                    : "text-muted-foreground",
+                  "text-sm leading-relaxed whitespace-pre-wrap break-words",
+                  isClient ? "text-white" : "text-foreground",
                 )}
               >
-                {message.type === "cliente" ? "Cliente" : "Agente"}
-              </span>
+                {message.content}
+              </p>
             </div>
-            <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-              {message.content}
-            </p>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
