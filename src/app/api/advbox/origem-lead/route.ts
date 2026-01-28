@@ -1,7 +1,26 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 const ADVBOX_API_URL = process.env.ADVBOX_API_URL || "https://app.advbox.com.br/v1";
 const ADVBOX_API_TOKEN = process.env.ADVBOX_API_TOKEN;
+
+// Função auxiliar para verificar autenticação
+const verifyAuth = (request: NextRequest): { valid: boolean; error?: string } => {
+  const authCookie = request.cookies.get("onboarding_auth");
+
+  if (!authCookie?.value) {
+    return { valid: false, error: "Não autenticado" };
+  }
+
+  try {
+    const authData = JSON.parse(authCookie.value);
+    if (!authData?.institutionId) {
+      return { valid: false, error: "Token de autenticação inválido" };
+    }
+    return { valid: true };
+  } catch {
+    return { valid: false, error: "Token de autenticação inválido" };
+  }
+};
 
 type CreateLeadSourceRequest = {
   name: string;
@@ -10,7 +29,16 @@ type CreateLeadSourceRequest = {
   active?: boolean;
 };
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  // Verificar autenticação
+  const auth = verifyAuth(request);
+  if (!auth.valid) {
+    return NextResponse.json(
+      { error: auth.error },
+      { status: 401 },
+    );
+  }
+
   try {
     if (!ADVBOX_API_TOKEN) {
       return NextResponse.json(
@@ -34,8 +62,6 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log("Criando origem de lead no ADVBOX:", body.name);
-
     // Chamar API do ADVBOX para criar origem
     const response = await fetch(`${ADVBOX_API_URL}/lead-sources`, {
       method: "POST",
@@ -53,12 +79,6 @@ export async function POST(request: Request) {
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "Erro desconhecido");
-      console.error("Erro ao criar origem no ADVBOX:", {
-        status: response.status,
-        statusText: response.statusText,
-        body: errorText,
-      });
-
       return NextResponse.json(
         {
           error: "advbox_api_error",
@@ -70,7 +90,6 @@ export async function POST(request: Request) {
     }
 
     const createdSource = await response.json();
-    console.log("Origem criada com sucesso:", createdSource);
 
     return NextResponse.json(
       {
@@ -81,7 +100,6 @@ export async function POST(request: Request) {
       { status: 201 },
     );
   } catch (error) {
-    console.error("Erro ao processar requisição:", error);
     return NextResponse.json(
       {
         error: "server_error",
@@ -92,7 +110,16 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  // Verificar autenticação
+  const auth = verifyAuth(request);
+  if (!auth.valid) {
+    return NextResponse.json(
+      { error: auth.error },
+      { status: 401 },
+    );
+  }
+
   try {
     if (!ADVBOX_API_TOKEN) {
       return NextResponse.json(
@@ -126,7 +153,6 @@ export async function GET(request: Request) {
     const sources = await response.json();
     return NextResponse.json({ success: true, data: sources }, { status: 200 });
   } catch (error) {
-    console.error("Erro ao listar origens:", error);
     return NextResponse.json(
       {
         error: "server_error",
@@ -136,10 +162,6 @@ export async function GET(request: Request) {
     );
   }
 }
-
-
-
-
 
 
 

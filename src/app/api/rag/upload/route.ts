@@ -1,5 +1,24 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import path from "node:path";
+
+// Função auxiliar para verificar autenticação
+const verifyAuth = (request: NextRequest): { valid: boolean; error?: string } => {
+  const authCookie = request.cookies.get("onboarding_auth");
+
+  if (!authCookie?.value) {
+    return { valid: false, error: "Não autenticado" };
+  }
+
+  try {
+    const authData = JSON.parse(authCookie.value);
+    if (!authData?.institutionId) {
+      return { valid: false, error: "Token de autenticação inválido" };
+    }
+    return { valid: true };
+  } catch {
+    return { valid: false, error: "Token de autenticação inválido" };
+  }
+};
 
 const MAX_SIZE = 15 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = [
@@ -60,13 +79,21 @@ const getAutomationDbConfig = (): AutomationDbConfig => {
   return { baseUrl, token, tableId, fileFieldName };
 };
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  // Verificar autenticação
+  const auth = verifyAuth(request);
+  if (!auth.valid) {
+    return NextResponse.json(
+      { error: auth.error },
+      { status: 401 },
+    );
+  }
+
   let automationDbConfig: AutomationDbConfig;
 
   try {
     automationDbConfig = getAutomationDbConfig();
-  } catch (error) {
-    console.error(error);
+  } catch {
     return NextResponse.json(
       {
         error: "automation_db_not_configured",
@@ -105,7 +132,6 @@ export async function POST(request: Request) {
 
   if (!uploadResponse.ok) {
     const errorText = await uploadResponse.text().catch(() => "upload_failed");
-    console.error("Falha ao enviar arquivo para Automation DB:", errorText);
     return NextResponse.json(
       { error: "automation_db_upload_failed", message: errorText },
       { status: 502 },
@@ -137,7 +163,6 @@ export async function POST(request: Request) {
 
   if (!rowResponse.ok) {
     const errorText = await rowResponse.text().catch(() => "row_creation_failed");
-    console.error("Falha ao criar linha para o arquivo no Automation DB:", errorText);
     return NextResponse.json(
       { error: "automation_db_row_failed", message: errorText },
       { status: 502 },
@@ -150,7 +175,6 @@ export async function POST(request: Request) {
     Array.isArray(storedFiles) && storedFiles.length > 0 ? (storedFiles[0] as AutomationDbFile) : null;
 
   if (!savedFile) {
-    console.error("Automation DB retornou linha sem arquivo vinculado", createdRow);
     return NextResponse.json(
       { error: "automation_db_invalid_response", message: "Arquivo não retornado pelo Automation DB." },
       { status: 502 },
@@ -166,13 +190,21 @@ export async function POST(request: Request) {
   });
 }
 
-export async function DELETE(request: Request) {
+export async function DELETE(request: NextRequest) {
+  // Verificar autenticação
+  const auth = verifyAuth(request);
+  if (!auth.valid) {
+    return NextResponse.json(
+      { error: auth.error },
+      { status: 401 },
+    );
+  }
+
   let automationDbConfig: AutomationDbConfig;
 
   try {
     automationDbConfig = getAutomationDbConfig();
-  } catch (error) {
-    console.error(error);
+  } catch {
     return NextResponse.json(
       {
         error: "automation_db_not_configured",
@@ -207,7 +239,6 @@ export async function DELETE(request: Request) {
 
   if (!deleteResponse.ok) {
     const errorText = await deleteResponse.text().catch(() => "delete_failed");
-    console.error("Falha ao remover arquivo do Automation DB:", errorText);
     return NextResponse.json(
       {
         error: "delete_failed",

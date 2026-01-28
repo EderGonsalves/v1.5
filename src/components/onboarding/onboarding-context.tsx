@@ -12,6 +12,7 @@ const AUTH_STORAGE_KEY = "onboarding_auth";
 
 type OnboardingContextValue = {
   data: OnboardingData;
+  isHydrated: boolean;
   updateSection: (values: Partial<OnboardingData>) => void;
   reset: () => void;
   logout: () => void;
@@ -51,22 +52,30 @@ const saveAuthToStorage = (auth: AuthInfo | null): void => {
 };
 
 export const OnboardingProvider = ({ children }: { children: ReactNode }) => {
-  const [data, setData] = useState<OnboardingData>(() => {
+  const [data, setData] = useState<OnboardingData>(defaultOnboardingData);
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  // Carregar auth do localStorage após montagem (evita hydration mismatch)
+  useEffect(() => {
     const savedAuth = loadAuthFromStorage();
-    return {
-      ...defaultOnboardingData,
-      auth: savedAuth,
-    };
-  });
+    if (savedAuth) {
+      setData((prev) => ({
+        ...prev,
+        auth: savedAuth,
+      }));
+    }
+    setIsHydrated(true);
+  }, []);
 
   useEffect(() => {
-    // Sincronizar auth com localStorage sempre que mudar
+    // Sincronizar auth com localStorage sempre que mudar (apenas após hydration)
+    if (!isHydrated) return;
     if (data.auth) {
       saveAuthToStorage(data.auth);
     } else {
       saveAuthToStorage(null);
     }
-  }, [data.auth]);
+  }, [data.auth, isHydrated]);
 
   const updateSection = (values: Partial<OnboardingData>) => {
     setData((prev) => {
@@ -92,7 +101,7 @@ export const OnboardingProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <OnboardingContext.Provider value={{ data, updateSection, reset, logout }}>
+    <OnboardingContext.Provider value={{ data, isHydrated, updateSection, reset, logout }}>
       {children}
     </OnboardingContext.Provider>
   );

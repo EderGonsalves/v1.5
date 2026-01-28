@@ -1,8 +1,27 @@
 import { randomUUID } from "node:crypto";
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { onboardingPayloadSchema } from "@/lib/validations";
+
+// Função auxiliar para verificar autenticação
+const verifyAuth = (request: NextRequest): { valid: boolean; error?: string } => {
+  const authCookie = request.cookies.get("onboarding_auth");
+
+  if (!authCookie?.value) {
+    return { valid: false, error: "Não autenticado" };
+  }
+
+  try {
+    const authData = JSON.parse(authCookie.value);
+    if (!authData?.institutionId) {
+      return { valid: false, error: "Token de autenticação inválido" };
+    }
+    return { valid: true };
+  } catch {
+    return { valid: false, error: "Token de autenticação inválido" };
+  }
+};
 
 export async function POST(request: Request) {
   try {

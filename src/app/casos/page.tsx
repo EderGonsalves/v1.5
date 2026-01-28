@@ -49,8 +49,30 @@ type InstitutionOption = {
   label: string;
 };
 
+const parseDateInput = (value: string, options?: { endOfDay?: boolean }) => {
+  if (!value) return null;
+
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+
+  const [, year, month, day] = match;
+  const date = new Date(Number(year), Number(month) - 1, Number(day));
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  if (options?.endOfDay) {
+    date.setHours(23, 59, 59, 999);
+  } else {
+    date.setHours(0, 0, 0, 0);
+  }
+
+  return date;
+};
+
 export default function CasosPage() {
-  const { data } = useOnboarding();
+  const { data, isHydrated } = useOnboarding();
   const router = useRouter();
   const normalizedInstitutionId = useMemo(() => {
     const value = data.auth?.institutionId;
@@ -74,7 +96,17 @@ export default function CasosPage() {
   const [selectedInstitution, setSelectedInstitution] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [stageFilter, setStageFilter] = useState<CaseStage | "all">("all");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [adminInstitutions, setAdminInstitutions] = useState<InstitutionOption[]>([]);
+  const normalizedStartDate = useMemo(
+    () => parseDateInput(startDate),
+    [startDate],
+  );
+  const normalizedEndDate = useMemo(
+    () => parseDateInput(endDate, { endOfDay: true }),
+    [endDate],
+  );
 
   const caseInstitutionIds = useMemo(() => {
     if (!cases.length) return [];
@@ -140,6 +172,45 @@ export default function CasosPage() {
       );
     }
 
+    // Filtro por data
+    if (normalizedStartDate || normalizedEndDate) {
+      filteredCases = filteredCases.filter((row) => {
+        if (!row.Data) return false;
+
+        // Tenta converter a data do caso para um formato comparável
+        // Suporta formatos: DD/MM/YYYY, YYYY-MM-DD, ou DD-MM-YYYY
+        let caseDate: Date | null = null;
+        const dataStr = row.Data.toString().trim();
+
+        // Tenta formato DD/MM/YYYY ou DD-MM-YYYY
+        const brMatch = dataStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+        if (brMatch) {
+          const [, day, month, year] = brMatch;
+          caseDate = new Date(Number(year), Number(month) - 1, Number(day));
+        } else {
+          // Tenta formato ISO YYYY-MM-DD
+          const isoMatch = dataStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+          if (isoMatch) {
+            const [, year, month, day] = isoMatch;
+            caseDate = new Date(Number(year), Number(month) - 1, Number(day));
+          }
+        }
+
+        if (!caseDate || isNaN(caseDate.getTime())) return false;
+
+        // Compara com as datas de filtro
+        if (normalizedStartDate) {
+          if (caseDate < normalizedStartDate) return false;
+        }
+
+        if (normalizedEndDate) {
+          if (caseDate > normalizedEndDate) return false;
+        }
+
+        return true;
+      });
+    }
+
     const normalizedQuery = searchQuery.trim().toLowerCase();
     const numericQuery = normalizedQuery.replace(/\D/g, "");
 
@@ -173,7 +244,15 @@ export default function CasosPage() {
       const idB = b.CaseId || b.id || 0;
       return idB - idA;
     });
-  }, [cases, isSysAdmin, selectedInstitution, searchQuery, stageFilter]);
+  }, [
+    cases,
+    isSysAdmin,
+    selectedInstitution,
+    searchQuery,
+    stageFilter,
+    normalizedStartDate,
+    normalizedEndDate,
+  ]);
 
   const caseStats = useMemo(
     () => computeCaseStatistics(visibleCases),
@@ -256,6 +335,7 @@ export default function CasosPage() {
   }, [institutionOptions, isSysAdmin, selectedInstitution]);
 
   useEffect(() => {
+    if (!isHydrated) return;
     if (!data.auth) {
       router.push("/");
       return;
@@ -265,7 +345,7 @@ export default function CasosPage() {
     }
     loadCases();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.auth, normalizedInstitutionId]);
+  }, [isHydrated, data.auth, normalizedInstitutionId]);
 
   const loadCases = async (page: number = 1, append: boolean = false) => {
     if (!Number.isFinite(normalizedInstitutionId)) {
@@ -484,7 +564,7 @@ export default function CasosPage() {
         </section>
 
         <Card>
-          <CardHeader>
+          <CardHeader className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>Lista de Atendimentos</CardTitle>
@@ -493,71 +573,9 @@ export default function CasosPage() {
                   {visibleCases.length === 1 ? "atendimento" : "atendimentos"}
                 </CardDescription>
               </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex flex-col gap-1">
-                  <label
-                    htmlFor="cases-search"
-                    className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                  >
-                    Buscar casos
-                  </label>
-                  <Input
-                    id="cases-search"
-                    type="search"
-                    value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                    placeholder="Nome, ID, BJCaseId ou telefone"
-                    className="w-full min-w-[220px]"
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <label
-                    htmlFor="stage-filter"
-                    className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                  >
-                    Filtrar por etapa
-                  </label>
-                  <select
-                    id="stage-filter"
-                    value={stageFilter}
-                    onChange={(event) =>
-                      setStageFilter(event.target.value as CaseStage | "all")
-                    }
-                    className="rounded-md border border-input bg-background px-3 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
-                  >
-                    <option value="all">Todas</option>
-                    {stageOrder.map((stage) => (
-                      <option key={stage} value={stage}>
-                        {stageLabels[stage]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {isSysAdmin && (
-                  <div className="flex flex-col gap-1 text-right">
-                    <label
-                      htmlFor="institution-filter"
-                      className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                    >
-                      Filtrar por instituição
-                    </label>
-                    <select
-                      id="institution-filter"
-                      value={selectedInstitution}
-                      onChange={(event) => setSelectedInstitution(event.target.value)}
-                      className="rounded-md border border-input bg-background px-3 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
-                    >
-                      <option value="all">Todas</option>
-                      {institutionOptions.map((option) => (
-                        <option key={option.id} value={option.id}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
+              <div className="flex items-center gap-2">
                 {hasMore && (
-                  <Button 
+                  <Button
                     onClick={loadMoreCases}
                     disabled={isLoadingMore}
                     variant="outline"
@@ -577,6 +595,104 @@ export default function CasosPage() {
                   <RefreshCw className="h-4 w-4" />
                 </Button>
               </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
+              <div className="col-span-2 sm:col-span-1 lg:col-span-2 flex flex-col gap-1">
+                <label
+                  htmlFor="cases-search"
+                  className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                >
+                  Buscar casos
+                </label>
+                <Input
+                  id="cases-search"
+                  type="search"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Nome, ID, BJCaseId ou telefone"
+                  className="w-full"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label
+                  htmlFor="stage-filter"
+                  className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                >
+                  Etapa
+                </label>
+                <select
+                  id="stage-filter"
+                  value={stageFilter}
+                  onChange={(event) =>
+                    setStageFilter(event.target.value as CaseStage | "all")
+                  }
+                  className="h-9 rounded-md border border-input bg-background px-3 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                >
+                  <option value="all">Todas</option>
+                  {stageOrder.map((stage) => (
+                    <option key={stage} value={stage}>
+                      {stageLabels[stage]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {isHydrated && (
+                <>
+                  <div className="flex flex-col gap-1">
+                    <label
+                      htmlFor="start-date"
+                      className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                    >
+                      Data inicial
+                    </label>
+                    <Input
+                      id="start-date"
+                      type="date"
+                      value={startDate}
+                      onChange={(event) => setStartDate(event.target.value)}
+                      className="w-full"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label
+                      htmlFor="end-date"
+                      className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                    >
+                      Data final
+                    </label>
+                    <Input
+                      id="end-date"
+                      type="date"
+                      value={endDate}
+                      onChange={(event) => setEndDate(event.target.value)}
+                      className="w-full"
+                    />
+                  </div>
+                </>
+              )}
+              {isSysAdmin && (
+                <div className="flex flex-col gap-1">
+                  <label
+                    htmlFor="institution-filter"
+                    className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                  >
+                    Instituição
+                  </label>
+                  <select
+                    id="institution-filter"
+                    value={selectedInstitution}
+                    onChange={(event) => setSelectedInstitution(event.target.value)}
+                    className="h-9 rounded-md border border-input bg-background px-3 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                  >
+                    <option value="all">Todas</option>
+                    {institutionOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           </CardHeader>
           <CardContent>

@@ -271,7 +271,7 @@ const sortSectionFields = (
 
 export default function ConfiguracoesPage() {
   const router = useRouter();
-  const { data } = useOnboarding();
+  const { data, isHydrated } = useOnboarding();
   const [configs, setConfigs] = useState<BaserowConfigRow[]>([]);
   const [editingFields, setEditingFields] = useState<Record<number, Record<string, EditableField>>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -281,6 +281,7 @@ export default function ConfiguracoesPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!isHydrated) return;
     if (!data.auth) {
       router.push("/");
       return;
@@ -288,7 +289,7 @@ export default function ConfiguracoesPage() {
 
     loadConfigs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.auth]);
+  }, [isHydrated, data.auth]);
 
   const loadConfigs = async () => {
     if (!data.auth) return;

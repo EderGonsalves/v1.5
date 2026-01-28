@@ -13,11 +13,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
+import { getBaserowConfigs } from "@/services/api";
 
+// WhatsApp OAuth configuration - usando variáveis de ambiente
 const WHATSAPP_OAUTH_BASE_URL = "https://www.facebook.com/v22.0/dialog/oauth";
-const WHATSAPP_CLIENT_ID = "1990068605120799";
-const WHATSAPP_REDIRECT_URI = "https://automation-webhook.riasistemas.com.br/webhook/wa/auth";
-const WHATSAPP_CONFIG_ID = "1339029904935343";
+const WHATSAPP_CLIENT_ID = process.env.NEXT_PUBLIC_WHATSAPP_CLIENT_ID || "";
+const WHATSAPP_REDIRECT_URI = process.env.NEXT_PUBLIC_WHATSAPP_REDIRECT_URI || "";
+const WHATSAPP_CONFIG_ID = process.env.NEXT_PUBLIC_WHATSAPP_CONFIG_ID || "";
 
 const buildWhatsAppOAuthUrl = (institutionId: number): string => {
   const state = institutionId.toString();
@@ -38,12 +40,56 @@ const buildWhatsAppOAuthUrl = (institutionId: number): string => {
   return `${WHATSAPP_OAUTH_BASE_URL}?${params.toString()}`;
 };
 
+type ConnectedNumber = {
+  id: number;
+  phoneNumber: string;
+};
+
 export default function ConexoesPage() {
   const router = useRouter();
-  const { data, updateSection } = useOnboarding();
+  const { data, isHydrated, updateSection } = useOnboarding();
   const [isConnecting, setIsConnecting] = useState(false);
+  const [connectedNumbers, setConnectedNumbers] = useState<ConnectedNumber[]>([]);
+  const [isLoadingWaba, setIsLoadingWaba] = useState(false);
+
+  // Buscar os números WABA do Baserow
+  useEffect(() => {
+    const fetchWabaNumbers = async () => {
+      if (!data.auth?.institutionId) return;
+
+      setIsLoadingWaba(true);
+      try {
+        const configs = await getBaserowConfigs(data.auth.institutionId);
+        const numbers: ConnectedNumber[] = [];
+
+        configs.forEach((config) => {
+          const phoneNumber = config.waba_phone_number;
+          if (phoneNumber) {
+            const normalizedPhone = typeof phoneNumber === "string"
+              ? phoneNumber.trim()
+              : String(phoneNumber);
+            if (normalizedPhone) {
+              numbers.push({
+                id: config.id,
+                phoneNumber: normalizedPhone,
+              });
+            }
+          }
+        });
+
+        setConnectedNumbers(numbers);
+      } catch (error) {
+        console.error("Erro ao buscar números WABA:", error);
+      } finally {
+        setIsLoadingWaba(false);
+      }
+    };
+
+    fetchWabaNumbers();
+  }, [data.auth?.institutionId]);
 
   useEffect(() => {
+    if (!isHydrated) return;
     if (!data.auth) {
       router.push("/");
       return;
@@ -76,7 +122,7 @@ export default function ConexoesPage() {
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [data.auth, router, data.connections, updateSection]);
+  }, [isHydrated, data.auth, router, data.connections, updateSection]);
 
   const handleWhatsAppConnect = () => {
     if (!data.auth?.institutionId) {
@@ -174,9 +220,7 @@ export default function ConexoesPage() {
     }, 300000); // 5 minutos
   };
 
-  const whatsAppConnected = data.connections?.whatsApp?.connected ?? false;
-
-  if (!data.auth) {
+  if (!isHydrated || !data.auth) {
     return null;
   }
 
@@ -204,7 +248,7 @@ export default function ConexoesPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-6">
-              {/* WhatsApp Business */}
+              {/* WhatsApp Business - Botão de conexão */}
               <div className="rounded-lg border border-border/60 bg-card p-6">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 space-y-2">
@@ -227,8 +271,56 @@ export default function ConexoesPage() {
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-2">
-                    {whatsAppConnected ? (
-                      <div className="flex items-center gap-2 rounded-md bg-green-500/10 px-3 py-1.5 text-sm text-green-700">
+                    <Button
+                      type="button"
+                      onClick={handleWhatsAppConnect}
+                      disabled={isConnecting || !data.auth?.institutionId}
+                      className="bg-green-600 hover:bg-green-700 text-white"
+                    >
+                      {isConnecting ? "Conectando..." : "Conectar novo número"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Números conectados */}
+              {isLoadingWaba ? (
+                <div className="rounded-lg border border-border/60 bg-card p-6">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 animate-pulse rounded-lg bg-muted" />
+                    <div className="space-y-2">
+                      <div className="h-4 w-32 animate-pulse rounded bg-muted" />
+                      <div className="h-3 w-24 animate-pulse rounded bg-muted" />
+                    </div>
+                  </div>
+                </div>
+              ) : connectedNumbers.length > 0 ? (
+                connectedNumbers.map((connection) => (
+                  <div
+                    key={connection.id}
+                    className="rounded-lg border border-green-200 bg-green-50/50 p-6 dark:border-green-900 dark:bg-green-950/20"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-500/10">
+                          <svg
+                            className="h-6 w-6 text-green-600"
+                            fill="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.191 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-foreground">
+                            {connection.phoneNumber}
+                          </h4>
+                          <p className="text-sm text-muted-foreground">
+                            Número conectado ao WhatsApp Business
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 rounded-md bg-green-500/10 px-3 py-1.5 text-sm text-green-700 dark:text-green-400">
                         <svg
                           className="h-4 w-4"
                           fill="none"
@@ -244,23 +336,14 @@ export default function ConexoesPage() {
                         </svg>
                         Conectado
                       </div>
-                    ) : (
-                      <Button
-                        type="button"
-                        onClick={handleWhatsAppConnect}
-                        disabled={isConnecting || !data.auth?.institutionId}
-                        className="bg-green-600 hover:bg-green-700 text-white"
-                      >
-                        {isConnecting ? "Conectando..." : "Conectar"}
-                      </Button>
-                    )}
+                    </div>
                   </div>
-                </div>
-              </div>
+                ))
+              ) : null}
 
               {/* Placeholder para futuras conexões */}
               <Separator />
-              
+
               <div className="rounded-lg border border-border/60 bg-muted/30 p-6">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 space-y-2">

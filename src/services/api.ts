@@ -504,9 +504,30 @@ export const updateConfig = async (
   }
 };
 
-const BASEROW_API_URL = "https://automation-db.riasistemas.com.br/api";
-const BASEROW_API_KEY = "jSOTmQbEzFZUOxMSkOs6t5KARjTTaH3S";
-const BASEROW_TABLE_ID = 224;
+// Baserow API configuration - usando variáveis de ambiente
+const BASEROW_API_URL =
+  process.env.NEXT_PUBLIC_BASEROW_API_URL ||
+  process.env.BASEROW_API_URL ||
+  process.env.AUTOMATION_DB_API_URL ||
+  "";
+const BASEROW_API_KEY =
+  process.env.NEXT_PUBLIC_BASEROW_API_KEY ||
+  process.env.BASEROW_API_KEY ||
+  process.env.AUTOMATION_DB_TOKEN ||
+  "";
+const BASEROW_TABLE_ID =
+  Number(
+    process.env.NEXT_PUBLIC_BASEROW_CONFIG_TABLE_ID ||
+      process.env.BASEROW_CONFIG_TABLE_ID,
+  ) || 224;
+
+// Validação de configuração (apenas em desenvolvimento para debug)
+if (
+  process.env.NODE_ENV !== "production" &&
+  (!BASEROW_API_URL || !BASEROW_API_KEY)
+) {
+  console.error("AVISO: Configuração do Baserow incompleta. Verifique as variáveis de ambiente.");
+}
 
 export type BaserowConfigRow = {
   id: number;
@@ -516,10 +537,7 @@ export type BaserowConfigRow = {
 export const getBaserowConfigs = async (institutionId?: number): Promise<BaserowConfigRow[]> => {
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_TABLE_ID}/?user_field_names=true`;
-    
-    console.log("Buscando configuraÃ§Ãµes do Baserow para institutionId:", institutionId);
-    
-    // Buscar todas as configuraÃ§Ãµes e filtrar pelo body.auth.institutionId
+
     const response = await axios.get(url, {
       headers: {
         Authorization: `Token ${BASEROW_API_KEY}`,
@@ -528,11 +546,8 @@ export const getBaserowConfigs = async (institutionId?: number): Promise<Baserow
       timeout: 30000,
     });
 
-    console.log("Resposta completa do Baserow:", JSON.stringify(response.data, null, 2));
     let results = response.data.results || [];
-    
-    console.log(`Total de linhas retornadas: ${results.length}`);
-    
+
     // Filtrar pelo body.auth.institutionId se fornecido
     // O Baserow retorna campos com nomes como "body.auth.institutionId" (string literal)
     const shouldFilterByInstitution =
@@ -541,44 +556,28 @@ export const getBaserowConfigs = async (institutionId?: number): Promise<Baserow
     if (shouldFilterByInstitution) {
       results = results.filter((row: BaserowConfigRow) => {
         const rowData = row as Record<string, unknown>;
-        
-        console.log("Analisando linha:", rowData.id, "Campos:", Object.keys(rowData));
-        
-        // O Baserow retorna campos com nomes como "body.auth.institutionId" diretamente no objeto
         const rowInstitutionId = rowData["body.auth.institutionId"];
-        
-        console.log(`Linha ${rowData.id}: institutionId encontrado =`, rowInstitutionId, "Comparando com", institutionId);
-        
-        // Comparar o institutionId (pode ser string ou nÃºmero)
-        const matches = rowInstitutionId === institutionId || 
+
+        // Comparar o institutionId (pode ser string ou número)
+        return rowInstitutionId === institutionId ||
                Number(rowInstitutionId) === institutionId ||
                String(rowInstitutionId) === String(institutionId);
-        
-        if (matches) {
-          console.log(`âœ“ Linha ${rowData.id} corresponde ao institutionId ${institutionId}`);
-        }
-        
-        return matches;
       });
-      
-      console.log(`Filtradas ${results.length} configuraÃ§Ãµes para institutionId ${institutionId}`);
     }
-    
+
     return results;
   } catch (error) {
-    console.error("Erro ao buscar configuraÃ§Ãµes do Baserow:", error);
     if (axios.isAxiosError(error)) {
       if (error.response) {
-        console.error("Detalhes do erro:", error.response.data);
         const errorMessage =
-          error.response.data?.message || error.message || "Erro ao buscar configuraÃ§Ãµes do Baserow";
+          error.response.data?.message || error.message || "Erro ao buscar configurações do Baserow";
         throw new Error(errorMessage);
       } else if (error.request) {
-        throw new Error("NÃ£o foi possÃ­vel conectar ao Baserow");
+        throw new Error("Não foi possível conectar ao Baserow");
       }
-      throw new Error(error.message || "Erro ao configurar a requisiÃ§Ã£o");
+      throw new Error(error.message || "Erro ao configurar a requisição");
     }
-    throw new Error(error instanceof Error ? error.message : "Erro desconhecido ao buscar configuraÃ§Ãµes");
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido ao buscar configurações");
   }
 };
 
@@ -588,11 +587,7 @@ export const updateBaserowConfig = async (
 ): Promise<BaserowConfigRow> => {
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_TABLE_ID}/${rowId}/?user_field_names=true`;
-    
-    console.log("Atualizando linha do Baserow:", rowId, "Dados:", data);
-    
-    // O Baserow espera os campos com os nomes exatos como "body.auth.institutionId"
-    // Não precisamos transformar nada, apenas enviar os dados como estão
+
     const response = await axios.patch(url, data, {
       headers: {
         Authorization: `Token ${BASEROW_API_KEY}`,
@@ -601,13 +596,10 @@ export const updateBaserowConfig = async (
       timeout: 30000,
     });
 
-    console.log("Linha atualizada com sucesso:", response.data);
     return response.data;
   } catch (error) {
-    console.error("Erro ao atualizar configuração do Baserow:", error);
     if (axios.isAxiosError(error)) {
       if (error.response) {
-        console.error("Detalhes do erro:", error.response.data);
         const errorMessage =
           error.response.data?.message || error.message || "Erro ao atualizar configuração do Baserow";
         throw new Error(errorMessage);
@@ -625,32 +617,25 @@ export const updateIaAtivada = async (
   iaAtivada: "sim" | "não",
 ): Promise<BaserowConfigRow> => {
   try {
-    console.log("Atualizando ia_ativada para institutionId:", institutionId, "Valor:", iaAtivada);
-    
-    // Buscar a linha mais recente para o institutionId
     const configs = await getBaserowConfigs(institutionId);
-    
+
     if (!configs.length) {
       throw new Error("Nenhuma configuração encontrada para o institutionId");
     }
-    
+
     // Pegar a linha mais recente (maior ID)
     const latestRow = configs.reduce(
       (current, candidate) => (candidate.id > current.id ? candidate : current),
       configs[0],
     );
-    
-    console.log("Atualizando linha:", latestRow.id, "com ia_ativada:", iaAtivada);
-    
+
     // Atualizar o campo ia_ativada
     const updatedRow = await updateBaserowConfig(latestRow.id, {
       ia_ativada: iaAtivada,
     });
-    
-    console.log("Campo ia_ativada atualizado com sucesso:", updatedRow);
+
     return updatedRow;
   } catch (error) {
-    console.error("Erro ao atualizar ia_ativada:", error);
     if (error instanceof Error) {
       throw error;
     }
@@ -663,7 +648,7 @@ export const createBaserowConfig = async (
 ): Promise<BaserowConfigRow> => {
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_TABLE_ID}/?user_field_names=true`;
-    console.log("Criando linha no Baserow:", data);
+
     const response = await axios.post(url, data, {
       headers: {
         Authorization: `Token ${BASEROW_API_KEY}`,
@@ -672,13 +657,10 @@ export const createBaserowConfig = async (
       timeout: 30000,
     });
 
-    console.log("Linha criada com sucesso:", response.data);
     return response.data;
   } catch (error) {
-    console.error("Erro ao criar configuração no Baserow:", error);
     if (axios.isAxiosError(error)) {
       if (error.response) {
-        console.error("Detalhes do erro:", error.response.data);
         const errorMessage =
           error.response.data?.message || error.message || "Erro ao criar configuração no Baserow";
         throw new Error(errorMessage);
@@ -691,9 +673,17 @@ export const createBaserowConfig = async (
   }
 };
 
-const BASEROW_AGENT_STATE_TABLE_ID = 226;
+const BASEROW_AGENT_STATE_TABLE_ID =
+  Number(
+    process.env.NEXT_PUBLIC_BASEROW_AGENT_STATE_TABLE_ID ||
+      process.env.BASEROW_AGENT_STATE_TABLE_ID,
+  ) || 226;
 const BASEROW_AGENT_STATE_NUMBER_FIELD_ID = 1695;
-const BASEROW_CASES_TABLE_ID = 225;
+const BASEROW_CASES_TABLE_ID =
+  Number(
+    process.env.NEXT_PUBLIC_BASEROW_CASES_TABLE_ID ||
+      process.env.BASEROW_CASES_TABLE_ID,
+  ) || 225;
 
 export type AgentStateRow = {
   id: number;
@@ -856,20 +846,13 @@ export const getBaserowCases = async ({
 
     const shouldFetchAll = Boolean(fetchAll);
     const initialUrl = buildUrl(shouldFetchAll ? 1 : page);
-    
-    console.log(
-      `Buscando casos do Baserow para institutionId: ${institutionId} (pagina ${shouldFetchAll ? "todas" : page}, tamanho ${pageSize})`,
-    );
-    
+
     const allResults: BaserowCaseRow[] = [];
     let nextUrl: string | null = initialUrl;
-    let iteration = 0;
     let hasNextPage = false;
     let totalCount: number | null = null;
 
     while (nextUrl) {
-      iteration += 1;
-      console.log(`Carregando pagina ${iteration} da tabela de casos (${nextUrl})`);
       const response = await axios.get(nextUrl, {
         headers: {
           Authorization: `Token ${BASEROW_API_KEY}`,
@@ -883,7 +866,7 @@ export const getBaserowCases = async ({
       if (typeof response.data?.count === "number") {
         totalCount = response.data.count;
       }
-      
+
       const nextFromResponse = normalizeNextUrl(response.data?.next);
       if (shouldFetchAll) {
         nextUrl = nextFromResponse;
@@ -893,9 +876,7 @@ export const getBaserowCases = async ({
         break;
       }
     }
-    
-    console.log(`Total de casos retornados: ${allResults.length}`);
-    
+
     // Filtrar pelo InstitutionID se fornecido
     const shouldFilterByInstitution =
       typeof institutionId === "number" && institutionId !== 4 && allResults.length > 0;
@@ -911,39 +892,19 @@ export const getBaserowCases = async ({
           rowInstitutionId !== undefined &&
           rowInstitutionId !== null &&
           rowInstitutionId !== "";
-        
-        console.log(
-          `Caso ${row.id}: InstitutionID encontrado =`,
-          rowInstitutionId,
-          "Comparando com",
-          institutionId,
-        );
-        
-        // Comparar o institutionId (pode ser string ou número)
-        const matches =
-          hasInstitution &&
-          String(rowInstitutionId) === String(institutionId);
-        
-        if (matches) {
-          console.log(`✓ Caso ${row.id} corresponde ao institutionId ${institutionId}`);
-        }
-        
-        return matches;
+
+        return hasInstitution && String(rowInstitutionId) === String(institutionId);
       });
-      
-      console.log(`Filtrados ${results.length} casos para institutionId ${institutionId}`);
     }
-    
+
     return {
       results,
       totalCount: typeof totalCount === "number" ? totalCount : results.length,
       hasNextPage,
     };
   } catch (error) {
-    console.error("Erro ao buscar casos do Baserow:", error);
     if (axios.isAxiosError(error)) {
       if (error.response) {
-        console.error("Detalhes do erro:", error.response.data);
         const errorMessage =
           error.response.data?.message || error.message || "Erro ao buscar casos do Baserow";
         throw new Error(errorMessage);
@@ -963,8 +924,6 @@ export const updateBaserowCase = async (
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASES_TABLE_ID}/${rowId}/?user_field_names=true`;
 
-    console.log("Atualizando caso do Baserow:", rowId, "Dados:", data);
-
     const response = await axios.patch(url, data, {
       headers: {
         Authorization: `Token ${BASEROW_API_KEY}`,
@@ -973,20 +932,17 @@ export const updateBaserowCase = async (
       timeout: 30000,
     });
 
-    console.log("Caso atualizado com sucesso:", response.data);
     return response.data;
   } catch (error) {
-    console.error("Erro ao atualizar caso do Baserow:", error);
     if (axios.isAxiosError(error)) {
       if (error.response) {
-        console.error("Detalhes do erro:", error.response.data);
         const errorMessage =
           error.response.data?.message || error.message || "Erro ao atualizar caso do Baserow";
         throw new Error(errorMessage);
       } else if (error.request) {
-        throw new Error("N�o foi poss�vel conectar ao Baserow");
+        throw new Error("Não foi possível conectar ao Baserow");
       }
-      throw new Error(error.message || "Erro ao configurar a requisi��o");
+      throw new Error(error.message || "Erro ao configurar a requisição");
     }
     throw new Error(error instanceof Error ? error.message : "Erro desconhecido ao atualizar caso");
   }
