@@ -141,8 +141,14 @@
     [class*="text-xs"],
     [class*="text-base"],
     .text-muted-foreground
-  ):not(button):not([role="button"]):not([data-slot="button"]) {
+  ):not(button):not([role="button"]):not([data-slot="button"]):not(.chat-bubble-agent *) {
     color: #646464 !important;
+  }
+
+  /* Texto branco para balão de mensagem do agente */
+  .chat-bubble-agent,
+  .chat-bubble-agent * {
+    color: #ffffff !important;
   }
   
   /* Aplicar cor tambÃ©m em modo escuro */
@@ -164,7 +170,7 @@
     [class*="text-xs"],
     [class*="text-base"],
     .text-muted-foreground
-  ):not(button):not([role="button"]):not([data-slot="button"]) {
+  ):not(button):not([role="button"]):not([data-slot="button"]):not(.chat-bubble-agent *) {
     color: #646464 !important;
   }
 

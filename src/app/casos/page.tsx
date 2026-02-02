@@ -31,7 +31,7 @@ import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import { useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/ui/loading-screen";
 import { Input } from "@/components/ui/input";
-import { MessageCircle, RefreshCw } from "lucide-react";
+import { MessageSquareText, RefreshCw } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import {
   CaseStage,
@@ -379,7 +379,7 @@ export default function CasosPage() {
         fetchAll: !append,
       });
       console.log("Atendimentos encontrados:", response);
-      
+
       if (append) {
         setCases((prev) => [...prev, ...response.results]);
         setHasMore(response.hasNextPage);
@@ -735,20 +735,17 @@ export default function CasosPage() {
                                 Data: {caseRow.Data}
                               </span>
                             )}
-                            {caseRow.CustumerPhone ? (
-                              <a
-                                href={`https://app.riasistemas.com.br/whatsapp${caseRow.CustumerPhone ? `?phone=${encodeURIComponent(caseRow.CustumerPhone)}` : ""}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center justify-center rounded-full border border-green-500/30 bg-green-50 p-2 text-green-600 transition hover:bg-green-100 dark:border-green-500/50 dark:bg-green-900/30 dark:text-green-300"
-                                aria-label={`Conversar via WhatsApp com ${caseRow.CustumerName || "cliente"} (${caseRow.CustumerPhone})`}
-                                onClick={(event) => event.stopPropagation()}
-                              >
-                                <MessageCircle className="h-4 w-4" />
-                              </a>
-                            ) : (
+                            {!caseRow.CustumerPhone && (
                               <span>Sem telefone</span>
                             )}
+                            <Link
+                              href={`/casos/${caseRow.id}/chat`}
+                              className="inline-flex items-center gap-1 rounded-full border border-blue-500/30 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 dark:border-blue-500/40 dark:bg-blue-900/30 dark:text-blue-200"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <MessageSquareText className="h-3.5 w-3.5" />
+                              Abrir chat
+                            </Link>
                             <div
                               className="flex items-center gap-2"
                               onClick={(event) => event.stopPropagation()}

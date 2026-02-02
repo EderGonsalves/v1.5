@@ -22,6 +22,18 @@ cp .env.example .env
   `/api/onboarding`);
 - `AUTOMATION_ENDPOINT_URL`: URL da sua automação principal (recebe o payload completo);
 - `RAG_WORKER_ENDPOINT_URL`: endpoint opcional para processar anexos e gerar embeddings.
+- `BASEROW_CASE_MESSAGES_TABLE_ID`/`NEXT_PUBLIC_BASEROW_CASE_MESSAGES_TABLE_ID`: tabela do Baserow onde cada mensagem do caso será persistida.
+- `CHAT_WEBHOOK_URL`/`CHAT_WEBHOOK_TOKEN`: destino que recebe a mensagem antes dela ser salva; use token se o webhook exigir autenticação.
+- `CHAT_WEBHOOK_TIMEOUT_MS`/`NEXT_PUBLIC_CHAT_POLL_INTERVAL_MS`: controlam o timeout do webhook e o intervalo de atualização automática do chat (milissegundos).
+
+## Chat de casos
+
+- `/casos/[caseId]/chat` abre a nova tela estilo WhatsApp com:
+  - histórico estruturado (`GET /api/cases/:id/messages`);
+  - envio de texto, anexos e áudios (usa `POST /api/cases/:id/messages`);
+  - indicador da janela de 24h do WhatsApp e botão para pausar/retomar o bot.
+- O modal de casos também ganhou um atalho **Abrir chat** para cada linha.
+- Sempre configure a tabela de mensagens no Baserow + webhook antes de usar a tela para garantir que as mensagens sejam sincronizadas com o bot.
 
 ## Desenvolvimento
 

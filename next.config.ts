@@ -9,6 +9,11 @@ const nextConfig: NextConfig = {
         hostname: "app.riasistemas.com.br",
         pathname: "/**",
       },
+      {
+        protocol: "https",
+        hostname: "automation-db.riasistemas.com.br",
+        pathname: "/**",
+      },
     ],
   },
   /* config options here */

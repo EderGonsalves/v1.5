@@ -811,6 +811,48 @@ export type BaserowCasesResponse = {
   hasNextPage: boolean;
 };
 
+export const getBaserowCaseById = async (
+  rowId: number,
+): Promise<BaserowCaseRow | null> => {
+  try {
+    if (!rowId) {
+      return null;
+    }
+
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASES_TABLE_ID}/${rowId}/?user_field_names=true`;
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 20000,
+    });
+
+    return response.data as BaserowCaseRow;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response?.status === 404) {
+        return null;
+      }
+
+      if (error.response) {
+        const errorMessage =
+          error.response.data?.message ||
+          error.message ||
+          "Erro ao buscar caso no Baserow";
+        throw new Error(errorMessage);
+      }
+      if (error.request) {
+        throw new Error("Não foi possível conectar ao Baserow");
+      }
+      throw new Error(error.message || "Erro ao configurar a requisição");
+    }
+    throw new Error(
+      error instanceof Error ? error.message : "Erro desconhecido ao buscar caso",
+    );
+  }
+};
+
 const normalizeNextUrl = (value: unknown): string | null => {
   if (!value || typeof value !== "string") {
     return null;
