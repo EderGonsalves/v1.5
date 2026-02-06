@@ -2,7 +2,19 @@
   "permissions": {
     "allow": [
       "Bash(npm run build:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(curl:*)",
+      "Bash(npm run dev:*)",
+      "Bash(timeout /t 10 /nobreak)",
+      "Bash(ping:*)",
+      "Bash(node:*)",
+      "Bash(taskkill:*)",
+      "Bash(del \"C:\\\\Users\\\\EderG\\\\Documents\\\\RIA\\\\v2_light\\\\onboarding\\\\onboarding-app\\\\.next\\\\dev\\\\lock\")",
+      "Bash(powershell -Command:*)",
+      "Bash(python -c:*)",
+      "Bash(findstr:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run lint)"
     ]
   }
 }

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CheckCheck, Download, FileText, ImageIcon, Loader2, X } from "lucide-react";
+import { CheckCheck, Download, FileText, Ghost, ImageIcon, Loader2, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -415,6 +415,7 @@ export const ChatMessageList = ({
           const isClient = message.sender === "cliente";
           const isBot = message.sender === "bot" || message.sender === "sistema";
           const isAgent = message.sender === "agente";
+          const isGhostMessage = message.metadata?.type === "ghost";
 
           // Label for sender
           const senderLabel = isClient
@@ -440,10 +441,20 @@ export const ChatMessageList = ({
               >
                 {/* Sender label */}
                 <div className={cn(
-                  "text-[10px] font-semibold mb-0.5",
-                  isClient ? "text-muted-foreground" : "text-white/80"
+                  "flex items-center gap-2 mb-0.5",
                 )}>
-                  {senderLabel}
+                  <span className={cn(
+                    "text-[10px] font-semibold",
+                    isClient ? "text-muted-foreground" : "text-white/80"
+                  )}>
+                    {senderLabel}
+                  </span>
+                  {isGhostMessage && (
+                    <span className="inline-flex items-center gap-1 text-[9px] font-medium bg-violet-500/20 text-violet-600 px-1.5 py-0.5 rounded">
+                      <Ghost className="h-3 w-3" />
+                      Mensagem Interna
+                    </span>
+                  )}
                 </div>
 
                 <AttachmentGrid

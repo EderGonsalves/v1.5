@@ -21,7 +21,8 @@ import {
   type CaseStatistics,
 } from "@/lib/case-stats";
 import { cn } from "@/lib/utils";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Loader2 } from "lucide-react";
+import { useStatistics } from "@/hooks/use-statistics";
 
 const stageStackColors: Record<CaseStage, string> = {
   DepoimentoInicial: "bg-blue-500/70",
@@ -160,6 +161,14 @@ export default function EstatisticasPage() {
 
   const isSysAdmin = data.auth?.institutionId === 4;
 
+  // Hook para estatísticas rápidas do servidor (mostra enquanto carrega dados completos)
+  const {
+    stats: quickStats,
+    isLoading: quickStatsLoading,
+    refresh: refreshQuickStats,
+    isRefreshing: quickStatsRefreshing,
+  } = useStatistics(data.auth?.institutionId ?? undefined);
+
   const fetchStatistics = useCallback(
     async (options: { silent?: boolean } = {}) => {
       if (!data.auth?.institutionId) {
@@ -246,10 +255,21 @@ export default function EstatisticasPage() {
     );
   }, [cases, isSysAdmin, selectedInstitution]);
 
-  const stats = useMemo(
+  const computedStats = useMemo(
     () => computeCaseStatistics(visibleCases),
     [visibleCases],
   );
+
+  // Usa estatísticas rápidas do servidor enquanto carrega, depois usa as computadas localmente
+  // (para suportar filtros por instituição)
+  const stats = useMemo(() => {
+    // Se ainda está carregando e não é sysAdmin (sem filtros), usa quickStats
+    if (isLoading && !isSysAdmin && quickStats.totalCases > 0) {
+      return quickStats;
+    }
+    // Caso contrário, usa as estatísticas computadas localmente (com filtros aplicados)
+    return computedStats;
+  }, [isLoading, isSysAdmin, quickStats, computedStats]);
 
   const scopeDescription = useMemo(() => {
     if (isSysAdmin) {
@@ -344,11 +364,18 @@ export default function EstatisticasPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => fetchStatistics({ silent: true })}
-              disabled={isRefreshing}
+              onClick={() => {
+                fetchStatistics({ silent: true });
+                refreshQuickStats();
+              }}
+              disabled={isRefreshing || quickStatsRefreshing}
               className="gap-2"
             >
-              <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+              {(isRefreshing || quickStatsRefreshing) ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
               Atualizar
             </Button>
           </div>

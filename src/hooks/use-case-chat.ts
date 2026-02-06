@@ -14,6 +14,8 @@ export type CaseSummary = {
   customerPhone: string;
   paused: boolean;
   bjCaseId?: string | number | null;
+  /** Número WABA associado a esta conversa (determinado das mensagens) */
+  wabaPhoneNumber?: string | null;
 };
 
 export type ChatMeta = {
@@ -48,6 +50,46 @@ const parsePollInterval = (): number => {
   if (!raw) return 10000;
   const parsed = Number(raw);
   return Number.isFinite(parsed) && parsed >= 5000 ? parsed : 10000;
+};
+
+// Cache de mensagens por caseId
+type CachedChat = {
+  messages: CaseMessage[];
+  caseSummary: CaseSummary;
+  meta: ChatMeta;
+  timestamp: number;
+};
+
+const CHAT_CACHE_KEY_PREFIX = "onboarding_chat_cache_";
+const CHAT_CACHE_TTL_MS = 60 * 1000; // 1 minuto
+
+const getChatCache = (caseRowId: number): CachedChat | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(`${CHAT_CACHE_KEY_PREFIX}${caseRowId}`);
+    if (!raw) return null;
+    const cached = JSON.parse(raw) as CachedChat;
+    if (Date.now() - cached.timestamp > CHAT_CACHE_TTL_MS) {
+      sessionStorage.removeItem(`${CHAT_CACHE_KEY_PREFIX}${caseRowId}`);
+      return null;
+    }
+    return cached;
+  } catch {
+    return null;
+  }
+};
+
+const setChatCache = (caseRowId: number, data: Omit<CachedChat, "timestamp">): void => {
+  if (typeof window === "undefined") return;
+  try {
+    const cached: CachedChat = {
+      ...data,
+      timestamp: Date.now(),
+    };
+    sessionStorage.setItem(`${CHAT_CACHE_KEY_PREFIX}${caseRowId}`, JSON.stringify(cached));
+  } catch {
+    // Ignora erros de storage
+  }
 };
 
 export const useCaseChat = (
@@ -93,6 +135,13 @@ export const useCaseChat = (
         setMessages(data.messages);
         setCaseSummary(data.case);
         setMeta(data.meta);
+
+        // Salvar no cache
+        setChatCache(caseRowId, {
+          messages: data.messages,
+          caseSummary: data.case,
+          meta: data.meta,
+        });
       } catch (error) {
         setError(
           error instanceof Error ? error.message : "Erro desconhecido ao carregar o chat",
@@ -109,8 +158,19 @@ export const useCaseChat = (
   );
 
   useEffect(() => {
-    fetchMessages();
-  }, [fetchMessages]);
+    // Verificar cache primeiro
+    const cached = getChatCache(caseRowId);
+    if (cached) {
+      setMessages(cached.messages);
+      setCaseSummary(cached.caseSummary);
+      setMeta(cached.meta);
+      setIsLoading(false);
+      // Atualizar em background
+      fetchMessages({ silent: true });
+    } else {
+      fetchMessages();
+    }
+  }, [caseRowId, fetchMessages]);
 
   useEffect(() => {
     if (!pollInterval) return undefined;
@@ -147,6 +207,12 @@ export const useCaseChat = (
         }
         if (payload.quotedMessageId) {
           formData.append("quotedMessageId", String(payload.quotedMessageId));
+        }
+        if (payload.type) {
+          formData.append("type", payload.type);
+        }
+        if (payload.wabaPhoneNumber) {
+          formData.append("wabaPhoneNumber", payload.wabaPhoneNumber);
         }
         payload.attachments?.forEach((file) => {
           formData.append("attachments", file);

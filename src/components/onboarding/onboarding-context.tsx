@@ -9,6 +9,20 @@ import {
 } from "@/lib/validations";
 
 const AUTH_STORAGE_KEY = "onboarding_auth";
+const AUTH_COOKIE_NAME = "onboarding_auth";
+
+// Funções para gerenciar cookies
+const setCookie = (name: string, value: string, days = 7): void => {
+  if (typeof document === "undefined") return;
+  const expires = new Date();
+  expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
+  document.cookie = `${name}=${encodeURIComponent(value)};expires=${expires.toUTCString()};path=/;SameSite=Lax`;
+};
+
+const deleteCookie = (name: string): void => {
+  if (typeof document === "undefined") return;
+  document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+};
 
 type OnboardingContextValue = {
   data: OnboardingData;
@@ -39,12 +53,16 @@ const loadAuthFromStorage = (): AuthInfo | null => {
 
 const saveAuthToStorage = (auth: AuthInfo | null): void => {
   if (typeof window === "undefined") return;
-  
+
   try {
     if (auth) {
-      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(auth));
+      const authJson = JSON.stringify(auth);
+      localStorage.setItem(AUTH_STORAGE_KEY, authJson);
+      // Também salva em cookie para que as APIs possam acessar
+      setCookie(AUTH_COOKIE_NAME, authJson);
     } else {
       localStorage.removeItem(AUTH_STORAGE_KEY);
+      deleteCookie(AUTH_COOKIE_NAME);
     }
   } catch (error) {
     console.error("Erro ao salvar autenticação no localStorage:", error);
@@ -59,10 +77,13 @@ export const OnboardingProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const savedAuth = loadAuthFromStorage();
     if (savedAuth) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sincroniza o auth do localStorage apenas depois do mount
       setData((prev) => ({
         ...prev,
         auth: savedAuth,
       }));
+      // Garantir que o cookie também esteja configurado (caso o usuário já estava logado)
+      setCookie(AUTH_COOKIE_NAME, JSON.stringify(savedAuth));
     }
     setIsHydrated(true);
   }, []);
@@ -97,6 +118,7 @@ export const OnboardingProvider = ({ children }: { children: ReactNode }) => {
 
   const logout = () => {
     saveAuthToStorage(null);
+    deleteCookie(AUTH_COOKIE_NAME);
     setData(defaultOnboardingData);
   };
 

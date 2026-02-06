@@ -35,6 +35,16 @@ cp .env.example .env
 - O modal de casos também ganhou um atalho **Abrir chat** para cada linha.
 - Sempre configure a tabela de mensagens no Baserow + webhook antes de usar a tela para garantir que as mensagens sejam sincronizadas com o bot.
 
+## Follow-up automǭtico
+
+- `/follow-up` permite configurar atǸ 10 mensagens por institui��ǜo, definindo ordem, tempo de espera, dias/horǭrios permitidos e status de ativa��ǜo.
+- As configura����es ficam nas tabelas `BASEROW_FOLLOW_UP_CONFIG_TABLE_ID` e `BASEROW_FOLLOW_UP_HISTORY_TABLE_ID` (veja `.env.example`).
+- Agende uma chamada peri��dica para `POST /api/follow-up/check` (via cron/N8N). O endpoint:
+  - ignora casos finalizados, busca o ǧltimo contato do cliente e calcula se jǭ Ǹ hora de enviar a pr��xima mensagem ativa;
+  - dispara o webhook configurado em `CHAT_WEBHOOK_URL` usando o telefone do escrit��rio retornado pelo Baserow;
+  - registra sucesso/erro no hist��rico para evitar mensagens duplicadas e respeitar o limite de 10 mensagens a cada 24h.
+- Para valida��ǜes manuais existe `GET /api/follow-up/check?institution_id=42`, que lista quantas mensagens ativas est��o prontas para envio.
+
 ## Desenvolvimento
 
 ```bash

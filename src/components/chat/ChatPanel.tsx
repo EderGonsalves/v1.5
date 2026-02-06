@@ -1,0 +1,308 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { ArrowLeft, Loader2, MoreVertical, Phone, RefreshCw, User } from "lucide-react";
+
+import { Switch } from "@/components/ui/switch";
+import { ChatComposer } from "@/components/chat/ChatComposer";
+import { ChatMessageList } from "@/components/chat/ChatMessageList";
+import { useCaseChat, type CaseSummary } from "@/hooks/use-case-chat";
+import { cn } from "@/lib/utils";
+import { updateBaserowCase } from "@/services/api";
+import type { Conversation } from "@/hooks/use-conversations";
+import type { WabaNumber } from "@/hooks/use-waba-numbers";
+
+type ChatPanelProps = {
+  caseRowId: number;
+  conversation: Conversation;
+  onBack?: () => void;
+  /** Número WABA que será usado para enviar mensagens */
+  activeWabaNumber?: string | null;
+  /** Lista de números WABA disponíveis */
+  wabaNumbers?: WabaNumber[];
+};
+
+const formatWabaPhoneForDisplay = (phone: string): string => {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 13 && digits.startsWith("55")) {
+    const ddd = digits.slice(2, 4);
+    const part1 = digits.slice(4, 9);
+    const part2 = digits.slice(9);
+    return `(${ddd}) ${part1}-${part2}`;
+  }
+  if (digits.length === 12 && digits.startsWith("55")) {
+    const ddd = digits.slice(2, 4);
+    const part1 = digits.slice(4, 8);
+    const part2 = digits.slice(8);
+    return `(${ddd}) ${part1}-${part2}`;
+  }
+  return phone;
+};
+
+const formatRelativeTime = (value?: string | null): string => {
+  if (!value) {
+    return "Nunca";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Desconhecido";
+  }
+  const diffMs = Date.now() - date.getTime();
+  if (diffMs < 60 * 1000) {
+    return "online";
+  }
+  const minutes = Math.floor(diffMs / (60 * 1000));
+  if (minutes < 60) {
+    return `visto por último há ${minutes} min`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `visto por último há ${hours}h`;
+  }
+  const days = Math.floor(hours / 24);
+  return `visto por último há ${days}d`;
+};
+
+export const ChatPanel = ({
+  caseRowId,
+  conversation,
+  onBack,
+  activeWabaNumber,
+  wabaNumbers = [],
+}: ChatPanelProps) => {
+  const hasMultipleWaba = wabaNumbers.length > 1;
+
+  const initialCase: CaseSummary = {
+    id: conversation.id,
+    caseIdentifier: conversation.caseId,
+    customerName: conversation.customerName,
+    customerPhone: conversation.customerPhone,
+    paused: conversation.paused,
+    bjCaseId: conversation.bjCaseId,
+  };
+
+  const {
+    messages,
+    caseSummary,
+    meta,
+    isLoading,
+    isRefreshing,
+    isSending,
+    error,
+    refresh,
+    sendMessage,
+    setPausedState,
+  } = useCaseChat(caseRowId, { initialCase });
+
+  // Número WABA efetivo: prioriza o número da conversa (das mensagens), depois o selecionado
+  const effectiveWabaNumber = useMemo(() => {
+    // Primeiro: usa o número determinado das mensagens da conversa
+    if (caseSummary?.wabaPhoneNumber) {
+      return caseSummary.wabaPhoneNumber;
+    }
+    // Segundo: usa o número passado via prop (filtro selecionado)
+    if (activeWabaNumber) {
+      return activeWabaNumber;
+    }
+    // Terceiro: usa o primeiro número disponível
+    if (wabaNumbers.length > 0) {
+      return wabaNumbers[0].phoneNumber.replace(/\D/g, "");
+    }
+    return null;
+  }, [caseSummary?.wabaPhoneNumber, activeWabaNumber, wabaNumbers]);
+
+  // Encontrar o label do número WABA ativo
+  const activeWabaLabel = useMemo(() => {
+    if (!effectiveWabaNumber || !hasMultipleWaba) return null;
+    const normalized = effectiveWabaNumber.replace(/\D/g, "");
+    const found = wabaNumbers.find(
+      (num) => num.phoneNumber.replace(/\D/g, "") === normalized
+    );
+    return found?.label || formatWabaPhoneForDisplay(effectiveWabaNumber);
+  }, [effectiveWabaNumber, wabaNumbers, hasMultipleWaba]);
+
+  const [isUpdatingPause, setIsUpdatingPause] = useState(false);
+  const [pauseError, setPauseError] = useState<string | null>(null);
+
+  const windowInfo = useMemo(() => {
+    const lastClientAt = meta?.lastClientMessageAt ?? null;
+    const deadline = meta?.sessionDeadline ? new Date(meta.sessionDeadline) : null;
+    const isExpired = deadline ? deadline.getTime() <= Date.now() : true;
+    return {
+      lastClientAt,
+      isExpired,
+      label: formatRelativeTime(lastClientAt),
+      deadlineLabel: deadline
+        ? deadline.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })
+        : null,
+    };
+  }, [meta?.lastClientMessageAt, meta?.sessionDeadline]);
+
+  const handlePauseToggle = async (nextState: boolean) => {
+    if (!caseSummary) return;
+    setPauseError(null);
+    setIsUpdatingPause(true);
+    try {
+      await updateBaserowCase(caseSummary.id, {
+        IApause: nextState ? "SIM" : "",
+      });
+      setPausedState(nextState);
+    } catch (error) {
+      setPauseError(
+        error instanceof Error ? error.message : "Erro ao atualizar pausa da IA",
+      );
+    } finally {
+      setIsUpdatingPause(false);
+    }
+  };
+
+  return (
+    <div className="flex h-full flex-col bg-muted/30">
+      {/* Header */}
+      <header className="flex items-center gap-3 bg-card border-b px-4 py-2 shadow-sm">
+        {/* Back button - mobile only */}
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex items-center justify-center rounded-full p-2 text-muted-foreground hover:bg-muted transition-colors lg:hidden"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+        )}
+
+        {/* Avatar */}
+        <div className="relative h-10 w-10 shrink-0">
+          <div className="flex h-full w-full items-center justify-center rounded-full bg-muted">
+            <User className="h-6 w-6 text-muted-foreground" />
+          </div>
+          {windowInfo.label === "online" && (
+            <div className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-card bg-emerald-500" />
+          )}
+        </div>
+
+        {/* Contact Info */}
+        <div className="flex-1 min-w-0">
+          <h1 className="text-[17px] font-medium text-foreground truncate">
+            {caseSummary?.customerName ?? conversation.customerName}
+          </h1>
+          <p className="text-[13px] text-muted-foreground truncate">
+            {windowInfo.lastClientAt ? windowInfo.label : "offline"}
+          </p>
+        </div>
+
+        {/* Header Actions */}
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <button
+            type="button"
+            onClick={() => refresh()}
+            disabled={isRefreshing}
+            className="p-2 hover:bg-muted rounded-full transition-colors"
+            title="Atualizar"
+          >
+            {isRefreshing ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-5 w-5" />
+            )}
+          </button>
+          <button type="button" className="p-2 hover:bg-muted rounded-full transition-colors">
+            <MoreVertical className="h-5 w-5" />
+          </button>
+        </div>
+      </header>
+
+      {/* Status Bar */}
+      <div className="flex items-center justify-between bg-card border-b px-4 py-1.5 text-xs flex-wrap gap-2">
+        <div className="flex items-center gap-3">
+          <span className="text-muted-foreground">
+            Tel: {caseSummary?.customerPhone ?? conversation.customerPhone}
+          </span>
+          {(caseSummary?.bjCaseId || conversation.bjCaseId) && (
+            <>
+              <span className="text-muted-foreground">|</span>
+              <a
+                href={`https://app.riasistemas.com.br/case/edit/${caseSummary?.bjCaseId ?? conversation.bjCaseId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-primary hover:underline font-medium"
+              >
+                Abrir caso #{caseSummary?.bjCaseId ?? conversation.bjCaseId}
+              </a>
+            </>
+          )}
+          {/* Indicador do número WABA ativo - só aparece quando há múltiplos números */}
+          {hasMultipleWaba && activeWabaLabel && (
+            <>
+              <span className="text-muted-foreground">|</span>
+              <span className="inline-flex items-center gap-1 text-primary font-medium">
+                <Phone className="h-3 w-3" />
+                Enviando de: {activeWabaLabel}
+              </span>
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium",
+              windowInfo.isExpired
+                ? "bg-destructive/10 text-destructive"
+                : "bg-emerald-500/10 text-emerald-600"
+            )}
+          >
+            <span className={cn(
+              "h-1.5 w-1.5 rounded-full",
+              windowInfo.isExpired ? "bg-destructive" : "bg-emerald-500"
+            )} />
+            {windowInfo.isExpired ? "Fora da janela 24h" : "Janela ativa"}
+          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-muted-foreground">Bot:</span>
+            <Switch
+              checked={caseSummary?.paused ?? conversation.paused}
+              onCheckedChange={handlePauseToggle}
+              disabled={isUpdatingPause}
+            />
+            <span className={cn(
+              "text-[11px] font-medium",
+              (caseSummary?.paused ?? conversation.paused) ? "text-amber-500" : "text-emerald-500"
+            )}>
+              {(caseSummary?.paused ?? conversation.paused) ? "Pausado" : "Ativo"}
+            </span>
+          </div>
+          {pauseError && (
+            <span className="text-[11px] text-destructive">{pauseError}</span>
+          )}
+        </div>
+      </div>
+
+      {/* Error Banner */}
+      {error && (
+        <div className="bg-destructive/10 border-b border-destructive/20 px-4 py-2 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
+      {/* Chat Area */}
+      <div className="flex-1 min-h-0 overflow-hidden bg-muted/40">
+        <ChatMessageList
+          messages={messages}
+          isLoading={isLoading}
+          className="h-full"
+        />
+      </div>
+
+      {/* Composer */}
+      <div className="bg-card px-4 py-2 border-t">
+        <ChatComposer
+          onSend={sendMessage}
+          isSending={isSending}
+          disabled={isUpdatingPause || !caseSummary}
+          wabaPhoneNumber={effectiveWabaNumber}
+          isWindowClosed={windowInfo.isExpired}
+        />
+      </div>
+    </div>
+  );
+};

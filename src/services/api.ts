@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { type AxiosResponse } from "axios";
 
 import type {
   AuthInfo,
@@ -534,6 +534,13 @@ export type BaserowConfigRow = {
   [key: string]: unknown;
 };
 
+type BaserowListResponse<T> = {
+  count?: number;
+  next?: string | null;
+  previous?: string | null;
+  results?: T[];
+};
+
 export const getBaserowConfigs = async (institutionId?: number): Promise<BaserowConfigRow[]> => {
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_TABLE_ID}/?user_field_names=true`;
@@ -795,6 +802,15 @@ export type BaserowCaseRow = {
   InstitutionID?: number;
   "body.auth.institutionId"?: string | number | null;
   IApause?: string;
+  last_alert_stage?: string | null;
+  valor?: number | string | null;
+  resultado?: "ganho" | "perdido" | string | null;
+  // New fields
+  cliente?: { id: number; value: string }[] | null;
+  responsavel?: string;
+  status_caso?: { id: number; value: string; color: string } | string | null;
+  // WABA phone number associated with this case
+  display_phone_number?: string | null;
   [key: string]: unknown;
 };
 
@@ -895,7 +911,7 @@ export const getBaserowCases = async ({
     let totalCount: number | null = null;
 
     while (nextUrl) {
-      const response = await axios.get(nextUrl, {
+      const response = await axios.get<BaserowListResponse<FollowUpHistoryRow>>(nextUrl, {
         headers: {
           Authorization: `Token ${BASEROW_API_KEY}`,
           "Content-Type": "application/json",
@@ -987,5 +1003,1184 @@ export const updateBaserowCase = async (
       throw new Error(error.message || "Erro ao configurar a requisição");
     }
     throw new Error(error instanceof Error ? error.message : "Erro desconhecido ao atualizar caso");
+  }
+};
+
+// ============================================
+// WEBHOOKS / ALERTS
+// ============================================
+
+const BASEROW_WEBHOOKS_TABLE_ID =
+  Number(
+    process.env.NEXT_PUBLIC_BASEROW_WEBHOOKS_TABLE_ID ||
+      process.env.BASEROW_WEBHOOKS_TABLE_ID,
+  ) || 228;
+
+export type WebhookRow = {
+  id: number;
+  webhoock_institution_id?: number;
+  webhook_url?: string;
+  webhook_name?: string;
+  webhook_secret?: string;
+  alert_depoimento_inicial?: boolean;
+  alert_etapa_perguntas?: boolean;
+  alert_etapa_final?: boolean;
+  webhook_active?: string;
+  created_at?: string;
+  updated_at?: string;
+  last_triggered_at?: string;
+  last_status?: string;
+  [key: string]: unknown;
+};
+
+export type CreateWebhookPayload = {
+  webhoock_institution_id: number;
+  webhook_url: string;
+  webhook_name?: string;
+  webhook_secret?: string;
+  alert_depoimento_inicial?: boolean;
+  alert_etapa_perguntas?: boolean;
+  alert_etapa_final?: boolean;
+  webhook_active?: string;
+};
+
+export type UpdateWebhookPayload = Partial<Omit<WebhookRow, "id">>;
+
+export const getWebhooks = async (institutionId?: number): Promise<WebhookRow[]> => {
+  try {
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_WEBHOOKS_TABLE_ID}/?user_field_names=true`;
+
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+    });
+
+    let results: WebhookRow[] = response.data?.results || [];
+
+    if (typeof institutionId === "number") {
+      results = results.filter((row) => {
+        const rowInstitutionId = row.webhoock_institution_id;
+        return rowInstitutionId === institutionId ||
+          String(rowInstitutionId) === String(institutionId);
+      });
+    }
+
+    return results;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const errorMessage =
+          error.response.data?.message || error.message || "Erro ao buscar webhooks";
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error("Não foi possível conectar ao Baserow");
+      }
+      throw new Error(error.message || "Erro ao configurar a requisição");
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido ao buscar webhooks");
+  }
+};
+
+export const createWebhook = async (data: CreateWebhookPayload): Promise<WebhookRow> => {
+  try {
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_WEBHOOKS_TABLE_ID}/?user_field_names=true`;
+
+    const payload = {
+      ...data,
+      webhook_active: data.webhook_active ?? "sim",
+      alert_depoimento_inicial: data.alert_depoimento_inicial ?? true,
+      alert_etapa_perguntas: data.alert_etapa_perguntas ?? true,
+      alert_etapa_final: data.alert_etapa_final ?? true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const response = await axios.post(url, payload, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+    });
+
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const errorMessage =
+          error.response.data?.message || error.message || "Erro ao criar webhook";
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error("Não foi possível conectar ao Baserow");
+      }
+      throw new Error(error.message || "Erro ao configurar a requisição");
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido ao criar webhook");
+  }
+};
+
+export const updateWebhook = async (
+  rowId: number,
+  data: UpdateWebhookPayload,
+): Promise<WebhookRow> => {
+  try {
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_WEBHOOKS_TABLE_ID}/${rowId}/?user_field_names=true`;
+
+    const payload = {
+      ...data,
+      updated_at: new Date().toISOString(),
+    };
+
+    const response = await axios.patch(url, payload, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+    });
+
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const errorMessage =
+          error.response.data?.message || error.message || "Erro ao atualizar webhook";
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error("Não foi possível conectar ao Baserow");
+      }
+      throw new Error(error.message || "Erro ao configurar a requisição");
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido ao atualizar webhook");
+  }
+};
+
+export const deleteWebhook = async (rowId: number): Promise<void> => {
+  try {
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_WEBHOOKS_TABLE_ID}/${rowId}/`;
+
+    await axios.delete(url, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+    });
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const errorMessage =
+          error.response.data?.message || error.message || "Erro ao excluir webhook";
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error("Não foi possível conectar ao Baserow");
+      }
+      throw new Error(error.message || "Erro ao configurar a requisição");
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido ao excluir webhook");
+  }
+};
+
+// ============================================
+// FOLLOW-UP
+// ============================================
+
+const BASEROW_FOLLOW_UP_CONFIG_TABLE_ID =
+  Number(
+    process.env.NEXT_PUBLIC_BASEROW_FOLLOW_UP_CONFIG_TABLE_ID ||
+      process.env.BASEROW_FOLLOW_UP_CONFIG_TABLE_ID,
+  ) || 229;
+
+const BASEROW_FOLLOW_UP_HISTORY_TABLE_ID =
+  Number(
+    process.env.NEXT_PUBLIC_BASEROW_FOLLOW_UP_HISTORY_TABLE_ID ||
+      process.env.BASEROW_FOLLOW_UP_HISTORY_TABLE_ID,
+  ) || 230;
+
+export type FollowUpConfigRow = {
+  id: number;
+  institution_id?: number;
+  message_order?: number;
+  delay_minutes?: number;
+  message_content?: string;
+  is_active?: string;
+  allowed_days?: string;
+  allowed_start_time?: string;
+  allowed_end_time?: string;
+  created_at?: string;
+  updated_at?: string;
+  [key: string]: unknown;
+};
+
+export type CreateFollowUpConfigPayload = {
+  institution_id: number;
+  message_order: number;
+  delay_minutes: number;
+  message_content: string;
+  is_active?: string;
+  allowed_days?: string;
+  allowed_start_time?: string;
+  allowed_end_time?: string;
+};
+
+export type UpdateFollowUpConfigPayload = Partial<Omit<FollowUpConfigRow, "id">>;
+
+export type FollowUpHistoryRow = {
+  id: number;
+  case_id?: number;
+  institution_id?: number;
+  config_id?: number;
+  message_order?: number;
+  customer_phone?: string;
+  message_sent?: string;
+  sent_at?: string;
+  status?: string;
+  error_message?: string;
+  last_client_message_at?: string;
+  [key: string]: unknown;
+};
+
+export type CreateFollowUpHistoryPayload = {
+  case_id: number;
+  institution_id: number;
+  config_id: number;
+  message_order: number;
+  customer_phone?: string;
+  message_sent: string;
+  sent_at?: string;
+  status: string;
+  error_message?: string;
+  last_client_message_at?: string;
+};
+
+// Follow-up Config CRUD
+export const getFollowUpConfigs = async (institutionId?: number): Promise<FollowUpConfigRow[]> => {
+  try {
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_FOLLOW_UP_CONFIG_TABLE_ID}/?user_field_names=true&size=200`;
+
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+    });
+
+    let results: FollowUpConfigRow[] = response.data?.results || [];
+
+    if (typeof institutionId === "number") {
+      results = results.filter((row) => {
+        const rowInstitutionId = row.institution_id;
+        return rowInstitutionId === institutionId ||
+          String(rowInstitutionId) === String(institutionId);
+      });
+    }
+
+    // Ordenar por message_order
+    results.sort((a, b) => (a.message_order ?? 0) - (b.message_order ?? 0));
+
+    return results;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const errorMessage =
+          error.response.data?.message || error.message || "Erro ao buscar configurações de follow-up";
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error("Não foi possível conectar ao Baserow");
+      }
+      throw new Error(error.message || "Erro ao configurar a requisição");
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido");
+  }
+};
+
+export const createFollowUpConfig = async (data: CreateFollowUpConfigPayload): Promise<FollowUpConfigRow> => {
+  try {
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_FOLLOW_UP_CONFIG_TABLE_ID}/?user_field_names=true`;
+
+    const payload = {
+      ...data,
+      is_active: data.is_active ?? "sim",
+      allowed_days: data.allowed_days ?? "seg,ter,qua,qui,sex",
+      allowed_start_time: data.allowed_start_time ?? "08:00",
+      allowed_end_time: data.allowed_end_time ?? "18:00",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const response = await axios.post(url, payload, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+    });
+
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const errorMessage =
+          error.response.data?.message || error.message || "Erro ao criar configuração de follow-up";
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error("Não foi possível conectar ao Baserow");
+      }
+      throw new Error(error.message || "Erro ao configurar a requisição");
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido");
+  }
+};
+
+export const updateFollowUpConfig = async (
+  rowId: number,
+  data: UpdateFollowUpConfigPayload,
+): Promise<FollowUpConfigRow> => {
+  try {
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_FOLLOW_UP_CONFIG_TABLE_ID}/${rowId}/?user_field_names=true`;
+
+    const payload = {
+      ...data,
+      updated_at: new Date().toISOString(),
+    };
+
+    const response = await axios.patch(url, payload, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+    });
+
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const errorMessage =
+          error.response.data?.message || error.message || "Erro ao atualizar configuração de follow-up";
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error("Não foi possível conectar ao Baserow");
+      }
+      throw new Error(error.message || "Erro ao configurar a requisição");
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido");
+  }
+};
+
+export const deleteFollowUpConfig = async (rowId: number): Promise<void> => {
+  try {
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_FOLLOW_UP_CONFIG_TABLE_ID}/${rowId}/`;
+
+    await axios.delete(url, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+    });
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const errorMessage =
+          error.response.data?.message || error.message || "Erro ao excluir configuração de follow-up";
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error("Não foi possível conectar ao Baserow");
+      }
+      throw new Error(error.message || "Erro ao configurar a requisição");
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido");
+  }
+};
+
+// Follow-up History
+export const getFollowUpHistory = async (caseId?: number, institutionId?: number): Promise<FollowUpHistoryRow[]> => {
+  try {
+    const pageSize = 200;
+    const collected: FollowUpHistoryRow[] = [];
+    let nextUrl: string | null = `${BASEROW_API_URL}/database/rows/table/${BASEROW_FOLLOW_UP_HISTORY_TABLE_ID}/?user_field_names=true&size=${pageSize}`;
+
+    // Paginar para buscar todos os registros
+    while (nextUrl) {
+      const response: AxiosResponse<BaserowListResponse<FollowUpHistoryRow>> = await axios.get(nextUrl, {
+        headers: {
+          Authorization: `Token ${BASEROW_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 30000,
+      });
+
+      const data = response.data;
+      const rows: FollowUpHistoryRow[] = data?.results || [];
+      collected.push(...rows);
+
+      // Normalizar a URL do próximo para usar o mesmo host
+      const rawNext = data?.next;
+      if (rawNext && typeof rawNext === "string") {
+        try {
+          const base = new URL(BASEROW_API_URL);
+          const parsed = new URL(rawNext, base);
+          parsed.protocol = base.protocol;
+          parsed.host = base.host;
+          parsed.port = base.port;
+          nextUrl = parsed.toString();
+        } catch {
+          nextUrl = null;
+        }
+      } else {
+        nextUrl = null;
+      }
+    }
+
+    let results = collected;
+
+    if (typeof caseId === "number") {
+      results = results.filter((row) => row.case_id === caseId);
+    }
+
+    if (typeof institutionId === "number") {
+      results = results.filter((row) => {
+        const rowInstitutionId = row.institution_id;
+        return rowInstitutionId === institutionId ||
+          String(rowInstitutionId) === String(institutionId);
+      });
+    }
+
+    return results;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const errorMessage =
+          error.response.data?.message || error.message || "Erro ao buscar histórico de follow-up";
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error("Não foi possível conectar ao Baserow");
+      }
+      throw new Error(error.message || "Erro ao configurar a requisição");
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido");
+  }
+};
+
+export const createFollowUpHistory = async (data: CreateFollowUpHistoryPayload): Promise<FollowUpHistoryRow> => {
+  try {
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_FOLLOW_UP_HISTORY_TABLE_ID}/?user_field_names=true`;
+
+    const payload = {
+      ...data,
+      sent_at: data.sent_at ?? new Date().toISOString(),
+    };
+
+    const response = await axios.post(url, payload, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+    });
+
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const errorMessage =
+          error.response.data?.message || error.message || "Erro ao criar registro de follow-up";
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error("Não foi possível conectar ao Baserow");
+      }
+      throw new Error(error.message || "Erro ao configurar a requisição");
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido");
+  }
+};
+
+export const updateFollowUpHistory = async (
+  rowId: number,
+  data: Partial<FollowUpHistoryRow>,
+): Promise<FollowUpHistoryRow> => {
+  try {
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_FOLLOW_UP_HISTORY_TABLE_ID}/${rowId}/?user_field_names=true`;
+
+    const response = await axios.patch(url, data, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+    });
+
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const errorMessage =
+          error.response.data?.message || error.message || "Erro ao atualizar registro de follow-up";
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error("Não foi possível conectar ao Baserow");
+      }
+      throw new Error(error.message || "Erro ao configurar a requisição");
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido");
+  }
+};
+
+// ============================================
+// KANBAN
+// ============================================
+
+const BASEROW_KANBAN_COLUMNS_TABLE_ID =
+  Number(
+    process.env.NEXT_PUBLIC_BASEROW_KANBAN_COLUMNS_TABLE_ID ||
+      process.env.BASEROW_KANBAN_COLUMNS_TABLE_ID,
+  ) || 231;
+
+const BASEROW_CASE_KANBAN_STATUS_TABLE_ID =
+  Number(
+    process.env.NEXT_PUBLIC_BASEROW_CASE_KANBAN_STATUS_TABLE_ID ||
+      process.env.BASEROW_CASE_KANBAN_STATUS_TABLE_ID,
+  ) || 232;
+
+// Kanban Column type
+export type KanbanColumnRow = {
+  id: number;
+  institution_id?: number;
+  name?: string;
+  ordem?: number;
+  color?: string;
+  is_default?: string;
+  auto_rule?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  [key: string]: unknown;
+};
+
+export type CreateKanbanColumnPayload = {
+  institution_id: number;
+  name: string;
+  ordem: number;
+  color?: string;
+  is_default?: string;
+  auto_rule?: string | null;
+};
+
+export type UpdateKanbanColumnPayload = Partial<Omit<KanbanColumnRow, "id">>;
+
+// Case Kanban Status type
+export type CaseKanbanStatusRow = {
+  id: number;
+  case_id?: number;
+  institution_id?: number;
+  column_id?: number;
+  moved_at?: string;
+  moved_by?: string;
+  notes?: string;
+  [key: string]: unknown;
+};
+
+export type CreateCaseKanbanStatusPayload = {
+  case_id: number;
+  institution_id: number;
+  column_id: number;
+  moved_at?: string;
+  moved_by?: string;
+  notes?: string;
+};
+
+// Kanban Columns CRUD
+export const getKanbanColumns = async (institutionId?: number): Promise<KanbanColumnRow[]> => {
+  try {
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_KANBAN_COLUMNS_TABLE_ID}/?user_field_names=true&size=200`;
+
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+    });
+
+    let results: KanbanColumnRow[] = response.data?.results || [];
+
+    if (typeof institutionId === "number") {
+      results = results.filter((row) => {
+        const rowInstitutionId = row.institution_id;
+        return rowInstitutionId === institutionId ||
+          String(rowInstitutionId) === String(institutionId);
+      });
+    }
+
+    // Remove duplicates by name, keeping the one with the lowest ID
+    const seenNames = new Map<string, KanbanColumnRow>();
+    for (const row of results) {
+      const name = (row.name || "").toLowerCase().trim();
+      const existing = seenNames.get(name);
+      if (!existing || Number(row.id) < Number(existing.id)) {
+        seenNames.set(name, row);
+      }
+    }
+    results = Array.from(seenNames.values());
+
+    results.sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
+
+    return results;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const errorMessage =
+          error.response.data?.message || error.message || "Erro ao buscar colunas do Kanban";
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error("Não foi possível conectar ao Baserow");
+      }
+      throw new Error(error.message || "Erro ao configurar a requisição");
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido");
+  }
+};
+
+export const createKanbanColumn = async (data: CreateKanbanColumnPayload): Promise<KanbanColumnRow> => {
+  try {
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_KANBAN_COLUMNS_TABLE_ID}/?user_field_names=true`;
+
+    const payload = {
+      ...data,
+      is_default: data.is_default ?? "não",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const response = await axios.post(url, payload, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+    });
+
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const errorMessage =
+          error.response.data?.message || error.message || "Erro ao criar coluna do Kanban";
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error("Não foi possível conectar ao Baserow");
+      }
+      throw new Error(error.message || "Erro ao configurar a requisição");
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido");
+  }
+};
+
+export const updateKanbanColumn = async (
+  rowId: number,
+  data: UpdateKanbanColumnPayload,
+): Promise<KanbanColumnRow> => {
+  try {
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_KANBAN_COLUMNS_TABLE_ID}/${rowId}/?user_field_names=true`;
+
+    const payload = {
+      ...data,
+      updated_at: new Date().toISOString(),
+    };
+
+    const response = await axios.patch(url, payload, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+    });
+
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const errorMessage =
+          error.response.data?.message || error.message || "Erro ao atualizar coluna do Kanban";
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error("Não foi possível conectar ao Baserow");
+      }
+      throw new Error(error.message || "Erro ao configurar a requisição");
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido");
+  }
+};
+
+export const deleteKanbanColumn = async (rowId: number): Promise<void> => {
+  try {
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_KANBAN_COLUMNS_TABLE_ID}/${rowId}/`;
+
+    await axios.delete(url, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+    });
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const errorMessage =
+          error.response.data?.message || error.message || "Erro ao excluir coluna do Kanban";
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error("Não foi possível conectar ao Baserow");
+      }
+      throw new Error(error.message || "Erro ao configurar a requisição");
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido");
+  }
+};
+
+// Case Kanban Status CRUD
+export const getCaseKanbanStatus = async (
+  caseId?: number,
+  institutionId?: number,
+): Promise<CaseKanbanStatusRow[]> => {
+  try {
+    const collected: CaseKanbanStatusRow[] = [];
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore) {
+      const params = new URLSearchParams({
+        user_field_names: "true",
+        size: "100",
+        page: String(page),
+      });
+
+      const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASE_KANBAN_STATUS_TABLE_ID}/?${params.toString()}`;
+
+      const response = await axios.get(url, {
+        headers: {
+          Authorization: `Token ${BASEROW_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 30000,
+      });
+
+      const rows: CaseKanbanStatusRow[] = response.data?.results || [];
+      collected.push(...rows);
+
+      const nextUrl = response.data?.next;
+      hasMore = Boolean(nextUrl && rows.length);
+      page += 1;
+    }
+
+    return collected.filter((row) => {
+      const matchesCase =
+        typeof caseId !== "number"
+          ? true
+          : row.case_id === caseId || String(row.case_id) === String(caseId);
+      const matchesInstitution =
+        typeof institutionId !== "number"
+          ? true
+          : row.institution_id === institutionId ||
+            String(row.institution_id) === String(institutionId);
+      return matchesCase && matchesInstitution;
+    });
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const errorMessage =
+          error.response.data?.message || error.message || "Erro ao buscar status do Kanban";
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error("Nǜo foi poss��vel conectar ao Baserow");
+      }
+      throw new Error(error.message || "Erro ao configurar a requisi��ǜo");
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido");
+  }
+};
+export const createCaseKanbanStatus = async (
+  data: CreateCaseKanbanStatusPayload,
+): Promise<CaseKanbanStatusRow> => {
+  try {
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASE_KANBAN_STATUS_TABLE_ID}/?user_field_names=true`;
+
+    const payload = {
+      ...data,
+      moved_at: data.moved_at ?? new Date().toISOString(),
+    };
+
+    const response = await axios.post(url, payload, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+    });
+
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const errorMessage =
+          error.response.data?.message || error.message || "Erro ao criar status do Kanban";
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error("Não foi possível conectar ao Baserow");
+      }
+      throw new Error(error.message || "Erro ao configurar a requisição");
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido");
+  }
+};
+
+export const updateCaseKanbanStatus = async (
+  rowId: number,
+  data: Partial<CaseKanbanStatusRow>,
+): Promise<CaseKanbanStatusRow> => {
+  try {
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASE_KANBAN_STATUS_TABLE_ID}/${rowId}/?user_field_names=true`;
+
+    const payload = {
+      ...data,
+      moved_at: new Date().toISOString(),
+    };
+
+    const response = await axios.patch(url, payload, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+    });
+
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const errorMessage =
+          error.response.data?.message || error.message || "Erro ao atualizar status do Kanban";
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error("Não foi possível conectar ao Baserow");
+      }
+      throw new Error(error.message || "Erro ao configurar a requisição");
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido");
+  }
+};
+
+export const deleteCaseKanbanStatus = async (rowId: number): Promise<void> => {
+  try {
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASE_KANBAN_STATUS_TABLE_ID}/${rowId}/`;
+
+    await axios.delete(url, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+    });
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const errorMessage =
+          error.response.data?.message || error.message || "Erro ao excluir status do Kanban";
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error("Não foi possível conectar ao Baserow");
+      }
+      throw new Error(error.message || "Erro ao configurar a requisição");
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido");
+  }
+};
+
+// Função auxiliar para criar ou atualizar status do caso no Kanban
+export const upsertCaseKanbanStatus = async (
+  caseId: number,
+  institutionId: number,
+  columnId: number,
+  movedBy?: string,
+  notes?: string,
+): Promise<CaseKanbanStatusRow> => {
+  const existingStatus = await getCaseKanbanStatus(caseId, institutionId);
+
+  if (existingStatus.length > 0) {
+    return updateCaseKanbanStatus(existingStatus[0].id, {
+      column_id: columnId,
+      moved_by: movedBy,
+      notes,
+    });
+  } else {
+    return createCaseKanbanStatus({
+      case_id: caseId,
+      institution_id: institutionId,
+      column_id: columnId,
+      moved_by: movedBy,
+      notes,
+    });
+  }
+};
+
+// Função para inicializar colunas padrão para uma instituição
+export const initializeDefaultKanbanColumns = async (
+  institutionId: number,
+): Promise<KanbanColumnRow[]> => {
+  const existingColumns = await getKanbanColumns(institutionId);
+
+  if (existingColumns.length > 0) {
+    return existingColumns;
+  }
+
+  const defaultColumns: CreateKanbanColumnPayload[] = [
+    {
+      institution_id: institutionId,
+      name: "Em Atendimento",
+      ordem: 1,
+      color: "blue",
+      is_default: "sim",
+      auto_rule: JSON.stringify({ stages: ["DepoimentoInicial", "EtapaPerguntas"] }),
+    },
+    {
+      institution_id: institutionId,
+      name: "Aguardando Revisao",
+      ordem: 2,
+      color: "amber",
+      is_default: "sim",
+      auto_rule: JSON.stringify({ stages: ["EtapaFinal"] }),
+    },
+    {
+      institution_id: institutionId,
+      name: "Em Andamento",
+      ordem: 3,
+      color: "purple",
+      is_default: "sim",
+      auto_rule: null,
+    },
+    {
+      institution_id: institutionId,
+      name: "Concluidos Ganhos",
+      ordem: 4,
+      color: "green",
+      is_default: "sim",
+      auto_rule: null,
+    },
+    {
+      institution_id: institutionId,
+      name: "Concluidos Perdidos",
+      ordem: 5,
+      color: "red",
+      is_default: "sim",
+      auto_rule: null,
+    },
+  ];
+
+  const createdColumns: KanbanColumnRow[] = [];
+  for (const column of defaultColumns) {
+    const created = await createKanbanColumn(column);
+    createdColumns.push(created);
+  }
+
+  return createdColumns;
+};
+
+// ============================================================================
+// CLIENTS (Clientes)
+// ============================================================================
+
+const BASEROW_CLIENTS_TABLE_ID =
+  Number(
+    process.env.NEXT_PUBLIC_BASEROW_CLIENTS_TABLE_ID ||
+      process.env.BASEROW_CLIENTS_TABLE_ID,
+  ) || 233;
+
+export type ClientRow = {
+  id: number;
+  nome_completo?: string;
+  cpf?: string;
+  rg?: string;
+  celular?: string;
+  email?: string;
+  estado_civil?: { id: number; value: string; color: string } | string | null;
+  profissao?: string;
+  data_nascimento?: string | null;
+  nacionalidade?: string;
+  endereco_rua?: string;
+  endereco_numero?: string;
+  endereco_complemento?: string;
+  endereco_bairro?: string;
+  endereco_estado?: string;
+  endereco_cidade?: string;
+  institution_id?: number;
+  [key: string]: unknown;
+};
+
+export type CreateClientPayload = Omit<ClientRow, "id">;
+export type UpdateClientPayload = Partial<Omit<ClientRow, "id">>;
+
+export const getClientById = async (
+  rowId: number,
+): Promise<ClientRow | null> => {
+  try {
+    if (!rowId) {
+      return null;
+    }
+
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CLIENTS_TABLE_ID}/${rowId}/?user_field_names=true`;
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 20000,
+    });
+
+    return response.data as ClientRow;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      return null;
+    }
+    console.error("Erro ao buscar cliente:", error);
+    throw error;
+  }
+};
+
+export const getClientsByInstitution = async (
+  institutionId: number,
+): Promise<ClientRow[]> => {
+  try {
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CLIENTS_TABLE_ID}/?user_field_names=true&size=200&filter__institution_id__equal=${institutionId}`;
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+    });
+
+    return response.data?.results || [];
+  } catch (error) {
+    console.error("Erro ao buscar clientes:", error);
+    throw error;
+  }
+};
+
+export const createClient = async (
+  payload: CreateClientPayload,
+): Promise<ClientRow> => {
+  try {
+    // Clean payload - remove empty/undefined values and format fields correctly
+    const cleanPayload: Record<string, unknown> = {};
+
+    for (const [key, value] of Object.entries(payload)) {
+      // Skip undefined, null, or empty string values
+      if (value === undefined || value === null || value === "") continue;
+
+      // Handle estado_civil - send just the value string for single_select
+      if (key === "estado_civil") {
+        if (typeof value === "object" && value !== null && "value" in value) {
+          cleanPayload[key] = (value as { value: string }).value;
+        } else {
+          cleanPayload[key] = value;
+        }
+      } else {
+        cleanPayload[key] = value;
+      }
+    }
+
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CLIENTS_TABLE_ID}/?user_field_names=true`;
+    const response = await axios.post(url, cleanPayload, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+    });
+
+    return response.data as ClientRow;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      console.error("Erro Baserow createClient:", error.response?.data);
+      const errorDetail = error.response?.data?.error || error.response?.data?.detail || "";
+      const errorMessage =
+        error.response?.data?.message || errorDetail || error.message || "Erro ao criar cliente";
+      throw new Error(errorMessage);
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido");
+  }
+};
+
+export const updateClient = async (
+  rowId: number,
+  payload: UpdateClientPayload,
+): Promise<ClientRow> => {
+  try {
+    // Clean payload - remove empty/undefined values and format fields correctly
+    const cleanPayload: Record<string, unknown> = {};
+
+    for (const [key, value] of Object.entries(payload)) {
+      // Skip undefined, null, or empty string values
+      if (value === undefined || value === null || value === "") continue;
+
+      // Handle estado_civil - send just the value string for single_select
+      if (key === "estado_civil") {
+        if (typeof value === "object" && value !== null && "value" in value) {
+          cleanPayload[key] = (value as { value: string }).value;
+        } else {
+          cleanPayload[key] = value;
+        }
+      } else {
+        cleanPayload[key] = value;
+      }
+    }
+
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CLIENTS_TABLE_ID}/${rowId}/?user_field_names=true`;
+    const response = await axios.patch(url, cleanPayload, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 30000,
+    });
+
+    return response.data as ClientRow;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      console.error("Erro Baserow updateClient:", error.response?.data);
+      const errorDetail = error.response?.data?.error || error.response?.data?.detail || "";
+      const errorMessage =
+        error.response?.data?.message || errorDetail || error.message || "Erro ao atualizar cliente";
+      throw new Error(errorMessage);
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido");
+  }
+};
+
+export const searchClientByPhone = async (
+  phone: string,
+  institutionId: number,
+): Promise<ClientRow | null> => {
+  try {
+    // Clean phone number for search
+    const cleanPhone = phone.replace(/\D/g, "");
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CLIENTS_TABLE_ID}/?user_field_names=true&filter__celular__contains=${cleanPhone}&filter__institution_id__equal=${institutionId}`;
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Token ${BASEROW_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 20000,
+    });
+
+    const results = response.data?.results || [];
+    return results.length > 0 ? results[0] : null;
+  } catch (error) {
+    console.error("Erro ao buscar cliente por telefone:", error);
+    return null;
   }
 };

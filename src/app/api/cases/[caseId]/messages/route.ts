@@ -12,36 +12,9 @@ import type {
   CaseMessageKind,
   CaseMessageSender,
 } from "@/lib/chat/types";
-import { getBaserowCaseById, getBaserowConfigs, updateBaserowCase } from "@/services/api";
-import type { BaserowCaseRow, BaserowConfigRow } from "@/services/api";
-
-const getWabaPhoneNumber = async (institutionId?: number): Promise<string | null> => {
-  try {
-    // Get configs filtered by institutionId (same as conexoes page)
-    const configs = await getBaserowConfigs(institutionId);
-
-    if (!configs.length) {
-      return null;
-    }
-
-    // Find config with waba_phone_number (same pattern as conexoes page)
-    for (const config of configs) {
-      const phoneNumber = (config as Record<string, unknown>).waba_phone_number;
-      if (phoneNumber) {
-        const normalizedPhone = typeof phoneNumber === "string"
-          ? phoneNumber.trim()
-          : String(phoneNumber);
-        if (normalizedPhone) {
-          return normalizedPhone;
-        }
-      }
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
-};
+import { getBaserowCaseById, updateBaserowCase } from "@/services/api";
+import type { BaserowCaseRow } from "@/services/api";
+import { getInstitutionWabaPhoneNumber } from "@/lib/waba";
 
 type RouteParams = {
   caseId: string;
@@ -246,6 +219,7 @@ type ChatWebhookPayload = {
   audioid?: string;
   imageId?: string;
   documentId?: string;
+  type?: "ghost";
 };
 
 const dispatchChatWebhook = async (payload: ChatWebhookPayload) => {
@@ -345,11 +319,13 @@ export async function GET(
     const { caseRow, identifiers, rowId } = resolved;
     const customerPhone = caseRow.CustumerPhone ? String(caseRow.CustumerPhone).trim() : "";
 
-    let messages = await fetchCaseMessagesFromBaserow({
+    const fetchResult = await fetchCaseMessagesFromBaserow({
       caseIdentifiers: identifiers,
       customerPhone,
       fallbackCaseId: rowId,
     });
+    let messages = fetchResult.messages;
+    let conversationWabaNumber = fetchResult.wabaPhoneNumber;
     let legacyFallbackUsed = false;
 
     if (!messages.length && caseRow.Conversa) {
@@ -359,6 +335,7 @@ export async function GET(
         caseRow.Data ?? caseRow.data,
       );
       legacyFallbackUsed = true;
+      conversationWabaNumber = null; // Conversas legadas não têm número WABA
     }
 
     const lastClientMessageAt = computeLastClientMessageAt(messages);
@@ -375,6 +352,7 @@ export async function GET(
         customerPhone: caseRow.CustumerPhone ?? "",
         paused: isCasePaused(caseRow),
         bjCaseId: caseRow.BJCaseId ?? null,
+        wabaPhoneNumber: conversationWabaNumber,
       },
       messages,
       meta: {
@@ -439,17 +417,35 @@ export async function POST(
 
     const kind = parseKindValue(formData.get("kind"), attachments);
 
+    // Check for ghost message type
+    const messageTypeInput = formData.get("type");
+    const isGhostMessage = messageTypeInput === "ghost";
+
     const quotedMessageIdRaw = formData.get("quotedMessageId");
     const quotedMessageId =
       typeof quotedMessageIdRaw === "string" && quotedMessageIdRaw
         ? Number(quotedMessageIdRaw)
         : null;
 
-    // Get phone numbers for webhook
-    // InstitutionID is a string in the cases table
+    // Get WABA phone number - prefer explicit parameter, then case field, then institution default
     const rawInstitutionId = caseRow.InstitutionID ?? caseRow["body.auth.institutionId"];
     const institutionId = rawInstitutionId ? Number(String(rawInstitutionId).trim()) : undefined;
-    const wabaPhoneNumber = await getWabaPhoneNumber(institutionId);
+
+    const explicitWabaNumber = formData.get("wabaPhoneNumber");
+    const caseWabaNumber = caseRow.display_phone_number;
+
+    let wabaPhoneNumber: string | null = null;
+    if (typeof explicitWabaNumber === "string" && explicitWabaNumber.trim()) {
+      // Usar número explícito enviado pelo cliente (quando há múltiplos números)
+      wabaPhoneNumber = explicitWabaNumber.trim();
+    } else if (caseWabaNumber && typeof caseWabaNumber === "string") {
+      // Usar número associado ao caso
+      wabaPhoneNumber = caseWabaNumber.trim();
+    } else {
+      // Fallback: buscar número padrão da instituição
+      wabaPhoneNumber = await getInstitutionWabaPhoneNumber(institutionId);
+    }
+
     const customerPhone = caseRow.CustumerPhone ? String(caseRow.CustumerPhone).trim() : "";
 
     const uploadedAttachments = await Promise.all(
@@ -474,6 +470,7 @@ export async function POST(
     };
 
     const messageType = determineMessageType(uploadedAttachments);
+    const fieldValue = isGhostMessage ? "ghost" : "chat";
 
     // Extract imageId, audioid or documentId from uploaded files
     const getMediaId = (files: typeof uploadedAttachments, type: "image" | "audio" | "document"): string | undefined => {
@@ -500,7 +497,7 @@ export async function POST(
         to: customerPhone,
         text: content,
         DataHora: formatDateTimeBR(now),
-        field: "chat",
+        field: fieldValue,
         messages_type: messageType,
       };
 
@@ -511,6 +508,11 @@ export async function POST(
         webhookPayload.audioid = getMediaId(uploadedAttachments, "audio");
       } else if (messageType === "document") {
         webhookPayload.documentId = getMediaId(uploadedAttachments, "document");
+      }
+
+      // Add ghost type if applicable
+      if (isGhostMessage) {
+        webhookPayload.type = "ghost";
       }
 
       await dispatchChatWebhook(webhookPayload);
@@ -535,9 +537,10 @@ export async function POST(
           url: file.url ?? "",
           isImage: file.is_image ?? false,
         })),
+        ...(isGhostMessage && { metadata: { type: "ghost" } }),
       };
     } else {
-      // No webhook available - create record directly in Baserow
+      // No webhook available or ghost message - create record directly in Baserow
       const createdRow = await createCaseMessageRow({
         caseIdentifier: identifiers[0] ?? rowId,
         sender: "bot", // Use "bot" (usuário) instead of "agente"
@@ -547,12 +550,18 @@ export async function POST(
         from: wabaPhoneNumber ?? undefined,
         to: customerPhone || undefined,
         messages_type: messageType,
+        field: fieldValue,
         audioid: messageType === "audio" ? getMediaId(uploadedAttachments, "audio") : undefined,
         imageId: messageType === "image" ? getMediaId(uploadedAttachments, "image") : undefined,
         documentId: messageType === "document" ? getMediaId(uploadedAttachments, "document") : undefined,
       });
 
       newMessage = normalizeCaseMessageRow(createdRow, rowId, customerPhone);
+
+      // Add ghost metadata
+      if (isGhostMessage) {
+        newMessage.metadata = { ...newMessage.metadata, type: "ghost" };
+      }
     }
 
     const attachmentNames = uploadedAttachments

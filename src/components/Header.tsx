@@ -4,7 +4,16 @@ import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Settings, Plug, LogOut, FileText, Loader2, BarChart3 } from "lucide-react";
+import {
+  Settings,
+  Plug,
+  LogOut,
+  FileText,
+  Loader2,
+  BarChart3,
+  MessageSquareMore,
+  MessageCircle,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
@@ -315,11 +324,23 @@ export const Header = () => {
                 asChild
                 className="gap-2"
               >
-              <Link href="/casos">
-                <FileText className="h-4 w-4" />
-                <span className="hidden sm:inline">Casos</span>
-              </Link>
-            </Button>
+                <Link href="/casos">
+                  <FileText className="h-4 w-4" />
+                  <span className="hidden sm:inline">Casos</span>
+                </Link>
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                asChild
+                className="gap-2"
+              >
+                <Link href="/chat">
+                  <MessageCircle className="h-4 w-4" />
+                  <span className="hidden sm:inline">Chat</span>
+                </Link>
+              </Button>
             <Button
               type="button"
               variant="ghost"
@@ -354,6 +375,18 @@ export const Header = () => {
               <Link href="/conexoes">
                 <Plug className="h-4 w-4" />
                 <span className="hidden sm:inline">Conexões</span>
+              </Link>
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              asChild
+              className="gap-2"
+            >
+              <Link href="/follow-up">
+                <MessageSquareMore className="h-4 w-4" />
+                <span className="hidden sm:inline">Follow-up</span>
               </Link>
             </Button>
             <Button

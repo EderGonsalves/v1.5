@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useFieldArray, useForm } from "react-hook-form";
+import { useFieldArray, useForm, type FieldValues } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useWizard } from "react-use-wizard";
 
@@ -25,12 +25,17 @@ import { useOnboarding } from "./onboarding-context";
 const MAX_DIRECTED_QUESTIONS = 5;
 
 type LegacyDirectedQuestion = { prompt?: string; objective?: string };
-type AgentFlowFormValues = AgentFlow & Record<string, any>;
+interface AgentFlowFormValues extends FieldValues {
+  briefingScope: string;
+  directedQuestions: string[];
+  maxQuestions: number;
+  institutionalAdditionalInfo: string;
+}
 
 const normalizeDirectedQuestions = (
-  value: Array<string | LegacyDirectedQuestion>,
-): string[] => {
-  return value
+  value?: Array<string | LegacyDirectedQuestion> | null,
+): string[] =>
+  (value ?? [])
     .map((item) => {
       if (typeof item === "string") {
         return item.trim();
@@ -41,7 +46,6 @@ const normalizeDirectedQuestions = (
       return "";
     })
     .filter((question) => question.length > 0);
-};
 
 export const StepAgentFlow = () => {
   const { data, updateSection } = useOnboarding();
@@ -52,13 +56,11 @@ export const StepAgentFlow = () => {
     resolver: zodResolver(agentFlowSchema),
     defaultValues: {
       ...data.agentFlow,
-      directedQuestions: normalizeDirectedQuestions(
-        data.agentFlow.directedQuestions as Array<string | LegacyDirectedQuestion>,
-      ),
+      directedQuestions: normalizeDirectedQuestions(data.agentFlow.directedQuestions),
     },
   });
 
-  const directedQuestionsArray = useFieldArray<AgentFlowFormValues, "directedQuestions">({
+  const directedQuestionsArray = useFieldArray<AgentFlowFormValues>({
     name: "directedQuestions",
     control: form.control,
   });
@@ -72,18 +74,14 @@ export const StepAgentFlow = () => {
   useEffect(() => {
     form.reset({
       ...data.agentFlow,
-      directedQuestions: normalizeDirectedQuestions(
-        data.agentFlow.directedQuestions as Array<string | LegacyDirectedQuestion>,
-      ),
+      directedQuestions: normalizeDirectedQuestions(data.agentFlow.directedQuestions),
     });
   }, [data.agentFlow, form]);
 
   const onSubmit = async (values: AgentFlowFormValues) => {
     const normalized: AgentFlow = {
       briefingScope: values.briefingScope,
-      directedQuestions: normalizeDirectedQuestions(
-        values.directedQuestions as Array<string | LegacyDirectedQuestion>,
-      ),
+      directedQuestions: normalizeDirectedQuestions(values.directedQuestions),
       maxQuestions: values.maxQuestions,
       institutionalAdditionalInfo: values.institutionalAdditionalInfo,
     };

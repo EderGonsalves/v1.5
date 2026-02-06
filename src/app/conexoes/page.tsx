@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -12,8 +12,28 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
-import { getBaserowConfigs } from "@/services/api";
+import {
+  getBaserowConfigs,
+  getWebhooks,
+  createWebhook,
+  updateWebhook,
+  deleteWebhook,
+  type WebhookRow,
+} from "@/services/api";
+import { Bell, Pencil, Plus, Trash2, Webhook } from "lucide-react";
 
 // WhatsApp OAuth configuration - usando variáveis de ambiente
 const WHATSAPP_OAUTH_BASE_URL = "https://www.facebook.com/v22.0/dialog/oauth";
@@ -45,12 +65,62 @@ type ConnectedNumber = {
   phoneNumber: string;
 };
 
+type WebhookFormData = {
+  webhook_url: string;
+  webhook_name: string;
+  webhook_secret: string;
+  alert_depoimento_inicial: boolean;
+  alert_etapa_perguntas: boolean;
+  alert_etapa_final: boolean;
+  is_active: boolean;
+};
+
+const emptyWebhookForm: WebhookFormData = {
+  webhook_url: "",
+  webhook_name: "",
+  webhook_secret: "",
+  alert_depoimento_inicial: true,
+  alert_etapa_perguntas: true,
+  alert_etapa_final: true,
+  is_active: true,
+};
+
 export default function ConexoesPage() {
   const router = useRouter();
   const { data, isHydrated, updateSection } = useOnboarding();
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectedNumbers, setConnectedNumbers] = useState<ConnectedNumber[]>([]);
   const [isLoadingWaba, setIsLoadingWaba] = useState(false);
+
+  // Webhook states
+  const [webhooks, setWebhooks] = useState<WebhookRow[]>([]);
+  const [isLoadingWebhooks, setIsLoadingWebhooks] = useState(false);
+  const [webhookError, setWebhookError] = useState<string | null>(null);
+  const [isWebhookDialogOpen, setIsWebhookDialogOpen] = useState(false);
+  const [editingWebhook, setEditingWebhook] = useState<WebhookRow | null>(null);
+  const [webhookForm, setWebhookForm] = useState<WebhookFormData>(emptyWebhookForm);
+  const [isSavingWebhook, setIsSavingWebhook] = useState(false);
+  const [deletingWebhookId, setDeletingWebhookId] = useState<number | null>(null);
+  const [togglingWebhookId, setTogglingWebhookId] = useState<number | null>(null);
+
+  // Fetch webhooks
+  const fetchWebhooks = useCallback(async () => {
+    if (!data.auth?.institutionId) return;
+
+    setIsLoadingWebhooks(true);
+    setWebhookError(null);
+    try {
+      const result = await getWebhooks(data.auth.institutionId);
+      setWebhooks(result);
+    } catch (error) {
+      console.error("Erro ao buscar webhooks:", error);
+      setWebhookError(
+        error instanceof Error ? error.message : "Erro ao buscar webhooks"
+      );
+    } finally {
+      setIsLoadingWebhooks(false);
+    }
+  }, [data.auth?.institutionId]);
 
   // Buscar os números WABA do Baserow
   useEffect(() => {
@@ -86,7 +156,104 @@ export default function ConexoesPage() {
     };
 
     fetchWabaNumbers();
-  }, [data.auth?.institutionId]);
+    fetchWebhooks();
+  }, [data.auth?.institutionId, fetchWebhooks]);
+
+  const handleOpenWebhookDialog = (webhook?: WebhookRow) => {
+    if (webhook) {
+      setEditingWebhook(webhook);
+      const activeValue = webhook.webhook_active?.trim().toLowerCase() ?? "";
+      const isActive = ["sim", "yes", "true", "1", "ativo"].includes(activeValue);
+      setWebhookForm({
+        webhook_url: webhook.webhook_url ?? "",
+        webhook_name: webhook.webhook_name ?? "",
+        webhook_secret: webhook.webhook_secret ?? "",
+        alert_depoimento_inicial: webhook.alert_depoimento_inicial ?? true,
+        alert_etapa_perguntas: webhook.alert_etapa_perguntas ?? true,
+        alert_etapa_final: webhook.alert_etapa_final ?? true,
+        is_active: isActive,
+      });
+    } else {
+      setEditingWebhook(null);
+      setWebhookForm(emptyWebhookForm);
+    }
+    setIsWebhookDialogOpen(true);
+  };
+
+  const handleCloseWebhookDialog = () => {
+    setIsWebhookDialogOpen(false);
+    setEditingWebhook(null);
+    setWebhookForm(emptyWebhookForm);
+  };
+
+  const handleSaveWebhook = async () => {
+    if (!data.auth?.institutionId) return;
+    if (!webhookForm.webhook_url.trim()) {
+      alert("A URL do webhook é obrigatória");
+      return;
+    }
+
+    setIsSavingWebhook(true);
+    try {
+      const { is_active, ...rest } = webhookForm;
+      const payload = {
+        ...rest,
+        webhook_active: is_active ? "sim" : "não",
+      };
+
+      if (editingWebhook) {
+        await updateWebhook(editingWebhook.id, payload);
+      } else {
+        await createWebhook({
+          webhoock_institution_id: data.auth.institutionId,
+          ...payload,
+        });
+      }
+      await fetchWebhooks();
+      handleCloseWebhookDialog();
+    } catch (error) {
+      console.error("Erro ao salvar webhook:", error);
+      alert(error instanceof Error ? error.message : "Erro ao salvar webhook");
+    } finally {
+      setIsSavingWebhook(false);
+    }
+  };
+
+  const handleDeleteWebhook = async (webhookId: number) => {
+    if (!confirm("Tem certeza que deseja excluir este webhook?")) return;
+
+    setDeletingWebhookId(webhookId);
+    try {
+      await deleteWebhook(webhookId);
+      await fetchWebhooks();
+    } catch (error) {
+      console.error("Erro ao excluir webhook:", error);
+      alert(error instanceof Error ? error.message : "Erro ao excluir webhook");
+    } finally {
+      setDeletingWebhookId(null);
+    }
+  };
+
+  const isWebhookActive = (value: string | undefined): boolean => {
+    if (!value) return false;
+    const normalized = value.trim().toLowerCase();
+    return ["sim", "yes", "true", "1", "ativo"].includes(normalized);
+  };
+
+  const handleToggleWebhookActive = async (webhook: WebhookRow) => {
+    setTogglingWebhookId(webhook.id);
+    try {
+      const currentlyActive = isWebhookActive(webhook.webhook_active);
+      await updateWebhook(webhook.id, {
+        webhook_active: currentlyActive ? "não" : "sim",
+      });
+      await fetchWebhooks();
+    } catch (error) {
+      console.error("Erro ao alterar status do webhook:", error);
+    } finally {
+      setTogglingWebhookId(null);
+    }
+  };
 
   useEffect(() => {
     if (!isHydrated) return;
@@ -391,14 +558,338 @@ export default function ConexoesPage() {
             <div className="rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
               <p className="font-semibold">Importante</p>
               <p className="mt-1 text-xs">
-                Ao clicar em "Conectar", uma janela popup será aberta para autorização
+                Ao clicar em &quot;Conectar&quot;, uma janela popup será aberta para autorização
                 do Meta/Facebook. Após autorizar, a janela será fechada automaticamente.
               </p>
             </div>
           </CardContent>
         </Card>
+
+        {/* Webhooks / Alertas */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Webhook className="h-5 w-5" />
+                  Webhooks de Alertas
+                </CardTitle>
+                <CardDescription>
+                  Configure endpoints para receber notificações quando os casos mudarem de etapa
+                </CardDescription>
+              </div>
+              <Button onClick={() => handleOpenWebhookDialog()} size="sm">
+                <Plus className="mr-2 h-4 w-4" />
+                Adicionar Webhook
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {isLoadingWebhooks ? (
+              <div className="space-y-4">
+                {[1, 2].map((i) => (
+                  <div key={i} className="rounded-lg border border-border/60 bg-card p-6">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 animate-pulse rounded-lg bg-muted" />
+                      <div className="space-y-2">
+                        <div className="h-4 w-48 animate-pulse rounded bg-muted" />
+                        <div className="h-3 w-32 animate-pulse rounded bg-muted" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : webhookError ? (
+              <div className="rounded-md border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+                {webhookError}
+              </div>
+            ) : webhooks.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border/60 bg-muted/30 p-8 text-center">
+                <Webhook className="mx-auto h-12 w-12 text-muted-foreground/50" />
+                <h4 className="mt-4 font-semibold text-foreground">
+                  Nenhum webhook configurado
+                </h4>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Adicione um webhook para receber alertas quando os casos mudarem de etapa.
+                </p>
+                <Button
+                  onClick={() => handleOpenWebhookDialog()}
+                  className="mt-4"
+                  variant="outline"
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Configurar primeiro webhook
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {webhooks.map((webhook) => {
+                  const webhookActive = isWebhookActive(webhook.webhook_active);
+                  return (
+                  <div
+                    key={webhook.id}
+                    className={`rounded-lg border p-4 transition-colors ${
+                      webhookActive
+                        ? "border-green-200 bg-green-50/30 dark:border-green-900 dark:bg-green-950/20"
+                        : "border-border/60 bg-muted/30"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 space-y-2">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`flex h-10 w-10 items-center justify-center rounded-lg ${
+                              webhookActive
+                                ? "bg-green-500/10"
+                                : "bg-muted"
+                            }`}
+                          >
+                            <Bell
+                              className={`h-5 w-5 ${
+                                webhookActive
+                                  ? "text-green-600"
+                                  : "text-muted-foreground"
+                              }`}
+                            />
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-foreground">
+                              {webhook.webhook_name || "Webhook sem nome"}
+                            </h4>
+                            <p className="text-xs text-muted-foreground font-mono break-all">
+                              {webhook.webhook_url}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 pl-13">
+                          {webhook.alert_depoimento_inicial && (
+                            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900 dark:text-blue-200">
+                              Depoimento Inicial
+                            </span>
+                          )}
+                          {webhook.alert_etapa_perguntas && (
+                            <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-700 dark:bg-yellow-900 dark:text-yellow-200">
+                              Etapa Perguntas
+                            </span>
+                          )}
+                          {webhook.alert_etapa_final && (
+                            <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900 dark:text-green-200">
+                              Etapa Final
+                            </span>
+                          )}
+                          {webhook.last_status && (
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                                webhook.last_status === "success"
+                                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-200"
+                                  : "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200"
+                              }`}
+                            >
+                              {webhook.last_status === "success"
+                                ? "Ultimo envio: OK"
+                                : "Ultimo envio: Falha"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={webhookActive}
+                          onCheckedChange={() => handleToggleWebhookActive(webhook)}
+                          disabled={togglingWebhookId === webhook.id}
+                          aria-label="Ativar/desativar webhook"
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleOpenWebhookDialog(webhook)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDeleteWebhook(webhook.id)}
+                          disabled={deletingWebhookId === webhook.id}
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )})}
+              </div>
+            )}
+
+            <Separator className="my-6" />
+
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+              <p className="font-semibold">Como funciona</p>
+              <p className="mt-1 text-xs">
+                Quando um caso mudar de etapa (Depoimento Inicial, Etapa de Perguntas ou Etapa Final),
+                um POST será enviado para cada webhook ativo com os dados do caso.
+              </p>
+              <p className="mt-2 text-xs font-mono bg-amber-100 dark:bg-amber-900/50 p-2 rounded">
+                POST /api/alerts {`{ caseId, alertType, institutionId }`}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Dialog de Webhook */}
+        <Dialog open={isWebhookDialogOpen} onOpenChange={setIsWebhookDialogOpen}>
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle>
+                {editingWebhook ? "Editar Webhook" : "Novo Webhook"}
+              </DialogTitle>
+              <DialogDescription>
+                Configure o endpoint que receberá as notificações de alerta.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="webhook_name">Nome do Webhook</Label>
+                <Input
+                  id="webhook_name"
+                  placeholder="Ex: N8N Produção, Make.com, etc."
+                  value={webhookForm.webhook_name}
+                  onChange={(e) =>
+                    setWebhookForm((prev) => ({
+                      ...prev,
+                      webhook_name: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="webhook_url">URL do Webhook *</Label>
+                <Input
+                  id="webhook_url"
+                  type="url"
+                  placeholder="https://seu-endpoint.com/webhook"
+                  value={webhookForm.webhook_url}
+                  onChange={(e) =>
+                    setWebhookForm((prev) => ({
+                      ...prev,
+                      webhook_url: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="webhook_secret">
+                  Chave Secreta (opcional)
+                </Label>
+                <Input
+                  id="webhook_secret"
+                  type="password"
+                  placeholder="Chave para autenticação"
+                  value={webhookForm.webhook_secret}
+                  onChange={(e) =>
+                    setWebhookForm((prev) => ({
+                      ...prev,
+                      webhook_secret: e.target.value,
+                    }))
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Se configurada, será enviada no header X-Webhook-Secret
+                </p>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-3">
+                <Label>Alertas a receber</Label>
+
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="alert_depoimento"
+                    checked={webhookForm.alert_depoimento_inicial}
+                    onCheckedChange={(checked) =>
+                      setWebhookForm((prev) => ({
+                        ...prev,
+                        alert_depoimento_inicial: checked === true,
+                      }))
+                    }
+                  />
+                  <label
+                    htmlFor="alert_depoimento"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    Depoimento Inicial
+                  </label>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="alert_perguntas"
+                    checked={webhookForm.alert_etapa_perguntas}
+                    onCheckedChange={(checked) =>
+                      setWebhookForm((prev) => ({
+                        ...prev,
+                        alert_etapa_perguntas: checked === true,
+                      }))
+                    }
+                  />
+                  <label
+                    htmlFor="alert_perguntas"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    Etapa de Perguntas
+                  </label>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="alert_final"
+                    checked={webhookForm.alert_etapa_final}
+                    onCheckedChange={(checked) =>
+                      setWebhookForm((prev) => ({
+                        ...prev,
+                        alert_etapa_final: checked === true,
+                      }))
+                    }
+                  />
+                  <label
+                    htmlFor="alert_final"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    Etapa Final
+                  </label>
+                </div>
+              </div>
+
+              <Separator />
+
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="is_active"
+                  checked={webhookForm.is_active}
+                  onCheckedChange={(checked) =>
+                    setWebhookForm((prev) => ({ ...prev, is_active: checked }))
+                  }
+                />
+                <Label htmlFor="is_active">Webhook ativo</Label>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={handleCloseWebhookDialog}>
+                Cancelar
+              </Button>
+              <Button onClick={handleSaveWebhook} disabled={isSavingWebhook}>
+                {isSavingWebhook ? "Salvando..." : "Salvar"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </main>
   );
 }
-

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -32,6 +32,12 @@ export const OnboardingLogin = () => {
   const [errorMessage, setErrorMessage] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- habilita renderização somente após o cliente montar
+    setIsClient(true);
+  }, []);
 
   const form = useForm<LoginCredentials>({
     resolver: zodResolver(loginSchema),
@@ -69,6 +75,10 @@ export const OnboardingLogin = () => {
       );
     }
   };
+
+  if (!isClient) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative" style={{ backgroundColor: "#0d4c6c" }}>

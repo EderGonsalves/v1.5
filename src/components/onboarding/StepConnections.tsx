@@ -131,7 +131,7 @@ export const StepConnections = () => {
       <div className="rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
         <p className="font-semibold">Importante</p>
         <p className="mt-1 text-xs">
-          Ao clicar em "Conectar", você será redirecionado para a página de
+          Ao clicar em &quot;Conectar&quot;, você será redirecionado para a página de
           autorização do Meta/Facebook. Após autorizar, você será redirecionado
           de volta para continuar o onboarding.
         </p>

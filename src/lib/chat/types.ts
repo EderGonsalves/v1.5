@@ -47,4 +47,7 @@ export type SendCaseMessagePayload = {
   attachments?: File[];
   quotedMessageId?: number | null;
   metadata?: Record<string, unknown>;
+  type?: "ghost";
+  /** Número WABA específico para enviar a mensagem (quando instituição tem múltiplos números) */
+  wabaPhoneNumber?: string;
 };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Card,
@@ -11,28 +11,21 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
   getBaserowCases,
   getBaserowConfigs,
   updateBaserowCase,
   type BaserowCaseRow,
   type BaserowConfigRow,
 } from "@/services/api";
-import { ConversationView } from "@/components/casos/ConversationView";
+import { KanbanCardDetail } from "@/components/kanban/KanbanCardDetail";
 import { cn } from "@/lib/utils";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import { useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/ui/loading-screen";
 import { Input } from "@/components/ui/input";
-import { MessageSquareText, RefreshCw } from "lucide-react";
+import { MessageSquareText, RefreshCw, List, Kanban, Check, X, Loader2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import { KanbanView } from "@/components/kanban/KanbanView";
 import {
   CaseStage,
   computeCaseStatistics,
@@ -43,10 +36,64 @@ import {
   stageLabels,
   stageOrder,
 } from "@/lib/case-stats";
+import { useStatistics } from "@/hooks/use-statistics";
+
+// Cache de casos em sessionStorage
+type CachedCases = {
+  cases: BaserowCaseRow[];
+  timestamp: number;
+  institutionId: number;
+  totalCount: number;
+};
+
+const CASES_CACHE_KEY = "onboarding_cases_cache";
+const CASES_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutos
+
+const getCasesFromCache = (institutionId: number): CachedCases | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(CASES_CACHE_KEY);
+    if (!raw) return null;
+    const cached = JSON.parse(raw) as CachedCases;
+    if (cached.institutionId !== institutionId) return null;
+    if (Date.now() - cached.timestamp > CASES_CACHE_TTL_MS) return null;
+    return cached;
+  } catch {
+    return null;
+  }
+};
+
+const setCasesCache = (institutionId: number, cases: BaserowCaseRow[], totalCount: number): void => {
+  if (typeof window === "undefined") return;
+  try {
+    const cached: CachedCases = {
+      cases,
+      timestamp: Date.now(),
+      institutionId,
+      totalCount,
+    };
+    sessionStorage.setItem(CASES_CACHE_KEY, JSON.stringify(cached));
+  } catch {
+    // Ignora erros de storage
+  }
+};
 
 type InstitutionOption = {
   id: string;
   label: string;
+};
+
+const formatCurrency = (value: number | string | null | undefined): string => {
+  if (value === null || value === undefined || value === "") return "R$ 0,00";
+  const num = typeof value === "string" ? parseFloat(value) : value;
+  if (isNaN(num)) return "R$ 0,00";
+  return num.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+};
+
+const parseCurrencyInput = (value: string): number => {
+  const cleaned = value.replace(/[^\d.,]/g, "").replace(",", ".");
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? 0 : num;
 };
 
 const parseDateInput = (value: string, options?: { endOfDay?: boolean }) => {
@@ -82,6 +129,17 @@ export default function CasosPage() {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
   }, [data.auth?.institutionId]);
+
+  // Hook para estatísticas server-side
+  const {
+    stats: serverStats,
+    isLoading: statsLoading,
+    isRefreshing: statsRefreshing,
+    lastUpdated: statsLastUpdated,
+    refresh: refreshStats,
+    error: statsError,
+  } = useStatistics(normalizedInstitutionId ?? undefined);
+
   const [cases, setCases] = useState<BaserowCaseRow[]>([]);
   const [selectedCase, setSelectedCase] = useState<BaserowCaseRow | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -89,9 +147,8 @@ export default function CasosPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [updatingCaseId, setUpdatingCaseId] = useState<number | null>(null);
   const [pauseErrors, setPauseErrors] = useState<Record<number, string | null>>({});
-  const [currentPage, setCurrentPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [totalCasesCount, setTotalCasesCount] = useState<number | null>(null);
+  const [visibleCount, setVisibleCount] = useState(50); // Quantos casos exibir por vez
   const isSysAdmin = normalizedInstitutionId === 4;
   const [selectedInstitution, setSelectedInstitution] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -99,6 +156,10 @@ export default function CasosPage() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [adminInstitutions, setAdminInstitutions] = useState<InstitutionOption[]>([]);
+  const [activeView, setActiveView] = useState<"lista" | "kanban">("lista");
+  const [editingValorCaseId, setEditingValorCaseId] = useState<number | null>(null);
+  const [valorInput, setValorInput] = useState("");
+  const [updatingResultadoCaseId, setUpdatingResultadoCaseId] = useState<number | null>(null);
   const normalizedStartDate = useMemo(
     () => parseDateInput(startDate),
     [startDate],
@@ -239,11 +300,8 @@ export default function CasosPage() {
       });
     }
 
-    return filteredCases.sort((a, b) => {
-      const idA = a.CaseId || a.id || 0;
-      const idB = b.CaseId || b.id || 0;
-      return idB - idA;
-    });
+    // Dados já vêm ordenados (mais recentes primeiro)
+    return filteredCases;
   }, [
     cases,
     isSysAdmin,
@@ -254,10 +312,27 @@ export default function CasosPage() {
     normalizedEndDate,
   ]);
 
-  const caseStats = useMemo(
-    () => computeCaseStatistics(visibleCases),
-    [visibleCases],
-  );
+  // Casos visíveis na tela (paginação virtual)
+  const paginatedCases = useMemo(() => {
+    return visibleCases.slice(0, visibleCount);
+  }, [visibleCases, visibleCount]);
+
+  // Verifica se há mais casos para carregar na visualização
+  const hasMoreToShow = visibleCases.length > visibleCount;
+
+  // Calcular estatísticas localmente a partir dos casos carregados
+  const localStats = useMemo(() => {
+    return computeCaseStatistics(cases);
+  }, [cases]);
+
+  // Usa estatísticas do servidor se disponíveis, senão usa estatísticas locais
+  const caseStats = useMemo(() => {
+    // Se tem erro ou servidor retornou zeros mas temos casos, usa local
+    if (statsError || (serverStats.totalCases === 0 && cases.length > 0)) {
+      return localStats;
+    }
+    return serverStats;
+  }, [serverStats, localStats, statsError, cases.length]);
 
   const selectedInstitutionLabel = useMemo(() => {
     if (selectedInstitution === "all") return null;
@@ -343,11 +418,22 @@ export default function CasosPage() {
     if (normalizedInstitutionId === null) {
       return;
     }
-    loadCases();
+
+    // Verificar cache primeiro
+    const cached = getCasesFromCache(normalizedInstitutionId);
+    if (cached) {
+      setCases(cached.cases);
+      setTotalCasesCount(cached.totalCount);
+      setIsLoading(false);
+      // Atualiza em background
+      loadCases(true);
+    } else {
+      loadCases();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHydrated, data.auth, normalizedInstitutionId]);
 
-  const loadCases = async (page: number = 1, append: boolean = false) => {
+  const loadCases = async (silent: boolean = false) => {
     if (!Number.isFinite(normalizedInstitutionId)) {
       setError("ID da instituicao nao encontrado");
       setIsLoading(false);
@@ -357,54 +443,78 @@ export default function CasosPage() {
     const institutionId = normalizedInstitutionId!;
 
     try {
-      if (!append) {
+      if (!silent) {
         setIsLoading(true);
-        setCurrentPage(1);
-        setHasMore(true);
         setCases([]);
-      } else {
-        setIsLoadingMore(true);
+        setError(null);
       }
-      setError(null);
-      console.log(
-        "Carregando casos do Baserow para institutionId:",
-        institutionId,
-        "page:",
-        page,
-      );
+
       const response = await getBaserowCases({
         institutionId,
-        page,
-        pageSize: 50,
-        fetchAll: !append,
+        pageSize: 200,
+        fetchAll: true, // Carregar todos para ordenação correta
       });
-      console.log("Atendimentos encontrados:", response);
 
-      if (append) {
-        setCases((prev) => [...prev, ...response.results]);
-        setHasMore(response.hasNextPage);
-      } else {
-        setCases(response.results);
-        setHasMore(response.hasNextPage);
-      }
+      // Atualizar total de casos
+      setTotalCasesCount(response.totalCount);
+
+      // Ordenar por ID decrescente (mais recentes primeiro)
+      const sortedResults = [...response.results].sort((a, b) => {
+        const idA = a.id || 0;
+        const idB = b.id || 0;
+        return idB - idA;
+      });
+
+      setCases(sortedResults);
+      setCasesCache(institutionId, sortedResults, response.totalCount);
     } catch (err) {
-      console.error("Erro ao carregar casos:", err);
-      setError(
-        err instanceof Error ? err.message : "Erro ao carregar casos",
-      );
+      if (!silent) {
+        console.error("Erro ao carregar casos:", err);
+        setError(
+          err instanceof Error ? err.message : "Erro ao carregar casos",
+        );
+      }
     } finally {
-      setIsLoading(false);
-      setIsLoadingMore(false);
+      if (!silent) {
+        setIsLoading(false);
+      }
     }
   };
 
-  const loadMoreCases = () => {
-    if (hasMore && !isLoadingMore) {
-      const nextPage = currentPage + 1;
-      setCurrentPage(nextPage);
-      loadCases(nextPage, true);
-    }
-  };
+  // Função para mostrar mais casos (paginação virtual)
+  const showMoreCases = useCallback(() => {
+    setVisibleCount((prev) => prev + 50);
+  }, []);
+
+  // Ref para o elemento sentinela do infinite scroll
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  // Infinite scroll com IntersectionObserver
+  useEffect(() => {
+    const sentinel = loadMoreRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry.isIntersecting && hasMoreToShow) {
+          showMoreCases();
+        }
+      },
+      { threshold: 0.1, rootMargin: "100px" }
+    );
+
+    observer.observe(sentinel);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [hasMoreToShow, showMoreCases]);
+
+  // Resetar visibleCount quando filtros mudam
+  useEffect(() => {
+    setVisibleCount(50);
+  }, [selectedInstitution, searchQuery, stageFilter, normalizedStartDate, normalizedEndDate]);
 
   const handleCaseClick = (caseRow: BaserowCaseRow) => {
     setSelectedCase(caseRow);
@@ -451,6 +561,59 @@ export default function CasosPage() {
     }
   };
 
+  const handleValorDoubleClick = (caseRow: BaserowCaseRow, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const currentValor = typeof caseRow.valor === "number"
+      ? caseRow.valor
+      : typeof caseRow.valor === "string"
+        ? parseFloat(caseRow.valor)
+        : 0;
+    setValorInput(isNaN(currentValor) ? "0" : currentValor.toString());
+    setEditingValorCaseId(caseRow.id);
+  };
+
+  const handleValorSave = async (caseId: number) => {
+    const newValor = parseCurrencyInput(valorInput);
+    setEditingValorCaseId(null);
+    try {
+      await updateBaserowCase(caseId, { valor: newValor });
+      setCases((prev) =>
+        prev.map((c) => (c.id === caseId ? { ...c, valor: newValor } : c))
+      );
+    } catch (err) {
+      console.error("Erro ao atualizar valor:", err);
+    }
+  };
+
+  const handleValorKeyDown = (e: React.KeyboardEvent, caseId: number) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleValorSave(caseId);
+    } else if (e.key === "Escape") {
+      setEditingValorCaseId(null);
+    }
+  };
+
+  const handleResultadoClick = async (
+    caseRow: BaserowCaseRow,
+    resultado: "ganho" | "perdido",
+    e: React.MouseEvent
+  ) => {
+    e.stopPropagation();
+    if (updatingResultadoCaseId) return;
+    setUpdatingResultadoCaseId(caseRow.id);
+    try {
+      await updateBaserowCase(caseRow.id, { resultado });
+      setCases((prev) =>
+        prev.map((c) => (c.id === caseRow.id ? { ...c, resultado } : c))
+      );
+    } catch (err) {
+      console.error("Erro ao atualizar resultado:", err);
+    } finally {
+      setUpdatingResultadoCaseId(null);
+    }
+  };
+
   if (isLoading) {
     return <LoadingScreen message="Carregando casos..." />;
   }
@@ -474,95 +637,112 @@ export default function CasosPage() {
   }
 
   return (
-    <main className="min-h-screen bg-white py-8 dark:bg-zinc-900">
-      <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4">
-        <section className="space-y-3 text-center sm:text-left">
-          <p className="text-sm font-semibold uppercase tracking-wide text-primary">
-            GestÃ£o de Casos
-          </p>
-          <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-4xl">
-            Atendimentos
-          </h1>
-          <p className="text-base text-zinc-600 dark:text-zinc-300">
-            Visualize e gerencie todos os atendimentos. Ordenados do mais recente para o mais antigo.
-          </p>
-        </section>
-
-        <section className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-4">
+    <main className="min-h-screen bg-white py-4 dark:bg-zinc-900">
+      <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4">
+        {/* Header compacto com título e estatísticas */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div className="flex items-center gap-4">
             <div>
-              <h2 className="text-xl font-semibold text-foreground">
-                Resumo das estatísticas
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                {summaryScopeDescription}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+                  Gestão de Casos
+                </p>
+              </div>
+              <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+                Atendimentos
+              </h1>
             </div>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/estatisticas">Abrir painel completo</Link>
-            </Button>
+            {/* View Tabs */}
+            <div className="flex items-center gap-1 ml-4">
+              <Button
+                variant={activeView === "lista" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setActiveView("lista")}
+                className="gap-1.5 h-8"
+              >
+                <List className="h-3.5 w-3.5" />
+                Lista
+              </Button>
+              <Button
+                variant={activeView === "kanban" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setActiveView("kanban")}
+                className="gap-1.5 h-8"
+              >
+                <Kanban className="h-3.5 w-3.5" />
+                Kanban
+              </Button>
+            </div>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-            <Card className="border-t-4 border-primary py-3 gap-2 h-[140px]">
-              <CardHeader className="pb-1 pt-2 space-y-1">
-                <CardDescription>Total de atendimentos</CardDescription>
-                <CardTitle className="text-2xl font-bold">
-                  {caseStats.totalCases}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-1 pb-2">
-                <p className="text-xs text-muted-foreground">
-                  {caseStats.pausedCases} com IA pausada
-                </p>
-              </CardContent>
-            </Card>
-            {stageOrder.map((stage) => (
-              <Card key={stage} className="py-3 gap-2 h-[140px]">
-                <CardHeader className="pb-1 pt-2 space-y-1">
-                  <CardDescription>{stageLabels[stage]}</CardDescription>
-                  <CardTitle className="text-2xl font-semibold">
-                    {caseStats.stageCounts[stage]}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="flex items-center justify-between pt-1 pb-2">
-                  <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                    Participação
-                  </span>
-                  <span
-                    className={cn(
-                      "rounded-full px-2 py-0.5 text-xs font-semibold",
-                      stageColors[stage],
-                    )}
-                  >
-                    {caseStats.stagePercentages[stage]}%
-                  </span>
-                </CardContent>
-              </Card>
-            ))}
-            <Card className="border-dashed py-3 gap-2 h-[140px]">
-              <CardHeader className="pb-1 pt-2 space-y-1">
-                <CardDescription>IA pausada</CardDescription>
-                <CardTitle className="text-2xl font-semibold">
-                  {caseStats.pausedCases}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-1 pb-2">
-                <p className="text-xs text-muted-foreground">
-                  {caseStats.pausedPercentage}% do total
-                </p>
-                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-amber-500 transition-[width]"
-                    style={{
-                      width: `${Math.min(caseStats.pausedPercentage, 100)}%`,
-                    }}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </section>
 
+          {/* Estatísticas compactas inline */}
+          <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2 rounded-lg border bg-card px-3 py-1.5">
+                <span className="text-xs text-muted-foreground">Total:</span>
+                <span className="text-sm font-bold text-primary">
+                  {statsLoading && caseStats.totalCases === 0 ? "..." : (caseStats.totalCases || totalCasesCount || "...")}
+                </span>
+              </div>
+              {stageOrder.map((stage) => (
+                <div key={stage} className="flex items-center gap-2 rounded-lg border bg-card px-3 py-1.5">
+                  <span className="text-xs text-muted-foreground">{stageLabels[stage]}:</span>
+                  <span className={cn("text-sm font-semibold", stageColors[stage].replace("bg-", "text-").replace("-100", "-700").replace("-900", "-300"))}>
+                    {statsLoading && caseStats.stageCounts[stage] === 0 ? "..." : caseStats.stageCounts[stage]}
+                  </span>
+                </div>
+              ))}
+              <div className="flex items-center gap-2 rounded-lg border border-dashed bg-card px-3 py-1.5">
+                <span className="text-xs text-muted-foreground">IA Pausada:</span>
+                <span className="text-sm font-semibold text-amber-600">
+                  {statsLoading && caseStats.pausedCases === 0 ? "..." : caseStats.pausedCases}
+                </span>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5"
+                onClick={() => refreshStats()}
+                disabled={statsRefreshing}
+                title={statsLastUpdated ? `Atualizado: ${statsLastUpdated.toLocaleTimeString("pt-BR")}` : "Atualizar estatísticas"}
+              >
+                {statsRefreshing ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+                {statsLastUpdated && (
+                  <span className="text-xs text-muted-foreground hidden sm:inline">
+                    {statsLastUpdated.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                )}
+              </Button>
+              <Button asChild variant="ghost" size="sm" className="h-8">
+                <Link href="/estatisticas">Ver mais</Link>
+              </Button>
+            {/* Só mostra erro se não tiver fallback local */}
+            {statsError && cases.length === 0 && (
+              <span className="text-xs text-red-500 bg-red-50 px-2 py-1 rounded" title={statsError}>
+                {statsError}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {activeView === "kanban" ? (
+          <div className="min-h-[600px]">
+            <KanbanView
+              cases={visibleCases}
+              institutionId={normalizedInstitutionId!}
+              onRefresh={() => loadCases()}
+              onCaseUpdate={(caseId, updates) => {
+                setCases((prev) =>
+                  prev.map((c) => (c.id === caseId ? { ...c, ...updates } : c))
+                );
+              }}
+            />
+          </div>
+        ) : (
+          <>
         <Card>
           <CardHeader className="space-y-4">
             <div className="flex items-center justify-between">
@@ -571,26 +751,11 @@ export default function CasosPage() {
                 <CardDescription>
                   {visibleCases.length}{" "}
                   {visibleCases.length === 1 ? "atendimento" : "atendimentos"}
+                  {visibleCases.length !== (totalCasesCount ?? cases.length) &&
+                    ` (filtrados de ${totalCasesCount ?? cases.length})`}
                 </CardDescription>
               </div>
               <div className="flex items-center gap-2">
-                {hasMore && (
-                  <Button
-                    onClick={loadMoreCases}
-                    disabled={isLoadingMore}
-                    variant="outline"
-                    size="sm"
-                  >
-                    {isLoadingMore ? (
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <>
-                        <RefreshCw className="h-4 w-4 mr-2" />
-                        Carregar mais ({50 * currentPage})
-                      </>
-                    )}
-                  </Button>
-                )}
                 <Button variant="outline" size="sm" onClick={() => loadCases()}>
                   <RefreshCw className="h-4 w-4" />
                 </Button>
@@ -702,10 +867,13 @@ export default function CasosPage() {
               </div>
             ) : (
               <div className="space-y-4">
-                {visibleCases.map((caseRow) => {
+                {paginatedCases.map((caseRow) => {
                   const stage = getCaseStage(caseRow);
                   const isPaused = isCasePaused(caseRow);
                   const pauseError = pauseErrors[caseRow.id];
+                  const resultado = (caseRow.resultado || "").toLowerCase();
+                  const isGanho = resultado === "ganho";
+                  const isPerdido = resultado === "perdido";
                   return (
                     <div
                       key={caseRow.id}
@@ -728,6 +896,16 @@ export default function CasosPage() {
                                 {stageLabels[stage]}
                               </span>
                             )}
+                            {isGanho && (
+                              <span className="rounded-full px-2.5 py-0.5 text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200">
+                                Ganho
+                              </span>
+                            )}
+                            {isPerdido && (
+                              <span className="rounded-full px-2.5 py-0.5 text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200">
+                                Perdido
+                              </span>
+                            )}
                           </div>
                           <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
                             {caseRow.Data && (
@@ -739,7 +917,7 @@ export default function CasosPage() {
                               <span>Sem telefone</span>
                             )}
                             <Link
-                              href={`/casos/${caseRow.id}/chat`}
+                              href={`/chat?case=${caseRow.id}`}
                               className="inline-flex items-center gap-1 rounded-full border border-blue-500/30 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 dark:border-blue-500/40 dark:bg-blue-900/30 dark:text-blue-200"
                               onClick={(event) => event.stopPropagation()}
                             >
@@ -762,6 +940,57 @@ export default function CasosPage() {
                                 disabled={updatingCaseId === caseRow.id}
                                 aria-label="Alternar pausa da IA neste caso"
                               />
+                            </div>
+                            {/* Valor da causa e Ganho/Perdido */}
+                            <div
+                              className="flex items-center gap-2"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <span className="text-xs text-muted-foreground">Valor da causa:</span>
+                              {editingValorCaseId === caseRow.id ? (
+                                <Input
+                                  type="text"
+                                  value={valorInput}
+                                  onChange={(e) => setValorInput(e.target.value)}
+                                  onBlur={() => handleValorSave(caseRow.id)}
+                                  onKeyDown={(e) => handleValorKeyDown(e, caseRow.id)}
+                                  className="h-6 w-24 text-xs px-1"
+                                  placeholder="0,00"
+                                  autoFocus
+                                />
+                              ) : (
+                                <span
+                                  className="text-xs font-medium text-green-600 dark:text-green-400 cursor-pointer hover:underline"
+                                  onDoubleClick={(e) => handleValorDoubleClick(caseRow, e)}
+                                  title="Clique duplo para editar"
+                                >
+                                  {formatCurrency(caseRow.valor)}
+                                </span>
+                              )}
+                              {!isGanho && !isPerdido && (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 px-2 text-[10px] gap-1 text-green-600 hover:text-green-700 hover:bg-green-50 border-green-200"
+                                    onClick={(e) => handleResultadoClick(caseRow, "ganho", e)}
+                                    disabled={updatingResultadoCaseId === caseRow.id}
+                                  >
+                                    <Check className="h-3 w-3" />
+                                    Ganho
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 px-2 text-[10px] gap-1 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+                                    onClick={(e) => handleResultadoClick(caseRow, "perdido", e)}
+                                    disabled={updatingResultadoCaseId === caseRow.id}
+                                  >
+                                    <X className="h-3 w-3" />
+                                    Perdido
+                                  </Button>
+                                </>
+                              )}
                             </div>
                           </div>
                           {pauseError && (
@@ -800,54 +1029,36 @@ export default function CasosPage() {
                 })}
               </div>
             )}
-            {!hasMore && visibleCases.length > 0 && (
+            {/* Sentinela para infinite scroll */}
+            {hasMoreToShow && (
+              <div ref={loadMoreRef} className="py-4 text-center">
+                <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-sm">Carregando mais...</span>
+                </div>
+              </div>
+            )}
+            {!hasMoreToShow && visibleCases.length > 0 && (
               <div className="py-4 text-center text-muted-foreground text-sm">
-                ✅ Todos os {visibleCases.length} Atendimentos foram carregados
+                Exibindo {paginatedCases.length} de {visibleCases.length} atendimentos
+                {visibleCases.length < (totalCasesCount ?? cases.length) &&
+                  ` (${totalCasesCount ?? cases.length} no total)`}
               </div>
             )}
           </CardContent>
         </Card>
 
-        {selectedCase && (
-          <Dialog open={isDialogOpen} onOpenChange={handleDialogOpenChange}>
-            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>
-                  {selectedCase.CustumerName || "Cliente sem nome"}
-                </DialogTitle>
-                <DialogDescription>
-                  {selectedCase.CustumerPhone || "Sem telefone"}
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="mt-4 space-y-4">
-                <Tabs defaultValue="conversa" className="w-full">
-                  <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="conversa">Conversa</TabsTrigger>
-                    <TabsTrigger value="resumo">Resumo</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="conversa" className="mt-4">
-                    <div className="rounded-lg border p-4 min-h-[300px] max-h-[500px] overflow-y-auto bg-zinc-50 dark:bg-zinc-950">
-                      <ConversationView conversation={selectedCase.Conversa || ""} />
-                    </div>
-                  </TabsContent>
-                  <TabsContent value="resumo" className="mt-4">
-                    <div className="rounded-lg border p-4 min-h-[300px]">
-                      {selectedCase.Resumo ? (
-                        <pre className="whitespace-pre-wrap text-sm font-mono">
-                          {selectedCase.Resumo}
-                        </pre>
-                      ) : (
-                        <p className="text-muted-foreground text-center py-8">
-                          Nenhum resumo registrado.
-                        </p>
-                      )}
-                    </div>
-                  </TabsContent>
-                </Tabs>
-              </div>
-            </DialogContent>
-          </Dialog>
+        <KanbanCardDetail
+          caseData={selectedCase}
+          open={isDialogOpen}
+          onOpenChange={handleDialogOpenChange}
+          onCaseUpdate={(caseId, updates) => {
+            setCases((prev) =>
+              prev.map((c) => (c.id === caseId ? { ...c, ...updates } : c))
+            );
+          }}
+        />
+          </>
         )}
       </div>
     </main>

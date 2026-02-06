@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type UseAudioRecorderResult = {
   isSupported: boolean;
@@ -23,6 +23,7 @@ export const useAudioRecorder = (): UseAudioRecorderResult => {
       typeof window !== "undefined" &&
       typeof navigator !== "undefined" &&
       Boolean(navigator.mediaDevices?.getUserMedia);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- precisamos descobrir o suporte apenas após montar no browser
     setIsSupported(canRecord);
 
     return () => {

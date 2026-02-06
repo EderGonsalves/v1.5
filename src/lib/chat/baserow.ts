@@ -398,9 +398,14 @@ type FetchMessagesOptions = {
   fallbackCaseId: number;
 };
 
+export type FetchMessagesResult = {
+  messages: CaseMessage[];
+  wabaPhoneNumber: string | null;
+};
+
 export const fetchCaseMessagesFromBaserow = async (
   options: FetchMessagesOptions,
-): Promise<CaseMessage[]> => {
+): Promise<FetchMessagesResult> => {
   ensureBaserowConfig();
 
   const { caseIdentifiers = [], customerPhone, fallbackCaseId } = options;
@@ -416,61 +421,97 @@ export const fetchCaseMessagesFromBaserow = async (
 
   // If no phone and no identifiers, return empty
   if (!normalizedPhone && !normalizedIdentifiers.length) {
-    return [];
+    return { messages: [], wabaPhoneNumber: null };
   }
 
   const pageSize = 200;
   const collected: BaserowCaseMessageRow[] = [];
-  let nextUrl: string | null = buildMessagesUrl(
-    new URLSearchParams({
+
+  // Buscar por telefone (from ou to) - mais eficiente com filtro no Baserow
+  if (normalizedPhone) {
+    // Busca mensagens onde "from" contém o telefone (mensagens do cliente)
+    const fromParams = new URLSearchParams({
       page: "1",
       size: String(pageSize),
       order_by: "DataHora",
-    }),
-  );
-
-  while (nextUrl) {
-    const response = await axios.get(nextUrl, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
+      "filter__from__contains": normalizedPhone,
     });
+    let nextUrl: string | null = buildMessagesUrl(fromParams);
 
-    const rows: BaserowCaseMessageRow[] = Array.isArray(response.data?.results)
-      ? response.data.results
-      : [];
-    collected.push(...rows);
-    const nextFromResponse = normalizeNextUrl(response.data?.next);
-    nextUrl = nextFromResponse;
+    while (nextUrl) {
+      const response = await axios.get(nextUrl, {
+        headers: {
+          Authorization: `Token ${BASEROW_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 30000,
+      });
+
+      const rows: BaserowCaseMessageRow[] = Array.isArray(response.data?.results)
+        ? response.data.results
+        : [];
+      collected.push(...rows);
+      nextUrl = normalizeNextUrl(response.data?.next);
+    }
+
+    // Busca mensagens onde "to" contém o telefone (mensagens para o cliente)
+    const toParams = new URLSearchParams({
+      page: "1",
+      size: String(pageSize),
+      order_by: "DataHora",
+      "filter__to__contains": normalizedPhone,
+    });
+    nextUrl = buildMessagesUrl(toParams);
+
+    while (nextUrl) {
+      const response = await axios.get(nextUrl, {
+        headers: {
+          Authorization: `Token ${BASEROW_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 30000,
+      });
+
+      const rows: BaserowCaseMessageRow[] = Array.isArray(response.data?.results)
+        ? response.data.results
+        : [];
+      collected.push(...rows);
+      nextUrl = normalizeNextUrl(response.data?.next);
+    }
   }
 
-  const filtered = collected.filter((row) => {
-    // First, try to match by customer phone (from or to fields)
-    if (normalizedPhone) {
-      const rowFrom = row.from ? String(row.from).replace(/\D/g, "").trim() : "";
-      const rowTo = row.to ? String(row.to).replace(/\D/g, "").trim() : "";
+  // Se não encontrou por telefone, buscar por CaseId
+  if (!collected.length && normalizedIdentifiers.length) {
+    for (const identifier of normalizedIdentifiers) {
+      const caseParams = new URLSearchParams({
+        page: "1",
+        size: String(pageSize),
+        order_by: "DataHora",
+        "filter__CaseId__equal": identifier,
+      });
+      let nextUrl: string | null = buildMessagesUrl(caseParams);
 
-      if (rowFrom === normalizedPhone || rowTo === normalizedPhone) {
-        return true;
+      while (nextUrl) {
+        const response = await axios.get(nextUrl, {
+          headers: {
+            Authorization: `Token ${BASEROW_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          timeout: 30000,
+        });
+
+        const rows: BaserowCaseMessageRow[] = Array.isArray(response.data?.results)
+          ? response.data.results
+          : [];
+        collected.push(...rows);
+        nextUrl = normalizeNextUrl(response.data?.next);
       }
     }
-
-    // Fallback to CaseId matching
-    if (normalizedIdentifiers.length) {
-      const candidate = row.CaseId ?? (row as Record<string, unknown>).caseId;
-      if (candidate !== null && candidate !== undefined) {
-        return normalizedIdentifiers.includes(String(candidate).trim());
-      }
-    }
-
-    return false;
-  });
+  }
 
   // Remove duplicates by id
   const uniqueMap = new Map<number, BaserowCaseMessageRow>();
-  for (const row of filtered) {
+  for (const row of collected) {
     if (!uniqueMap.has(row.id)) {
       uniqueMap.set(row.id, row);
     }
@@ -506,7 +547,13 @@ export const fetchCaseMessagesFromBaserow = async (
     return a.id - b.id;
   });
 
-  return unique.map((row) => toCaseMessage(row, fallbackCaseId, { customerPhone: normalizedPhone }));
+  // Determinar o número WABA da conversa
+  const wabaPhoneNumber = determineWabaNumberFromMessages(unique, normalizedPhone);
+
+  return {
+    messages: unique.map((row) => toCaseMessage(row, fallbackCaseId, { customerPhone: normalizedPhone })),
+    wabaPhoneNumber,
+  };
 };
 
 export const uploadAttachmentToBaserow = async (
@@ -550,6 +597,7 @@ type CreateCaseMessageRowInput = {
   from?: string;
   to?: string;
   messages_type?: string;
+  field?: string;
   audioid?: string;
   imageId?: string;
   documentId?: string;
@@ -563,6 +611,7 @@ export const createCaseMessageRow = async (input: CreateCaseMessageRowInput) => 
     Sender: input.sender,
     Message: input.content,
     DataHora: input.timestamp ?? new Date().toISOString(),
+    field: input.field ?? "chat",
   };
 
   if (input.attachments?.length) {
@@ -611,3 +660,44 @@ export const normalizeCaseMessageRow = (
   fallbackCaseId: number,
   customerPhone?: string,
 ): CaseMessage => toCaseMessage(row, fallbackCaseId, { customerPhone });
+
+/**
+ * Determina o número WABA usado em uma conversa a partir das mensagens.
+ * Analisa os campos `from` e `to` para identificar qual é o número WABA
+ * (o que não é o telefone do cliente).
+ */
+export const determineWabaNumberFromMessages = (
+  messages: BaserowCaseMessageRow[],
+  customerPhone?: string,
+): string | null => {
+  if (!messages.length) return null;
+
+  const normalizedCustomerPhone = customerPhone
+    ? customerPhone.replace(/\D/g, "").trim()
+    : "";
+
+  for (const msg of messages) {
+    const from = msg.from ? String(msg.from).replace(/\D/g, "").trim() : "";
+    const to = msg.to ? String(msg.to).replace(/\D/g, "").trim() : "";
+
+    // Se temos o telefone do cliente, podemos identificar o WABA
+    if (normalizedCustomerPhone) {
+      // Se from é o cliente, to é o WABA
+      if (from === normalizedCustomerPhone && to) {
+        return to;
+      }
+      // Se to é o cliente, from é o WABA
+      if (to === normalizedCustomerPhone && from) {
+        return from;
+      }
+    }
+
+    // Se não temos o telefone do cliente, usamos heurística
+    // Mensagens enviadas (não do cliente) têm from = WABA
+    if (from && msg.Sender !== "cliente") {
+      return from;
+    }
+  }
+
+  return null;
+};

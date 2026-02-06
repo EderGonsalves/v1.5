@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Mic, Paperclip, Send, Trash2, X } from "lucide-react";
+import { Ghost, Loader2, Mic, Paperclip, Send, Trash2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,6 +22,8 @@ type ChatComposerProps = {
   isSending: boolean;
   disabled?: boolean;
   isWindowClosed?: boolean;
+  /** Número WABA para enviar a mensagem (quando há múltiplos números) */
+  wabaPhoneNumber?: string | null;
 };
 
 const MAX_ATTACHMENTS = 5;
@@ -58,9 +60,11 @@ export const ChatComposer = ({
   isSending,
   disabled,
   isWindowClosed,
+  wabaPhoneNumber,
 }: ChatComposerProps) => {
   const [message, setMessage] = useState("");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const [isGhostMode, setIsGhostMode] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const attachmentsRef = useRef<PendingAttachment[]>([]);
   const {
@@ -124,6 +128,8 @@ export const ChatComposer = ({
     const payload: SendCaseMessagePayload = {
       content: message.trim(),
       attachments: attachments.map((entry) => entry.file),
+      ...(isGhostMode && { type: "ghost" }),
+      ...(wabaPhoneNumber && { wabaPhoneNumber }),
     };
     try {
       await onSend(payload);
@@ -134,6 +140,7 @@ export const ChatComposer = ({
         }
       });
       setAttachments([]);
+      // Ghost mode permanece ativo até o usuário desativar manualmente
     } catch (error) {
       console.error("Falha ao enviar mensagem do chat:", error);
     }
@@ -246,6 +253,16 @@ export const ChatComposer = ({
         </p>
       )}
 
+      {/* Ghost Mode Indicator */}
+      {isGhostMode && (
+        <div className="flex items-center gap-2 px-1">
+          <Ghost className="h-4 w-4 text-violet-500" />
+          <p className="text-xs text-violet-600">
+            Modo Ghost ativo - mensagem não será exibida para o cliente
+          </p>
+        </div>
+      )}
+
       {/* Composer - WhatsApp structure */}
       <div className="flex items-end gap-2">
         {/* Input Area */}
@@ -266,8 +283,26 @@ export const ChatComposer = ({
             className="h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
             onClick={() => fileInputRef.current?.click()}
             disabled={disabled || isSending || attachments.length >= MAX_ATTACHMENTS}
+            title="Anexar arquivo"
           >
             <Paperclip className="h-5 w-5" />
+          </Button>
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className={cn(
+              "h-9 w-9 shrink-0 transition-colors",
+              isGhostMode
+                ? "text-violet-500 bg-violet-500/10 hover:bg-violet-500/20 hover:text-violet-600"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+            onClick={() => setIsGhostMode(!isGhostMode)}
+            disabled={disabled || isSending}
+            title={isGhostMode ? "Modo Ghost ativo - mensagem não será exibida para o cliente" : "Ativar modo Ghost"}
+          >
+            <Ghost className="h-5 w-5" />
           </Button>
 
           <Textarea

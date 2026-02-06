@@ -1,7 +1,7 @@
 ﻿import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axios from "axios";
-import { vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { WizardContainer } from "../WizardContainer";
 
