@@ -29,6 +29,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# FFmpeg para conversão de áudio para OGG/OPUS (formato WhatsApp)
+RUN apk add --no-cache ffmpeg
+
 # Criar usuário não-root
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs

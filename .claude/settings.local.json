@@ -14,7 +14,12 @@
       "Bash(python -c:*)",
       "Bash(findstr:*)",
       "Bash(npm install:*)",
-      "Bash(npm run lint)"
+      "Bash(npm run lint)",
+      "WebSearch",
+      "Bash(timeout:*)",
+      "Bash(npx next build)",
+      "Bash(find:*)",
+      "Bash(ls:*)"
     ]
   }
 }
