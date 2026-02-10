@@ -23,6 +23,8 @@ cp .env.example .env
 - `AUTOMATION_ENDPOINT_URL`: URL da sua automação principal (recebe o payload completo);
 - `RAG_WORKER_ENDPOINT_URL`: endpoint opcional para processar anexos e gerar embeddings.
 - `BASEROW_CASE_MESSAGES_TABLE_ID`/`NEXT_PUBLIC_BASEROW_CASE_MESSAGES_TABLE_ID`: tabela do Baserow onde cada mensagem do caso será persistida.
+- `BASEROW_EVENTS_TABLE_ID`/`NEXT_PUBLIC_BASEROW_EVENTS_TABLE_ID`: tabela do Baserow que armazena os eventos do modulo de agenda.
+- `BASEROW_EVENT_GUESTS_TABLE_ID`/`NEXT_PUBLIC_BASEROW_EVENT_GUESTS_TABLE_ID`: tabela de convidados vinculada aos eventos (campo relacional `event_id`).
 - `CHAT_WEBHOOK_URL`/`CHAT_WEBHOOK_TOKEN`: destino que recebe a mensagem antes dela ser salva; use token se o webhook exigir autenticação.
 - `CHAT_WEBHOOK_TIMEOUT_MS`/`NEXT_PUBLIC_CHAT_POLL_INTERVAL_MS`: controlam o timeout do webhook e o intervalo de atualização automática do chat (milissegundos).
 

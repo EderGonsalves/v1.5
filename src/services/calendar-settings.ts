@@ -25,6 +25,7 @@ const TABLE_ID =
 export type CalendarSettingsRow = {
   id: number;
   institution_id: number;
+  scheduling_enabled: boolean;
   slot_duration_minutes: number;
   buffer_minutes: number;
   advance_days: number;
@@ -114,6 +115,7 @@ export async function upsertCalendarSettings(
     const url = `/database/rows/table/${TABLE_ID}/?user_field_names=true`;
     const defaults: Record<string, unknown> = {
       institution_id: institutionId,
+      scheduling_enabled: false,
       slot_duration_minutes: 30,
       buffer_minutes: 0,
       advance_days: 30,

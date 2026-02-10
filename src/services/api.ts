@@ -7,9 +7,9 @@ import type {
 } from "@/lib/validations";
 
 const API_URL =
-  process.env.NEXT_PUBLIC_ONBOARDING_API_URL ?? "/api/onboarding";
+  process.env.NEXT_PUBLIC_ONBOARDING_API_URL || "/api/onboarding";
 const LOGIN_WEBHOOK_URL =
-  process.env.NEXT_PUBLIC_LOGIN_WEBHOOK_URL ??
+  process.env.NEXT_PUBLIC_LOGIN_WEBHOOK_URL ||
   "https://automation-webhook.riasistemas.com.br/webhook/login-v2";
 
 export const submitOnboarding = async (payload: OnboardingPayload) => {
@@ -359,6 +359,7 @@ export type SyncUserAccountPayload = {
   legacyUserId: string;
   email?: string;
   name?: string;
+  password?: string;
   isActive?: boolean;
 };
 

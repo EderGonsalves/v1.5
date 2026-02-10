@@ -92,7 +92,7 @@ export const ConversationList = ({
           type="button"
           onClick={onRefresh}
           disabled={isRefreshing}
-          className="p-2 rounded-full hover:bg-muted transition-colors text-muted-foreground"
+          className="p-2 rounded-full hover:bg-[#D4E0EB] dark:hover:bg-[#263850] transition-colors text-[#1B263B] dark:text-[#D4E0EB]"
           title="Atualizar lista"
         >
           {isRefreshing ? (

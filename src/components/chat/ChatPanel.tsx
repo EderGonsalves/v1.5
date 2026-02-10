@@ -273,12 +273,12 @@ export const ChatPanel = ({
         </div>
 
         {/* Header Actions */}
-        <div className="flex items-center gap-2 text-muted-foreground">
+        <div className="flex items-center gap-2 text-[#1B263B] dark:text-[#D4E0EB]">
           <button
             type="button"
             onClick={() => refresh()}
             disabled={isRefreshing}
-            className="p-2 hover:bg-muted rounded-full transition-colors"
+            className="p-2 hover:bg-[#D4E0EB] dark:hover:bg-[#263850] rounded-full transition-colors"
             title="Atualizar"
           >
             {isRefreshing ? (
@@ -291,7 +291,7 @@ export const ChatPanel = ({
             <button
               type="button"
               onClick={() => setShowTransferPanel((v) => !v)}
-              className="p-2 hover:bg-muted rounded-full transition-colors"
+              className="p-2 hover:bg-[#D4E0EB] dark:hover:bg-[#263850] rounded-full transition-colors"
               title="Transferir atendimento"
             >
               <UserRoundCog className="h-5 w-5" />

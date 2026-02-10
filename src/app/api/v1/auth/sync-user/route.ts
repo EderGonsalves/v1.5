@@ -8,13 +8,14 @@ const payloadSchema = z.object({
   legacyUserId: z.string().min(1),
   email: z.string().email().optional(),
   name: z.string().optional(),
+  password: z.string().min(1).optional(),
   isActive: z.boolean().optional(),
 });
 
 export async function POST(request: NextRequest) {
   try {
     const json = await request.json();
-    const { institutionId, legacyUserId, email, name, isActive } =
+    const { institutionId, legacyUserId, email, name, password, isActive } =
       payloadSchema.parse(json);
 
     const result = await syncUserRecord({
@@ -22,6 +23,7 @@ export async function POST(request: NextRequest) {
       legacyUserId,
       email: email?.toLowerCase(),
       name,
+      password,
       isActive,
     });
 

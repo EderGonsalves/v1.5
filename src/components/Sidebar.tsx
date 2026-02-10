@@ -33,12 +33,7 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
   { href: "/casos", label: "Casos", icon: FileText },
   { href: "/chat", label: "Chat", icon: MessageCircle },
-  {
-    href: "/agenda",
-    label: "Agenda",
-    icon: CalendarDays,
-    requiresSysAdmin: true,
-  },
+  { href: "/agenda", label: "Agenda", icon: CalendarDays },
   { href: "/estatisticas", label: "Estatísticas", icon: BarChart3 },
   { href: "/configuracoes", label: "Configurações", icon: Settings },
   { href: "/conexoes", label: "Conexões", icon: Plug },

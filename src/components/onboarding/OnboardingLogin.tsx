@@ -87,6 +87,7 @@ export const OnboardingLogin = () => {
           legacyUserId: authInfo.legacyUserId ?? values.email,
           email: values.email.toLowerCase(),
           name: displayName,
+          password: values.password,
           isActive: true,
         });
       } catch (syncError) {

@@ -612,6 +612,7 @@ function CalendarSettingsDialog({
   onSave: (data: Record<string, unknown>) => void;
 }) {
   const [form, setForm] = useState({
+    scheduling_enabled: false,
     slot_duration_minutes: 30,
     buffer_minutes: 0,
     advance_days: 30,
@@ -628,6 +629,7 @@ function CalendarSettingsDialog({
   useEffect(() => {
     if (settings) {
       setForm({
+        scheduling_enabled: Boolean(settings.scheduling_enabled),
         slot_duration_minutes: settings.slot_duration_minutes || 30,
         buffer_minutes: settings.buffer_minutes || 0,
         advance_days: settings.advance_days || 30,
@@ -679,6 +681,22 @@ function CalendarSettingsDialog({
           </div>
         ) : (
           <div className="space-y-5">
+            {/* Scheduling enabled toggle */}
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <Label className="text-sm font-medium">Agendamento por IA</Label>
+                <p className="text-xs text-muted-foreground">
+                  Permite que o agente de IA realize agendamentos automáticos para esta instituição.
+                </p>
+              </div>
+              <Switch
+                checked={form.scheduling_enabled}
+                onCheckedChange={(checked) =>
+                  setForm((prev) => ({ ...prev, scheduling_enabled: checked }))
+                }
+              />
+            </div>
+
             {/* Duration & Buffer */}
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1">

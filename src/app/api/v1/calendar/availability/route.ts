@@ -15,6 +15,7 @@ type AvailableSlot = {
 
 type AvailabilityResponse = {
   institution_id: number;
+  scheduling_enabled: boolean;
   slot_duration_minutes: number;
   buffer_minutes: number;
   timezone: string;
@@ -108,24 +109,31 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Fetch settings
+    // Fetch settings (use sensible defaults when not yet configured)
     const settings = await fetchCalendarSettings(institutionId);
-    if (!settings) {
-      return NextResponse.json({
-        institution_id: institutionId,
-        slot_duration_minutes: 0,
-        buffer_minutes: 0,
-        timezone: timezoneParam,
-        available_slots: [],
-        message: "Agenda não configurada para esta instituição",
-      });
-    }
 
-    const slotDuration = settings.slot_duration_minutes || 30;
-    const bufferMinutes = settings.buffer_minutes || 0;
+    const DEFAULT_SETTINGS = {
+      scheduling_enabled: false,
+      slot_duration_minutes: 30,
+      buffer_minutes: 0,
+      advance_days: 30,
+      mon_start: "09:00", mon_end: "18:00",
+      tue_start: "09:00", tue_end: "18:00",
+      wed_start: "09:00", wed_end: "18:00",
+      thu_start: "09:00", thu_end: "18:00",
+      fri_start: "09:00", fri_end: "18:00",
+      sat_start: "", sat_end: "",
+      sun_start: "", sun_end: "",
+      meet_link: "",
+    };
+
+    const cfg = settings ?? DEFAULT_SETTINGS;
+
+    const slotDuration = cfg.slot_duration_minutes || 30;
+    const bufferMinutes = cfg.buffer_minutes || 0;
     const advanceDays = Math.min(
-      Number(daysParam) || settings.advance_days || 30,
-      settings.advance_days || 90,
+      Number(daysParam) || cfg.advance_days || 30,
+      cfg.advance_days || 90,
     );
 
     // Build date range: tomorrow to advance_days
@@ -164,13 +172,13 @@ export async function GET(request: NextRequest) {
 
     // Day settings lookup
     const daySettings: Record<string, { start: string; end: string }> = {
-      sun: { start: settings.sun_start, end: settings.sun_end },
-      mon: { start: settings.mon_start, end: settings.mon_end },
-      tue: { start: settings.tue_start, end: settings.tue_end },
-      wed: { start: settings.wed_start, end: settings.wed_end },
-      thu: { start: settings.thu_start, end: settings.thu_end },
-      fri: { start: settings.fri_start, end: settings.fri_end },
-      sat: { start: settings.sat_start, end: settings.sat_end },
+      sun: { start: cfg.sun_start, end: cfg.sun_end },
+      mon: { start: cfg.mon_start, end: cfg.mon_end },
+      tue: { start: cfg.tue_start, end: cfg.tue_end },
+      wed: { start: cfg.wed_start, end: cfg.wed_end },
+      thu: { start: cfg.thu_start, end: cfg.thu_end },
+      fri: { start: cfg.fri_start, end: cfg.fri_end },
+      sat: { start: cfg.sat_start, end: cfg.sat_end },
     };
 
     // Generate slots for each day in the range
@@ -200,10 +208,11 @@ export async function GET(request: NextRequest) {
 
     const response: AvailabilityResponse = {
       institution_id: institutionId,
+      scheduling_enabled: Boolean(cfg.scheduling_enabled),
       slot_duration_minutes: slotDuration,
       buffer_minutes: bufferMinutes,
       timezone: timezoneParam,
-      meet_link: settings.meet_link || "",
+      meet_link: cfg.meet_link || "",
       available_slots: allSlots,
     };
 

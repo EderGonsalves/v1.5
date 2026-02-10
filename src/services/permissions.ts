@@ -107,6 +107,7 @@ export type SyncUserParams = {
   legacyUserId: string;
   email?: string;
   name?: string;
+  password?: string;
   isActive?: boolean;
 };
 
@@ -281,6 +282,9 @@ const buildUserPayload = (params: SyncUserParams) => {
   }
   if (params.name) {
     payload.name = params.name.trim();
+  }
+  if (params.password) {
+    payload.password = params.password;
   }
   if (typeof params.isActive === "boolean") {
     payload.is_active = params.isActive;
@@ -483,7 +487,7 @@ export const fetchPermissionsOverview = async (
     parentId: extractLinkIds(menu.parent_id)[0] ?? null,
     order:
       typeof menu.display_order === "number" ? menu.display_order : undefined,
-    isActive: menu.is_active !== false,
+    isActive: isActiveValue(menu.is_active),
   }));
 
   const usersFormatted = users.map((row) => ({
@@ -526,6 +530,15 @@ const fetchMenuRowsForInstitution = async (
   return fetchTableRows<MenuRow>(TABLE_IDS.menus, params);
 };
 
+const isActiveValue = (value: unknown): boolean => {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const lower = value.trim().toLowerCase();
+    return lower !== "false" && lower !== "0" && lower !== "";
+  }
+  return value !== false && value !== 0 && value !== null && value !== undefined;
+};
+
 const getEnabledPagesForInstitution = async (
   institutionId: number,
 ): Promise<string[]> => {
@@ -534,7 +547,7 @@ const getEnabledPagesForInstitution = async (
     return ALL_FEATURE_PATHS;
   }
   return rows
-    .filter((row) => row.is_active !== false && row.path)
+    .filter((row) => isActiveValue(row.is_active) && row.path)
     .map((row) => row.path as string);
 };
 
@@ -553,15 +566,29 @@ export const fetchPermissionsStatus = async (
     };
   }
 
-  const [{ isSysAdmin, user }, enabledPages] = await Promise.all([
-    loadCurrentUserContext(institutionId, legacyUserId),
-    getEnabledPagesForInstitution(institutionId),
-  ]);
+  // Buscar páginas habilitadas mesmo que o usuário não exista na tabela Users
+  let isSysAdmin = false;
+  let userId = 0;
+
+  const enabledPages = await getEnabledPagesForInstitution(institutionId);
+
+  try {
+    const ctx = await loadCurrentUserContext(institutionId, legacyUserId);
+    isSysAdmin = ctx.isSysAdmin;
+    userId = ctx.user.id;
+  } catch (error) {
+    // Usuário pode não estar na tabela Users ainda (primeiro login via webhook).
+    // Continuar com enabledPages mesmo assim.
+    console.warn(
+      "[fetchPermissionsStatus] user context failed, using enabledPages only:",
+      error instanceof Error ? error.message : error,
+    );
+  }
 
   return {
     isSysAdmin,
     isGlobalAdmin: false,
-    userId: user.id,
+    userId,
     enabledPages: isSysAdmin ? ALL_FEATURE_PATHS : enabledPages,
   };
 };
@@ -774,7 +801,7 @@ export const getInstitutionFeatures = async (
         key: feature.key,
         path: feature.path,
         label: feature.label,
-        isEnabled: existing.is_active !== false,
+        isEnabled: isActiveValue(existing.is_active),
         menuRowId: existing.id,
       });
     } else {
@@ -865,7 +892,7 @@ const toUserPublic = (row: BaserowUserRow): UserPublicRow => {
     email: (row.email ?? "").trim(),
     phone: (row.phone ?? "").trim(),
     oab: (row.OAB ?? "").trim(),
-    isActive: row.is_active !== false,
+    isActive: isActiveValue(row.is_active),
     institutionId: Number.isFinite(instId) && instId > 0 ? instId : undefined,
   };
 };

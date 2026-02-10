@@ -124,7 +124,7 @@ export function ContactPanel({
         <button
           type="button"
           onClick={onClose}
-          className="rounded-full p-1.5 text-muted-foreground hover:bg-muted transition-colors"
+          className="rounded-full p-1.5 text-[#1B263B] dark:text-[#D4E0EB] hover:bg-[#D4E0EB] dark:hover:bg-[#263850] transition-colors"
         >
           <X className="h-4 w-4" />
         </button>

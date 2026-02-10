@@ -36,21 +36,35 @@ export async function POST(request: NextRequest) {
         payload: authInfo.payload,
         legacyUserId,
       });
-    } catch {
-      // Webhook failed, try fallback
+    } catch (webhookError) {
+      console.error(
+        "[api/v1/auth/login] webhook auth failed:",
+        webhookError instanceof Error ? webhookError.message : webhookError,
+      );
     }
 
     // 2. Fallback: authenticate via Users table
-    const usersResult = await authenticateViaUsersTable(email, password);
-    if (usersResult) {
-      return NextResponse.json({
-        institutionId: usersResult.institutionId,
-        legacyUserId: String(usersResult.userId),
-        payload: {
-          name: usersResult.name,
-          email: usersResult.email,
-        },
-      });
+    try {
+      const usersResult = await authenticateViaUsersTable(email, password);
+      if (usersResult) {
+        return NextResponse.json({
+          institutionId: usersResult.institutionId,
+          legacyUserId: String(usersResult.userId),
+          payload: {
+            name: usersResult.name,
+            email: usersResult.email,
+          },
+        });
+      }
+      console.error(
+        "[api/v1/auth/login] users table auth returned null for email:",
+        email,
+      );
+    } catch (usersError) {
+      console.error(
+        "[api/v1/auth/login] users table auth error:",
+        usersError instanceof Error ? usersError.message : usersError,
+      );
     }
 
     // Both failed
