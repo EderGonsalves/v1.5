@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  BarChart3,
+  CalendarDays,
+  Loader2,
+  RefreshCw,
+} from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { LoadingScreen } from "@/components/ui/loading-screen";
 import { getBaserowCases, type BaserowCaseRow } from "@/services/api";
@@ -21,7 +21,6 @@ import {
   type CaseStatistics,
 } from "@/lib/case-stats";
 import { cn } from "@/lib/utils";
-import { RefreshCw, Loader2 } from "lucide-react";
 import { useStatistics } from "@/hooks/use-statistics";
 
 const stageStackColors: Record<CaseStage, string> = {
@@ -43,7 +42,7 @@ const stageDotColors: Record<CaseStage, string> = {
 };
 
 const StageDistributionChart = ({ stats }: { stats: CaseStatistics }) => (
-  <div className="space-y-6">
+  <div className="space-y-4">
     <div className="flex h-4 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
       {stageOrder.map((stage) => (
         <div
@@ -91,7 +90,7 @@ const StageVolumeBars = ({ stats }: { stats: CaseStatistics }) => {
           : 0;
         return (
           <div key={stage} className="flex flex-1 flex-col items-center gap-3">
-            <div className="flex h-40 w-full items-end rounded-md bg-muted p-1">
+            <div className="flex h-36 w-full items-end rounded-md bg-muted p-1">
               <div
                 className={cn("w-full rounded-md", stageBarColors[stage])}
                 style={{ height: `${height}%` }}
@@ -115,35 +114,35 @@ const PausedCasesDonut = ({ stats }: { stats: CaseStatistics }) => {
   const gradient = `conic-gradient(#fb923c 0deg ${angle}deg, rgba(148,163,184,0.35) ${angle}deg 360deg)`;
 
   return (
-    <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-center sm:gap-8">
-      <div className="relative h-40 w-40">
+    <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:gap-6">
+      <div className="relative h-32 w-32 shrink-0">
         <div
           className="absolute inset-0 rounded-full"
           style={{ background: gradient }}
           aria-hidden="true"
         />
-        <div className="absolute inset-4 rounded-full bg-background shadow-inner" aria-hidden="true" />
+        <div className="absolute inset-3 rounded-full bg-background shadow-inner" aria-hidden="true" />
         <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-          <span className="text-3xl font-bold text-foreground">
+          <span className="text-2xl font-bold text-foreground">
             {stats.pausedCases}
           </span>
-          <span className="text-xs uppercase tracking-wide text-muted-foreground">
+          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
             pausados
           </span>
-          <span className="text-sm font-semibold text-amber-600 dark:text-amber-400">
+          <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">
             {normalized}%
           </span>
         </div>
       </div>
-      <div className="space-y-2 text-sm text-muted-foreground">
+      <div className="space-y-1 text-xs text-muted-foreground">
         <p>
-          {stats.pausedCases} de {stats.totalCases} casos estão com a IA pausada.
+          {stats.pausedCases} de {stats.totalCases} casos com IA pausada.
         </p>
         <p>
           <span className="font-semibold text-foreground">
-            {Math.max(stats.totalCases - stats.pausedCases, 0)} casos
+            {Math.max(stats.totalCases - stats.pausedCases, 0)}
           </span>{" "}
-          seguem com a IA ativa.
+          casos com IA ativa.
         </p>
       </div>
     </div>
@@ -161,10 +160,8 @@ export default function EstatisticasPage() {
 
   const isSysAdmin = data.auth?.institutionId === 4;
 
-  // Hook para estatísticas rápidas do servidor (mostra enquanto carrega dados completos)
   const {
     stats: quickStats,
-    isLoading: quickStatsLoading,
     refresh: refreshQuickStats,
     isRefreshing: quickStatsRefreshing,
   } = useStatistics(data.auth?.institutionId ?? undefined);
@@ -260,25 +257,12 @@ export default function EstatisticasPage() {
     [visibleCases],
   );
 
-  // Usa estatísticas rápidas do servidor enquanto carrega, depois usa as computadas localmente
-  // (para suportar filtros por instituição)
   const stats = useMemo(() => {
-    // Se ainda está carregando e não é sysAdmin (sem filtros), usa quickStats
     if (isLoading && !isSysAdmin && quickStats.totalCases > 0) {
       return quickStats;
     }
-    // Caso contrário, usa as estatísticas computadas localmente (com filtros aplicados)
     return computedStats;
   }, [isLoading, isSysAdmin, quickStats, computedStats]);
-
-  const scopeDescription = useMemo(() => {
-    if (isSysAdmin) {
-      return selectedInstitution === "all"
-        ? "Consolidado de todas as instituições"
-        : `Instituição #${selectedInstitution}`;
-    }
-    return "Dados exclusivos da sua instituição";
-  }, [isSysAdmin, selectedInstitution]);
 
   const lastUpdatedLabel = useMemo(() => {
     if (!lastUpdated) return null;
@@ -293,73 +277,38 @@ export default function EstatisticasPage() {
   }
 
   return (
-    <main className="min-h-screen bg-white py-8 dark:bg-zinc-900">
-      <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4">
-        <section className="space-y-3 text-center sm:text-left">
-          <p className="text-sm font-semibold uppercase tracking-wide text-primary">
-            Painel de Estatísticas
-          </p>
-          <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-4xl">
-            Visão geral dos atendimentos
-          </h1>
-          <p className="text-base text-zinc-600 dark:text-zinc-300">
-            Acompanhe a evolução dos atendimentos por etapa e identifique rapidamente a carga de trabalho da equipe.
-          </p>
-        </section>
-
-        {error && (
-          <Card className="border-destructive/60 bg-destructive/10">
-            <CardHeader>
-              <CardTitle className="text-destructive">Não foi possível carregar tudo</CardTitle>
-              <CardDescription className="text-destructive">
-                {error}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button onClick={() => fetchStatistics()} variant="outline">
-                Tentar novamente
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        <section className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/30 px-4 py-3">
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Escopo
-            </span>
-            <span className="text-base font-medium text-foreground">
-              {scopeDescription}
-            </span>
-            {lastUpdatedLabel && (
-              <span className="text-xs text-muted-foreground">
-                Atualizado em {lastUpdatedLabel}
-              </span>
-            )}
+    <main className="min-h-screen bg-background py-4">
+      <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4">
+        {/* Header */}
+        <div className="flex flex-col gap-2 px-4 py-3 border-b border-[#7E99B5] dark:border-border/60 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold flex items-center gap-2">
+              <BarChart3 className="h-4 w-4" />
+              Estatísticas
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              {isSysAdmin
+                ? selectedInstitution === "all"
+                  ? "Consolidado de todas as instituições"
+                  : `Instituição #${selectedInstitution}`
+                : "Dados da sua instituição"}
+              {lastUpdatedLabel && ` — atualizado em ${lastUpdatedLabel}`}
+            </p>
           </div>
-          <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
             {isSysAdmin && (
-              <div className="flex flex-col gap-1">
-                <label
-                  htmlFor="stats-institution"
-                  className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                >
-                  Instituição
-                </label>
-                <select
-                  id="stats-institution"
-                  value={selectedInstitution}
-                  onChange={(event) => setSelectedInstitution(event.target.value)}
-                  className="rounded-md border border-input bg-background px-3 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
-                >
-                  <option value="all">Todas</option>
-                  {institutionOptions.map((option) => (
-                    <option key={option} value={option}>
-                      Instituição #{option}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <select
+                value={selectedInstitution}
+                onChange={(e) => setSelectedInstitution(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs text-foreground truncate sm:w-auto sm:max-w-[200px]"
+              >
+                <option value="all">Todas</option>
+                {institutionOptions.map((option) => (
+                  <option key={option} value={option}>
+                    Instituição #{option}
+                  </option>
+                ))}
+              </select>
             )}
             <Button
               variant="outline"
@@ -369,91 +318,100 @@ export default function EstatisticasPage() {
                 refreshQuickStats();
               }}
               disabled={isRefreshing || quickStatsRefreshing}
-              className="gap-2"
             >
               {(isRefreshing || quickStatsRefreshing) ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <RefreshCw className="h-4 w-4" />
               )}
-              Atualizar
             </Button>
           </div>
-        </section>
+        </div>
 
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Card className="py-3 gap-2 h-[140px]">
-            <CardHeader className="pb-1 pt-2 space-y-1">
-              <CardDescription>Casos totais</CardDescription>
-              <CardTitle className="text-3xl font-bold">{stats.totalCases}</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-1 pb-2 text-xs text-muted-foreground">
-              {stats.totalCases === 1 ? "1 caso registrado" : `${stats.totalCases} casos registrados`}
-            </CardContent>
-          </Card>
+        {error && (
+          <div className="mx-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+            {error}
+            <button
+              onClick={() => fetchStatistics()}
+              className="ml-2 underline"
+            >
+              Tentar novamente
+            </button>
+          </div>
+        )}
+
+        {/* KPIs */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {/* Total */}
+          <div className="rounded-md border border-border/60 bg-muted/30 px-4 py-3">
+            <p className="text-xs text-muted-foreground">Casos totais</p>
+            <p className="text-2xl font-bold text-foreground">{stats.totalCases}</p>
+          </div>
+          {/* Últimos 7 dias */}
+          <div className="rounded-md border border-border/60 bg-muted/30 px-4 py-3">
+            <p className="text-xs text-muted-foreground flex items-center gap-1">
+              <CalendarDays className="h-3 w-3" />
+              Últimos 7 dias
+            </p>
+            <p className="text-2xl font-bold text-foreground">{stats.casesLast7Days}</p>
+          </div>
+          {/* Últimos 30 dias */}
+          <div className="rounded-md border border-border/60 bg-muted/30 px-4 py-3">
+            <p className="text-xs text-muted-foreground flex items-center gap-1">
+              <CalendarDays className="h-3 w-3" />
+              Últimos 30 dias
+            </p>
+            <p className="text-2xl font-bold text-foreground">{stats.casesLast30Days}</p>
+          </div>
+          {/* Etapas */}
           {stageOrder.map((stage) => (
-            <Card key={stage} className="py-3 gap-2 h-[140px]">
-              <CardHeader className="pb-1 pt-2 space-y-1">
-                <CardDescription>{stageLabels[stage]}</CardDescription>
-                <CardTitle className="text-2xl font-semibold">
-                  {stats.stageCounts[stage]}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-1 pb-2 text-xs text-muted-foreground">
-                {stats.stagePercentages[stage]}% do total
-              </CardContent>
-            </Card>
+            <div key={stage} className="rounded-md border border-border/60 bg-muted/30 px-4 py-3">
+              <p className="text-xs text-muted-foreground">{stageLabels[stage]}</p>
+              <p className="text-2xl font-semibold text-foreground">{stats.stageCounts[stage]}</p>
+              <p className="text-[10px] text-muted-foreground">{stats.stagePercentages[stage]}%</p>
+            </div>
           ))}
-          <Card className="py-3 gap-2 h-[140px]">
-            <CardHeader className="pb-1 pt-2 space-y-1">
-              <CardDescription>Casos com IA pausada</CardDescription>
-              <CardTitle className="text-2xl font-semibold">
-                {stats.pausedCases}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-1 pb-2 text-xs text-muted-foreground">
-              {stats.pausedPercentage}% dos casos estão pausados
-            </CardContent>
-          </Card>
-        </section>
+        </div>
 
-        <section className="grid gap-6 lg:grid-cols-3">
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle>Distribuição por etapa</CardTitle>
-              <CardDescription>
-                Percentual de casos em cada etapa do fluxo.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <StageDistributionChart stats={stats} />
-            </CardContent>
-          </Card>
+        {/* Distribuição por etapa */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[#7E99B5] dark:border-border/60">
+          <span className="text-sm font-semibold">Distribuição por etapa</span>
+          <span className="text-xs text-muted-foreground">
+            Percentual de casos em cada etapa do fluxo
+          </span>
+        </div>
+        <div className="px-4">
+          <StageDistributionChart stats={stats} />
+        </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>IA pausada</CardTitle>
-              <CardDescription>Monitore os atendimentos suspensos.</CardDescription>
-            </CardHeader>
-            <CardContent>
+        {/* IA pausada + Volume */}
+        <div className="grid gap-4 lg:grid-cols-2">
+          {/* IA pausada */}
+          <div>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[#7E99B5] dark:border-border/60">
+              <span className="text-sm font-semibold">IA pausada</span>
+              <span className="text-xs text-muted-foreground">
+                {stats.pausedCases} de {stats.totalCases}
+              </span>
+            </div>
+            <div className="px-4 py-4">
               <PausedCasesDonut stats={stats} />
-            </CardContent>
-          </Card>
-        </section>
+            </div>
+          </div>
 
-        <section>
-          <Card>
-            <CardHeader>
-              <CardTitle>Volume por etapa</CardTitle>
-              <CardDescription>
-                Comparativo visual entre as etapas em números absolutos.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+          {/* Volume por etapa */}
+          <div>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[#7E99B5] dark:border-border/60">
+              <span className="text-sm font-semibold">Volume por etapa</span>
+              <span className="text-xs text-muted-foreground">
+                Comparativo visual
+              </span>
+            </div>
+            <div className="px-4 py-4">
               <StageVolumeBars stats={stats} />
-            </CardContent>
-          </Card>
-        </section>
+            </div>
+          </div>
+        </div>
       </div>
     </main>
   );

@@ -2,8 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { getBaserowCases, type BaserowCaseRow } from "@/services/api";
-
 export type Conversation = {
   id: number;
   caseId: number | string;
@@ -22,6 +20,10 @@ type CachedConversations = {
   conversations: Conversation[];
   timestamp: number;
   institutionId: number;
+};
+
+type ApiConversation = Omit<Conversation, "lastMessageAt"> & {
+  lastMessageAt: string | null;
 };
 
 const CACHE_KEY = "onboarding_conversations_cache";
@@ -55,34 +57,15 @@ const setSessionCache = (institutionId: number, conversations: Conversation[]): 
   }
 };
 
-const normalizeCase = (row: BaserowCaseRow): Conversation => {
-  const rawDate = row.Data ?? row.data ?? null;
+const parseApiConversation = (item: ApiConversation): Conversation => {
   let lastMessageAt: Date | null = null;
-  if (rawDate) {
-    const parsed = new Date(rawDate);
+  if (item.lastMessageAt) {
+    const parsed = new Date(item.lastMessageAt);
     if (!Number.isNaN(parsed.getTime())) {
       lastMessageAt = parsed;
     }
   }
-
-  // Tenta usar display_phone_number se existir
-  const rawWabaPhone = row.display_phone_number;
-  const wabaPhoneNumber = rawWabaPhone
-    ? String(rawWabaPhone).replace(/\D/g, "").trim()
-    : null;
-
-  return {
-    id: row.id,
-    caseId: row.CaseId ?? row.id,
-    customerName: row.CustumerName ?? "Cliente",
-    customerPhone: row.CustumerPhone ?? "",
-    lastMessage: row.Resumo ?? row.DepoimentoInicial ?? undefined,
-    lastMessageAt,
-    paused: row.IApause === "SIM",
-    bjCaseId: row.BJCaseId ?? null,
-    etapa: row.EtapaPerguntas ?? row.EtapaFinal ?? undefined,
-    wabaPhoneNumber: wabaPhoneNumber || null,
-  };
+  return { ...item, lastMessageAt };
 };
 
 export const useConversations = (institutionId: number | undefined) => {
@@ -113,21 +96,28 @@ export const useConversations = (institutionId: number | undefined) => {
       setError(null);
 
       try {
-        const response = await getBaserowCases({
-          institutionId,
-          fetchAll: true,
-        });
+        const url = silent
+          ? `/api/conversations?institutionId=${institutionId}`
+          : `/api/conversations?institutionId=${institutionId}&refresh=true`;
 
-        // Ordenar por ID decrescente (mais recentes primeiro)
-        const sorted = [...response.results].sort((a, b) => {
-          const idA = a.id ?? 0;
-          const idB = b.id ?? 0;
-          return idB - idA;
-        });
+        const response = await fetch(url);
+        if (!response.ok) {
+          const body = await response.json().catch(() => null);
+          throw new Error(
+            (body?.error as string) || `Erro ${response.status}`,
+          );
+        }
 
-        const normalized = sorted.map(normalizeCase);
+        const data = await response.json();
+        const items: ApiConversation[] = data.conversations ?? [];
+        const normalized = items.map(parseApiConversation);
         setConversations(normalized);
         setSessionCache(institutionId, normalized);
+
+        // Auto-assign unassigned cases (fire-and-forget)
+        if (!silent) {
+          fetch("/api/v1/cases/auto-assign", { method: "POST" }).catch(() => {});
+        }
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "Erro ao carregar conversas",

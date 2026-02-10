@@ -10,6 +10,26 @@ type UseAudioRecorderResult = {
   cancelRecording: () => void;
 };
 
+/**
+ * Formatos de áudio compatíveis com a API do WhatsApp, em ordem de preferência.
+ * OGG/OPUS é o formato nativo de áudio do WhatsApp.
+ */
+const WHATSAPP_AUDIO_FORMATS = [
+  { mimeType: "audio/ogg; codecs=opus", ext: "ogg" },
+  { mimeType: "audio/ogg;codecs=opus", ext: "ogg" },
+  { mimeType: "audio/mp4", ext: "m4a" },
+  { mimeType: "audio/webm; codecs=opus", ext: "webm" },
+  { mimeType: "audio/webm", ext: "webm" },
+] as const;
+
+const pickRecorderFormat = () => {
+  if (typeof MediaRecorder === "undefined") return null;
+  for (const fmt of WHATSAPP_AUDIO_FORMATS) {
+    if (MediaRecorder.isTypeSupported(fmt.mimeType)) return fmt;
+  }
+  return null;
+};
+
 export const useAudioRecorder = (): UseAudioRecorderResult => {
   const [isRecording, setIsRecording] = useState(false);
   const [isSupported, setIsSupported] = useState(false);
@@ -17,6 +37,7 @@ export const useAudioRecorder = (): UseAudioRecorderResult => {
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const resolveRef = useRef<((file: File | null) => void) | null>(null);
+  const formatRef = useRef<(typeof WHATSAPP_AUDIO_FORMATS)[number] | null>(null);
 
   useEffect(() => {
     const canRecord =
@@ -25,6 +46,7 @@ export const useAudioRecorder = (): UseAudioRecorderResult => {
       Boolean(navigator.mediaDevices?.getUserMedia);
     // eslint-disable-next-line react-hooks/set-state-in-effect -- precisamos descobrir o suporte apenas após montar no browser
     setIsSupported(canRecord);
+    formatRef.current = pickRecorderFormat();
 
     return () => {
       if (recorderRef.current?.state === "recording") {
@@ -47,7 +69,10 @@ export const useAudioRecorder = (): UseAudioRecorderResult => {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     streamRef.current = stream;
 
-    const recorder = new MediaRecorder(stream);
+    const fmt = formatRef.current;
+    const recorder = fmt
+      ? new MediaRecorder(stream, { mimeType: fmt.mimeType })
+      : new MediaRecorder(stream);
     recorderRef.current = recorder;
 
     recorder.ondataavailable = (event) => {
@@ -57,9 +82,11 @@ export const useAudioRecorder = (): UseAudioRecorderResult => {
     };
 
     recorder.onstop = () => {
-      const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+      const ext = fmt?.ext ?? "ogg";
+      const blobType = fmt?.mimeType ?? "audio/ogg";
+      const blob = new Blob(chunksRef.current, { type: blobType });
       const file = chunksRef.current.length
-        ? new File([blob], `audio-${Date.now()}.webm`, { type: blob.type })
+        ? new File([blob], `audio-${Date.now()}.${ext}`, { type: blobType })
         : null;
 
       cleanupStream();

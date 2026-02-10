@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Header } from "@/components/Header";
 import { OnboardingProvider } from "@/components/onboarding/onboarding-context";
+import { SidebarProvider } from "@/components/sidebar/sidebar-context";
+import { AppShell } from "@/components/AppShell";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -35,8 +36,9 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}
       >
         <OnboardingProvider>
-          <Header />
-          {children}
+          <SidebarProvider>
+            <AppShell>{children}</AppShell>
+          </SidebarProvider>
         </OnboardingProvider>
       </body>
     </html>

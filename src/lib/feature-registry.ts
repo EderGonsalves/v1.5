@@ -1,0 +1,21 @@
+export type SystemFeature = {
+  key: string;
+  path: string;
+  label: string;
+};
+
+export const SYSTEM_FEATURES: SystemFeature[] = [
+  { key: "casos", path: "/casos", label: "Casos" },
+  { key: "chat", path: "/chat", label: "Chat" },
+  { key: "agenda", path: "/agenda", label: "Agenda" },
+  { key: "estatisticas", path: "/estatisticas", label: "Estatísticas" },
+  { key: "configuracoes", path: "/configuracoes", label: "Configurações" },
+  { key: "conexoes", path: "/conexoes", label: "Conexões" },
+  { key: "follow-up", path: "/follow-up", label: "Follow-up" },
+  { key: "usuarios", path: "/usuarios", label: "Usuários" },
+  { key: "suporte", path: "/suporte", label: "Suporte" },
+];
+
+export const ALWAYS_ALLOWED_PATHS = ["/", "/configuracoes/permissoes"];
+
+export const ALL_FEATURE_PATHS = SYSTEM_FEATURES.map((f) => f.path);

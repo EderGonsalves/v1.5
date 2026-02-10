@@ -230,7 +230,7 @@ const DashboardPageContent = () => {
 
   if (error && !config) {
     return (
-      <main className="min-h-screen bg-white py-8 dark:bg-zinc-900">
+      <main className="min-h-screen bg-background py-8">
         <div className="mx-auto flex max-w-5xl flex-col gap-8 px-4">
           <Card>
             <CardHeader>
@@ -253,19 +253,8 @@ const DashboardPageContent = () => {
   }
 
   return (
-    <main className="min-h-screen bg-white py-8 dark:bg-zinc-900">
+    <main className="min-h-screen bg-background py-8">
       <div className="mx-auto flex max-w-5xl flex-col gap-8 px-4">
-        <section className="space-y-3 text-center sm:text-left">
-          <p className="text-sm font-semibold uppercase tracking-wide text-primary">
-            Dashboard de Configurações
-          </p>
-          <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-4xl">
-            Gerencie suas configurações
-          </h1>
-          <p className="text-base text-zinc-600 dark:text-zinc-300">
-            Visualize e edite todas as personalizações do seu agente e fluxo de atendimento.
-          </p>
-        </section>
 
         <Card>
           <CardHeader>

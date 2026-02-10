@@ -278,15 +278,11 @@ export type Connections = z.infer<typeof connectionsSchema>;
 
 
 export type AuthInfo = {
-
   institutionId: number;
-
   token?: string;
-
   expiresAt?: string;
-
   payload?: Record<string, unknown>;
-
+  legacyUserId?: string;
 };
 
 

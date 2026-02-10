@@ -12,7 +12,7 @@ export function LoadingScreen({
   className,
 }: LoadingScreenProps) {
   return (
-    <main className={cn("min-h-screen bg-white py-8 dark:bg-zinc-900", className)}>
+    <main className={cn("min-h-screen bg-background py-8", className)}>
       <div className="mx-auto flex max-w-5xl flex-col gap-8 px-4">
         <div className="flex flex-col items-center justify-center rounded-xl border bg-card/60 py-16 shadow-sm dark:bg-card/40">
           <div className="mb-6 flex items-center justify-center">

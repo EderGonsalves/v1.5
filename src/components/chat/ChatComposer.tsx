@@ -272,7 +272,7 @@ export const ChatComposer = ({
             type="file"
             className="hidden"
             multiple
-            accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.xls,.xlsx"
+            accept=".jpg,.jpeg,.png,.aac,.amr,.mp3,.m4a,.ogg,.mp4,.3gp,.pdf,.doc,.docx,.txt,.xls,.xlsx,.pptx"
             onChange={handleFileChange}
             disabled={disabled || isSending}
           />

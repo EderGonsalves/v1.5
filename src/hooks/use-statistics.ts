@@ -112,6 +112,8 @@ export const useStatistics = (institutionId: number | undefined) => {
           stageCounts: data.stageCounts,
           stagePercentages: data.stagePercentages,
           pausedPercentage: data.pausedPercentage,
+          casesLast7Days: data.casesLast7Days ?? 0,
+          casesLast30Days: data.casesLast30Days ?? 0,
         };
 
         setStats(newStats);

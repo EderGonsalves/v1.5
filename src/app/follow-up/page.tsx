@@ -3,13 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
@@ -265,183 +258,165 @@ export default function FollowUpPage() {
   const canAddMore = configs.length < MAX_MESSAGES;
 
   return (
-    <main className="min-h-screen bg-white py-8 dark:bg-zinc-900">
-      <div className="mx-auto flex max-w-5xl flex-col gap-8 px-4">
-        <section className="space-y-3 text-center sm:text-left">
-          <p className="text-sm font-semibold uppercase tracking-wide text-primary">
-            Follow-up
-          </p>
-          <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-4xl">
-            Mensagens de Follow-up
-          </h1>
-          <p className="text-base text-zinc-600 dark:text-zinc-300">
-            Configure mensagens automáticas para clientes que ainda não concluíram o atendimento.
-          </p>
-        </section>
+    <main className="min-h-screen bg-background py-4">
+      <div className="mx-auto flex max-w-5xl flex-col gap-4 px-4">
 
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <MessageSquare className="h-5 w-5" />
-                  Configuração de Mensagens
-                </CardTitle>
-                <CardDescription>
-                  Defina até {MAX_MESSAGES} mensagens de follow-up para casos não finalizados
-                </CardDescription>
-              </div>
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[#7E99B5] dark:border-border/60">
+          <div>
+            <h2 className="text-sm font-semibold flex items-center gap-2">
+              <MessageSquare className="h-4 w-4" />
+              Mensagens de Follow-up
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Até {MAX_MESSAGES} mensagens para casos não finalizados
+            </p>
+          </div>
+          <Button
+            onClick={() => handleOpenDialog()}
+            size="sm"
+            disabled={!canAddMore}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Adicionar
+          </Button>
+        </div>
+
+        {/* Lista */}
+        <div>
+          {isLoadingConfigs ? (
+            <div>
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="border-b border-[#7E99B5] dark:border-border/60 px-4 py-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-8 w-8 animate-pulse rounded-lg bg-muted" />
+                    <div className="space-y-1.5 flex-1">
+                      <div className="h-4 w-48 animate-pulse rounded bg-muted" />
+                      <div className="h-3 w-full animate-pulse rounded bg-muted" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : configError ? (
+            <div className="px-4 py-4 text-sm text-destructive">
+              {configError}
+            </div>
+          ) : configs.length === 0 ? (
+            <div className="px-4 py-8 text-center">
+              <MessageSquare className="mx-auto h-10 w-10 text-muted-foreground/50" />
+              <h4 className="mt-3 text-sm font-semibold text-foreground">
+                Nenhuma mensagem configurada
+              </h4>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Adicione mensagens de follow-up para engajar clientes que não finalizaram o atendimento.
+              </p>
               <Button
                 onClick={() => handleOpenDialog()}
+                className="mt-3"
+                variant="outline"
                 size="sm"
-                disabled={!canAddMore}
               >
                 <Plus className="mr-2 h-4 w-4" />
-                Adicionar Mensagem
+                Configurar primeira mensagem
               </Button>
             </div>
-          </CardHeader>
-          <CardContent>
-            {isLoadingConfigs ? (
-              <div className="space-y-4">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="rounded-lg border border-border/60 bg-card p-6">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 animate-pulse rounded-lg bg-muted" />
-                      <div className="space-y-2 flex-1">
-                        <div className="h-4 w-48 animate-pulse rounded bg-muted" />
-                        <div className="h-3 w-full animate-pulse rounded bg-muted" />
+          ) : (
+            <div>
+              {configs.map((config) => {
+                const configActive = isConfigActive(config.is_active);
+                const days = parseAllowedDays(config.allowed_days);
+                return (
+                  <div
+                    key={config.id}
+                    className="border-b border-[#7E99B5] dark:border-border/60 px-4 py-3 transition-colors hover:bg-accent/50"
+                  >
+                    <div className="flex items-center gap-3 flex-wrap">
+                      {/* Order badge */}
+                      <div
+                        className={`flex h-8 w-8 items-center justify-center rounded-lg text-sm font-bold flex-shrink-0 ${
+                          configActive
+                            ? "bg-green-500/10 text-green-600"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {config.message_order}
+                      </div>
+
+                      {/* Content */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                          <span className="text-sm font-medium">
+                            Após {formatDelayMinutes(config.delay_minutes)} sem resposta
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
+                          {config.message_content}
+                        </p>
+                      </div>
+
+                      {/* Tags */}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-[10px] text-muted-foreground">
+                          {config.allowed_start_time}-{config.allowed_end_time}
+                        </span>
+                        {days.map((day) => (
+                          <span
+                            key={day}
+                            className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900 dark:text-blue-200"
+                          >
+                            {day.charAt(0).toUpperCase() + day.slice(1, 3)}
+                          </span>
+                        ))}
+                      </div>
+
+                      {/* Actions */}
+                      <div className="ml-auto flex items-center gap-1.5">
+                        <Switch
+                          checked={configActive}
+                          onCheckedChange={() => handleToggleActive(config)}
+                          disabled={togglingId === config.id}
+                          aria-label="Ativar/desativar mensagem"
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => handleOpenDialog(config)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          onClick={() => handleDelete(config.id)}
+                          disabled={deletingId === config.id}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            ) : configError ? (
-              <div className="rounded-md border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-                {configError}
-              </div>
-            ) : configs.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-border/60 bg-muted/30 p-8 text-center">
-                <MessageSquare className="mx-auto h-12 w-12 text-muted-foreground/50" />
-                <h4 className="mt-4 font-semibold text-foreground">
-                  Nenhuma mensagem configurada
-                </h4>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Adicione mensagens de follow-up para engajar clientes que não finalizaram o atendimento.
-                </p>
-                <Button
-                  onClick={() => handleOpenDialog()}
-                  className="mt-4"
-                  variant="outline"
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Configurar primeira mensagem
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {configs.map((config) => {
-                  const configActive = isConfigActive(config.is_active);
-                  const days = parseAllowedDays(config.allowed_days);
-                  return (
-                    <div
-                      key={config.id}
-                      className={`rounded-lg border p-4 transition-colors ${
-                        configActive
-                          ? "border-green-200 bg-green-50/30 dark:border-green-900 dark:bg-green-950/20"
-                          : "border-border/60 bg-muted/30"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1 space-y-2">
-                          <div className="flex items-center gap-3">
-                            <div
-                              className={`flex h-10 w-10 items-center justify-center rounded-lg text-lg font-bold ${
-                                configActive
-                                  ? "bg-green-500/10 text-green-600"
-                                  : "bg-muted text-muted-foreground"
-                              }`}
-                            >
-                              {config.message_order}
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <Clock className="h-4 w-4 text-muted-foreground" />
-                                <span className="text-sm font-medium">
-                                  Após {formatDelayMinutes(config.delay_minutes)} sem resposta
-                                </span>
-                              </div>
-                              <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
-                                {config.message_content}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2 pl-13">
-                            <span className="text-xs text-muted-foreground">
-                              {config.allowed_start_time} - {config.allowed_end_time}
-                            </span>
-                            <span className="text-xs text-muted-foreground">|</span>
-                            {days.map((day) => (
-                              <span
-                                key={day}
-                                className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900 dark:text-blue-200"
-                              >
-                                {day.charAt(0).toUpperCase() + day.slice(1)}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Switch
-                            checked={configActive}
-                            onCheckedChange={() => handleToggleActive(config)}
-                            disabled={togglingId === config.id}
-                            aria-label="Ativar/desativar mensagem"
-                          />
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleOpenDialog(config)}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDelete(config.id)}
-                            disabled={deletingId === config.id}
-                            className="text-destructive hover:text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {!canAddMore && configs.length > 0 && (
-              <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-                Limite máximo de {MAX_MESSAGES} mensagens atingido.
-              </div>
-            )}
-
-            <Separator className="my-6" />
-
-            <div className="rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200">
-              <p className="font-semibold">Como funciona</p>
-              <ul className="mt-2 text-xs space-y-1 list-disc list-inside">
-                <li>As mensagens são enviadas do <strong>número do escritório</strong> (WhatsApp conectado)</li>
-                <li>Cada mensagem é enviada após o tempo de espera configurado, desde a última interação do cliente</li>
-                <li>Mensagens só são enviadas nos dias e horários permitidos</li>
-                <li>Clientes que já atingiram a etapa final não recebem follow-up</li>
-                <li>Máximo de {MAX_MESSAGES} mensagens por cliente dentro de 24 horas</li>
-              </ul>
+                );
+              })}
             </div>
-          </CardContent>
-        </Card>
+          )}
+
+          {!canAddMore && configs.length > 0 && (
+            <div className="px-4 py-2 text-xs text-amber-700 dark:text-amber-300">
+              Limite máximo de {MAX_MESSAGES} mensagens atingido.
+            </div>
+          )}
+
+          {/* Como funciona */}
+          <div className="px-4 py-3 text-xs text-muted-foreground">
+            <span className="font-semibold">Como funciona:</span>{" "}
+            Mensagens enviadas do número do escritório, após o tempo configurado sem resposta.
+            Só nos dias e horários permitidos. Clientes na etapa final não recebem follow-up.
+          </div>
+        </div>
 
         {/* Dialog de Configuração */}
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

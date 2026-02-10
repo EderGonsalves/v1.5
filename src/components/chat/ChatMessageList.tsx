@@ -398,7 +398,8 @@ export const ChatMessageList = ({
     <>
       <div
         ref={containerRef}
-        className={cn("flex h-full flex-col gap-1 overflow-y-auto px-4 py-2 md:px-12 lg:px-16", className)}
+        className={cn("flex h-full flex-col gap-1 overflow-y-auto scrollbar-hide px-4 py-2 md:px-12 lg:px-16", className)}
+        style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
       >
         {items.map((item) => {
           if (item.type === "date") {

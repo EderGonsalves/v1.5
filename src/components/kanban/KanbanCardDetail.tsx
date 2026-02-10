@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -23,12 +23,17 @@ import {
   FileText,
   UserCircle,
   CheckCircle,
+  Check,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import type { BaserowCaseRow, ClientRow } from "@/services/api";
 import { updateClient, createClient, updateBaserowCase, searchClientByPhone } from "@/services/api";
 import { getCaseStage, stageLabels, stageColors } from "@/lib/case-stats";
 import { cn } from "@/lib/utils";
+import { useOnboarding } from "@/components/onboarding/onboarding-context";
+import { useUsers } from "@/hooks/use-users";
+import { notifyTransferWebhook } from "@/services/transfer-notify";
 
 type KanbanCardDetailProps = {
   caseData: BaserowCaseRow | null;
@@ -51,22 +56,48 @@ const ESTADOS_BR = [
   "RS", "RO", "RR", "SC", "SP", "SE", "TO",
 ];
 
+const formatCurrency = (value: number | string | null | undefined): string => {
+  if (value === null || value === undefined || value === "") return "R$ 0,00";
+  const num = typeof value === "string" ? parseFloat(value) : value;
+  if (isNaN(num)) return "R$ 0,00";
+  return num.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+};
+
+const parseCurrencyInput = (value: string): number => {
+  const cleaned = value.replace(/[^\d.,]/g, "").replace(",", ".");
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? 0 : num;
+};
+
 export function KanbanCardDetail({
   caseData,
   open,
   onOpenChange,
   onCaseUpdate,
 }: KanbanCardDetailProps) {
+  const { data } = useOnboarding();
+  const institutionId = data.auth?.institutionId;
+  const { users: institutionUsers } = useUsers(institutionId);
+
   const [clientData, setClientData] = useState<ClientRow | null>(null);
   const [isLoadingClient, setIsLoadingClient] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [responsavel, setResponsavel] = useState("");
+  const [valorInput, setValorInput] = useState("");
+  const [updatingResultado, setUpdatingResultado] = useState(false);
   const [formData, setFormData] = useState<Partial<ClientRow>>({});
 
   useEffect(() => {
     if (open && caseData) {
       setResponsavel(caseData.responsavel || "");
+      const currentValor = typeof caseData.valor === "number"
+        ? caseData.valor
+        : typeof caseData.valor === "string"
+          ? parseFloat(caseData.valor as string)
+          : 0;
+      setValorInput(isNaN(currentValor) ? "0" : currentValor.toString());
+      setUpdatingResultado(false);
       setSaveSuccess(false);
 
       // Always search client by phone number (unique identifier)
@@ -148,10 +179,30 @@ export function KanbanCardDetail({
       // Get phone number - this is the unique identifier for clients
       const phone = caseData.CustumerPhone || formData.celular || "";
 
-      // Save case information (responsavel)
-      if (responsavel !== caseData.responsavel) {
-        await updateBaserowCase(caseData.id, { responsavel });
-        onCaseUpdate?.(caseData.id, { responsavel });
+      // Save case information (responsavel + valor)
+      const newValor = parseCurrencyInput(valorInput);
+      const previousResponsavel = caseData.responsavel || "";
+      await updateBaserowCase(caseData.id, { responsavel, valor: newValor });
+      onCaseUpdate?.(caseData.id, { responsavel, valor: newValor });
+
+      // Notify webhook if responsavel changed
+      if (responsavel && responsavel !== previousResponsavel) {
+        const targetUser = institutionUsers.find((u) => u.name === responsavel);
+        if (targetUser) {
+          notifyTransferWebhook({
+            type: previousResponsavel ? "transfer" : "new_case",
+            user: targetUser,
+            caseInfo: {
+              id: caseData.id,
+              caseId: caseData.CaseId,
+              customerName: caseData.CustumerName,
+              customerPhone: caseData.CustumerPhone,
+              bjCaseId: caseData.BJCaseId,
+              institutionId: institutionId,
+              responsavel,
+            },
+          });
+        }
       }
 
       // Handle client data - always use phone as the unique key
@@ -258,11 +309,18 @@ export function KanbanCardDetail({
                     <Label className="text-xs text-muted-foreground uppercase tracking-wide">
                       Responsável
                     </Label>
-                    <Input
+                    <select
                       value={responsavel}
                       onChange={(e) => setResponsavel(e.target.value)}
-                      placeholder="Nome do responsável"
-                    />
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    >
+                      <option value="">Selecione o responsável</option>
+                      {institutionUsers.map((u) => (
+                        <option key={u.id} value={u.name}>
+                          {u.name} ({u.email})
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground uppercase tracking-wide">
@@ -312,6 +370,89 @@ export function KanbanCardDetail({
                     </Label>
                     <div className="h-9 px-3 py-2 rounded-md border bg-muted/50 text-sm font-mono">
                       {caseData.BJCaseId || "—"}
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground uppercase tracking-wide">
+                      Valor da Causa
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={valorInput}
+                        onChange={(e) => setValorInput(e.target.value)}
+                        placeholder="0,00"
+                      />
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        {formatCurrency(parseCurrencyInput(valorInput))}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="col-span-2 space-y-1.5">
+                    <Label className="text-xs text-muted-foreground uppercase tracking-wide">
+                      Resultado
+                    </Label>
+                    <div className="h-9 flex items-center gap-2">
+                      {(() => {
+                        const resultado = (caseData.resultado || "").toLowerCase();
+                        if (resultado === "ganho") {
+                          return (
+                            <span className="rounded-full px-3 py-1 text-xs font-semibold bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200">
+                              Ganho
+                            </span>
+                          );
+                        }
+                        if (resultado === "perdido") {
+                          return (
+                            <span className="rounded-full px-3 py-1 text-xs font-semibold bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200">
+                              Perdido
+                            </span>
+                          );
+                        }
+                        return (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 px-3 text-xs gap-1.5 text-green-600 hover:text-green-700 hover:bg-green-50 border-green-200"
+                              onClick={async () => {
+                                setUpdatingResultado(true);
+                                try {
+                                  await updateBaserowCase(caseData.id, { resultado: "ganho" });
+                                  onCaseUpdate?.(caseData.id, { resultado: "ganho" });
+                                } catch (err) {
+                                  console.error("Erro ao atualizar resultado:", err);
+                                } finally {
+                                  setUpdatingResultado(false);
+                                }
+                              }}
+                              disabled={updatingResultado}
+                            >
+                              <Check className="h-3.5 w-3.5" />
+                              Ganho
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 px-3 text-xs gap-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+                              onClick={async () => {
+                                setUpdatingResultado(true);
+                                try {
+                                  await updateBaserowCase(caseData.id, { resultado: "perdido" });
+                                  onCaseUpdate?.(caseData.id, { resultado: "perdido" });
+                                } catch (err) {
+                                  console.error("Erro ao atualizar resultado:", err);
+                                } finally {
+                                  setUpdatingResultado(false);
+                                }
+                              }}
+                              disabled={updatingResultado}
+                            >
+                              <X className="h-3.5 w-3.5" />
+                              Perdido
+                            </Button>
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>

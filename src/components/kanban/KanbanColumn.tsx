@@ -10,33 +10,29 @@ import { KanbanCard } from "./KanbanCard";
 import type { KanbanColumnRow, BaserowCaseRow } from "@/services/api";
 
 const colorMap: Record<string, string> = {
-  blue: "border-t-blue-500 bg-blue-50/50 dark:bg-blue-950/20",
-  amber: "border-t-amber-500 bg-amber-50/50 dark:bg-amber-950/20",
-  purple: "border-t-purple-500 bg-purple-50/50 dark:bg-purple-950/20",
-  green: "border-t-green-500 bg-green-50/50 dark:bg-green-950/20",
-  red: "border-t-red-500 bg-red-50/50 dark:bg-red-950/20",
-  gray: "border-t-gray-500 bg-gray-50/50 dark:bg-gray-950/20",
-  pink: "border-t-pink-500 bg-pink-50/50 dark:bg-pink-950/20",
-  indigo: "border-t-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/20",
-  cyan: "border-t-cyan-500 bg-cyan-50/50 dark:bg-cyan-950/20",
-  orange: "border-t-orange-500 bg-orange-50/50 dark:bg-orange-950/20",
+  blue: "border-t-blue-500 bg-blue-50/50 dark:bg-[#1B263B]",
+  amber: "border-t-amber-500 bg-amber-50/50 dark:bg-[#1B263B]",
+  purple: "border-t-purple-500 bg-purple-50/50 dark:bg-[#1B263B]",
+  green: "border-t-green-500 bg-green-50/50 dark:bg-[#1B263B]",
+  red: "border-t-red-500 bg-red-50/50 dark:bg-[#1B263B]",
+  gray: "border-t-gray-500 bg-gray-50/50 dark:bg-[#1B263B]",
+  pink: "border-t-pink-500 bg-pink-50/50 dark:bg-[#1B263B]",
+  indigo: "border-t-indigo-500 bg-indigo-50/50 dark:bg-[#1B263B]",
+  cyan: "border-t-cyan-500 bg-cyan-50/50 dark:bg-[#1B263B]",
+  orange: "border-t-orange-500 bg-orange-50/50 dark:bg-[#1B263B]",
 };
 
 const countColorMap: Record<string, string> = {
-  blue: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200",
-  amber: "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-200",
-  purple: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-200",
-  green: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200",
-  red: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200",
-  gray: "bg-gray-100 text-gray-700 dark:bg-gray-900 dark:text-gray-200",
-  pink: "bg-pink-100 text-pink-700 dark:bg-pink-900 dark:text-pink-200",
-  indigo: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-200",
-  cyan: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900 dark:text-cyan-200",
-  orange: "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-200",
-};
-
-const formatCurrency = (value: number): string => {
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  blue: "bg-blue-100 text-blue-700 dark:bg-[#263850] dark:text-[#D4E0EB]",
+  amber: "bg-amber-100 text-amber-700 dark:bg-[#263850] dark:text-[#D4E0EB]",
+  purple: "bg-purple-100 text-purple-700 dark:bg-[#263850] dark:text-[#D4E0EB]",
+  green: "bg-green-100 text-green-700 dark:bg-[#263850] dark:text-[#D4E0EB]",
+  red: "bg-red-100 text-red-700 dark:bg-[#263850] dark:text-[#D4E0EB]",
+  gray: "bg-gray-100 text-gray-700 dark:bg-[#263850] dark:text-[#D4E0EB]",
+  pink: "bg-pink-100 text-pink-700 dark:bg-[#263850] dark:text-[#D4E0EB]",
+  indigo: "bg-indigo-100 text-indigo-700 dark:bg-[#263850] dark:text-[#D4E0EB]",
+  cyan: "bg-cyan-100 text-cyan-700 dark:bg-[#263850] dark:text-[#D4E0EB]",
+  orange: "bg-orange-100 text-orange-700 dark:bg-[#263850] dark:text-[#D4E0EB]",
 };
 
 type KanbanColumnProps = {
@@ -44,8 +40,6 @@ type KanbanColumnProps = {
   cases: BaserowCaseRow[];
   onCardClick: (caseData: BaserowCaseRow) => void;
   onColumnUpdate?: (columnId: number, name: string) => void;
-  onUpdateValor?: (caseId: number, valor: number) => void;
-  onUpdateResultado?: (caseId: number, resultado: "ganho" | "perdido") => void;
   isDraggingColumn?: boolean;
 };
 
@@ -54,8 +48,6 @@ export function KanbanColumn({
   cases,
   onCardClick,
   onColumnUpdate,
-  onUpdateValor,
-  onUpdateResultado,
   isDraggingColumn
 }: KanbanColumnProps) {
   const [isEditing, setIsEditing] = useState(false);
@@ -64,15 +56,21 @@ export function KanbanColumn({
 
   const columnId = Number(column.id);
 
-  // Calculate total value of cases in this column
-  const totalValue = useMemo(() => {
-    return cases.reduce((sum, caseRow) => {
-      const valor = caseRow.valor;
-      if (valor === null || valor === undefined || valor === "") return sum;
-      const num = typeof valor === "string" ? parseFloat(valor) : valor;
-      return sum + (isNaN(num) ? 0 : num);
-    }, 0);
+  // Calculate total value of "ganho" cases in this column
+  const totalGanhoValue = useMemo(() => {
+    return cases
+      .filter((c) => (c.resultado || "").toLowerCase() === "ganho")
+      .reduce((sum, caseRow) => {
+        const valor = caseRow.valor;
+        if (valor === null || valor === undefined || valor === "") return sum;
+        const num = typeof valor === "string" ? parseFloat(valor) : valor;
+        return sum + (isNaN(num) ? 0 : num);
+      }, 0);
   }, [cases]);
+
+  const formatCurrency = (value: number): string => {
+    return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  };
 
   // Droppable for cards
   const { setNodeRef: setDroppableRef, isOver } = useDroppable({
@@ -147,7 +145,7 @@ export function KanbanColumn({
       ref={setNodeRef}
       style={style}
       className={cn(
-        "flex flex-col w-[calc((100vw-6rem)/5)] min-w-[150px] max-w-[280px] rounded-lg border border-t-4 transition-colors",
+        "flex flex-col w-[calc((100vw-6rem)/5)] min-w-[150px] max-w-[280px] rounded-lg border dark:border-[#354F6D] border-t-4 transition-colors",
         columnColor,
         isOver && "ring-2 ring-primary ring-offset-2",
         isDragging && "opacity-50 shadow-2xl",
@@ -201,16 +199,16 @@ export function KanbanColumn({
           </span>
         </div>
 
-        {/* Total Value */}
-        {totalValue > 0 && (
+        {/* Total value of won cases */}
+        {totalGanhoValue > 0 && (
           <div className="mt-1.5 ml-7 text-xs font-medium text-green-600 dark:text-green-400">
-            Total: {formatCurrency(totalValue)}
+            Ganhos: {formatCurrency(totalGanhoValue)}
           </div>
         )}
       </div>
 
       {/* Cards Container */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[200px] max-h-[calc(100vh-250px)]">
+      <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[200px] max-h-[calc(100vh-250px)] scrollbar-hide" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
         {cases.length === 0 ? (
           <div className="flex items-center justify-center h-24 text-xs text-muted-foreground">
             Nenhum caso nesta coluna
@@ -221,8 +219,6 @@ export function KanbanColumn({
               key={caseData.id}
               caseData={caseData}
               onClick={() => onCardClick(caseData)}
-              onUpdateValor={onUpdateValor}
-              onUpdateResultado={onUpdateResultado}
             />
           ))
         )}

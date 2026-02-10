@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { convertAudioToOggOpus } from "@/lib/audio-converter";
 import { isCasePaused } from "@/lib/case-stats";
 import {
   createCaseMessageRow,
@@ -209,6 +210,41 @@ const readFilesFromFormData = (formData: FormData, field: string): File[] => {
 
 type MessageType = "text" | "image" | "audio" | "document" | "video";
 
+/** MIME types aceitos pela API do WhatsApp Business (Cloud API) */
+const WHATSAPP_MIME_TYPES = new Set([
+  // Imagens
+  "image/jpeg",
+  "image/png",
+  // Áudio
+  "audio/aac",
+  "audio/amr",
+  "audio/mpeg",       // mp3
+  "audio/mp4",        // m4a
+  "audio/ogg",        // ogg (codec opus)
+  // Vídeo
+  "video/mp4",
+  "video/3gpp",
+  // Documentos
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "text/plain",
+]);
+
+/**
+ * Normaliza o MIME type removendo parâmetros de codec (ex: "audio/ogg; codecs=opus" → "audio/ogg").
+ * Não remapeia entre formatos diferentes para evitar mismatch entre MIME declarado e conteúdo real.
+ */
+const normalizeWhatsAppMime = (mime: string): string => {
+  // Remove parâmetros de codec: "audio/ogg; codecs=opus" → "audio/ogg"
+  const base = mime.split(";")[0].trim();
+  return base;
+};
+
 type ChatWebhookPayload = {
   display_phone_number: string;
   to: string;
@@ -220,6 +256,9 @@ type ChatWebhookPayload = {
   imageId?: string;
   documentId?: string;
   type?: "ghost";
+  mediaUrl?: string;
+  mediaFilename?: string;
+  mediaMimeType?: string;
 };
 
 const dispatchChatWebhook = async (payload: ChatWebhookPayload) => {
@@ -448,8 +487,27 @@ export async function POST(
 
     const customerPhone = caseRow.CustumerPhone ? String(caseRow.CustumerPhone).trim() : "";
 
+    // Converter áudios para OGG/OPUS (formato nativo do WhatsApp) antes do upload
+    const processedAttachments: File[] = [];
+    for (const file of attachments) {
+      const baseMime = (file.type || "").split(";")[0].trim();
+      if (baseMime.startsWith("audio/") && baseMime !== "audio/ogg") {
+        const buffer = Buffer.from(await file.arrayBuffer());
+        const result = await convertAudioToOggOpus(buffer, file.type, file.name);
+        processedAttachments.push(
+          new File([new Uint8Array(result.buffer)], result.filename, { type: result.mimeType }),
+        );
+      } else {
+        processedAttachments.push(file);
+      }
+    }
+
+    const originalMimeTypes = processedAttachments.map(
+      (file) => file.type || "application/octet-stream",
+    );
+
     const uploadedAttachments = await Promise.all(
-      attachments.map((file) =>
+      processedAttachments.map((file) =>
         uploadAttachmentToBaserow(file, file.name || undefined),
       ),
     );
@@ -458,35 +516,32 @@ export async function POST(
     let newMessage: CaseMessage;
     let webhookDispatched = false;
 
-    // Determine message type based on attachments
-    const determineMessageType = (files: typeof uploadedAttachments): MessageType => {
-      if (!files.length) return "text";
-      const first = files[0];
-      const mimeType = first.mime_type ?? "";
-      if (mimeType.startsWith("audio/")) return "audio";
-      if (mimeType.startsWith("image/") || first.is_image) return "image";
-      if (mimeType.startsWith("video/")) return "video";
+    // Determine message type based on original file MIME (not Baserow's detection)
+    const determineMessageType = (originalMimes: string[]): MessageType => {
+      if (!originalMimes.length) return "text";
+      const mime = originalMimes[0];
+      if (mime.startsWith("audio/")) return "audio";
+      if (mime.startsWith("image/")) return "image";
+      if (mime.startsWith("video/")) return "video";
       return "document";
     };
 
-    const messageType = determineMessageType(uploadedAttachments);
+    const messageType = determineMessageType(originalMimeTypes);
     const fieldValue = isGhostMessage ? "ghost" : "chat";
 
     // Extract imageId, audioid or documentId from uploaded files
     const getMediaId = (files: typeof uploadedAttachments, type: "image" | "audio" | "document"): string | undefined => {
-      const file = files.find((f) => {
-        const mimeType = f.mime_type ?? "";
-        if (type === "image") return mimeType.startsWith("image/") || f.is_image;
-        if (type === "audio") return mimeType.startsWith("audio/");
+      const idx = originalMimeTypes.findIndex((mime) => {
+        if (type === "image") return mime.startsWith("image/");
+        if (type === "audio") return mime.startsWith("audio/");
         if (type === "document") {
-          return !mimeType.startsWith("image/") &&
-                 !mimeType.startsWith("audio/") &&
-                 !mimeType.startsWith("video/") &&
-                 !f.is_image;
+          return !mime.startsWith("image/") &&
+                 !mime.startsWith("audio/") &&
+                 !mime.startsWith("video/");
         }
         return false;
       });
-      return file?.name ?? undefined;
+      return idx >= 0 ? (files[idx]?.name ?? undefined) : undefined;
     };
 
     // Only dispatch webhook if we have phone numbers and content/attachments
@@ -508,6 +563,22 @@ export async function POST(
         webhookPayload.audioid = getMediaId(uploadedAttachments, "audio");
       } else if (messageType === "document") {
         webhookPayload.documentId = getMediaId(uploadedAttachments, "document");
+      }
+
+      // Montar URL do proxy para servir o arquivo com Content-Type correto
+      // (evita rejeição do WhatsApp por header/redirect do Baserow)
+      if (uploadedAttachments.length > 0) {
+        const firstFile = uploadedAttachments[0];
+        const rawUrl = firstFile.url ?? "";
+        const mime = normalizeWhatsAppMime(originalMimeTypes[0]);
+
+        // APP_URL (domínio público) com fallback para origin do request
+        const origin = process.env.APP_URL?.replace(/\/+$/, "") || request.nextUrl.origin;
+        const proxyUrl = `${origin}/api/media/proxy?url=${encodeURIComponent(rawUrl)}&type=${encodeURIComponent(mime)}`;
+
+        webhookPayload.mediaUrl = proxyUrl;
+        webhookPayload.mediaFilename = firstFile.original_name ?? firstFile.name ?? undefined;
+        webhookPayload.mediaMimeType = mime;
       }
 
       // Add ghost type if applicable

@@ -880,30 +880,17 @@ export default function ConfiguracoesPage() {
   }
 
   return (
-    <main className="min-h-screen bg-white py-8 dark:bg-zinc-900">
+    <main className="min-h-screen bg-background py-8">
       <div className="mx-auto flex max-w-5xl flex-col gap-8 px-4">
-        <section className="space-y-3 text-center sm:text-left">
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-3 flex-1">
-              <p className="text-sm font-semibold uppercase tracking-wide text-primary">
-                Configurações Aplicadas
-              </p>
-              <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-4xl">
-                Todas as suas configurações
-              </h1>
-              <p className="text-base text-zinc-600 dark:text-zinc-300">
-                Visualize e edite todas as configurações que você aplicou no sistema.
-              </p>
-            </div>
-<Button 
-              onClick={handleSendToWebhook} 
-              disabled={isLoading || isSendingToWebhook || configs.length === 0}
-              className="bg-primary text-primary-foreground hover:bg-primary/90 whitespace-nowrap"
-            >
-              {isSendingToWebhook ? "Enviando..." : "Atualizar e Enviar"}
-            </Button>
-          </div>
-        </section>
+        <div className="flex justify-end">
+          <Button
+            onClick={handleSendToWebhook}
+            disabled={isLoading || isSendingToWebhook || configs.length === 0}
+            className="bg-primary text-primary-foreground hover:bg-primary/90 whitespace-nowrap"
+          >
+            {isSendingToWebhook ? "Enviando..." : "Atualizar e Enviar"}
+          </Button>
+        </div>
 
         {error && (
           <Card className="border-destructive">

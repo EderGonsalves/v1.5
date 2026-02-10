@@ -427,85 +427,62 @@ export const fetchCaseMessagesFromBaserow = async (
   const pageSize = 200;
   const collected: BaserowCaseMessageRow[] = [];
 
-  // Buscar por telefone (from ou to) - mais eficiente com filtro no Baserow
+  const headers = {
+    Authorization: `Token ${BASEROW_API_KEY}`,
+    "Content-Type": "application/json",
+  };
+
+  // Helper: pagina todas as rows de uma URL
+  const fetchAllPages = async (initialUrl: string): Promise<BaserowCaseMessageRow[]> => {
+    const rows: BaserowCaseMessageRow[] = [];
+    let nextUrl: string | null = initialUrl;
+    while (nextUrl) {
+      const response = await axios.get(nextUrl, { headers, timeout: 30000 });
+      const pageRows: BaserowCaseMessageRow[] = Array.isArray(response.data?.results)
+        ? response.data.results
+        : [];
+      rows.push(...pageRows);
+      nextUrl = normalizeNextUrl(response.data?.next);
+    }
+    return rows;
+  };
+
+  // Buscar por telefone (from e to) em PARALELO
   if (normalizedPhone) {
-    // Busca mensagens onde "from" contém o telefone (mensagens do cliente)
-    const fromParams = new URLSearchParams({
+    const fromUrl = buildMessagesUrl(new URLSearchParams({
       page: "1",
       size: String(pageSize),
       order_by: "DataHora",
       "filter__from__contains": normalizedPhone,
-    });
-    let nextUrl: string | null = buildMessagesUrl(fromParams);
-
-    while (nextUrl) {
-      const response = await axios.get(nextUrl, {
-        headers: {
-          Authorization: `Token ${BASEROW_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        timeout: 30000,
-      });
-
-      const rows: BaserowCaseMessageRow[] = Array.isArray(response.data?.results)
-        ? response.data.results
-        : [];
-      collected.push(...rows);
-      nextUrl = normalizeNextUrl(response.data?.next);
-    }
-
-    // Busca mensagens onde "to" contém o telefone (mensagens para o cliente)
-    const toParams = new URLSearchParams({
+    }));
+    const toUrl = buildMessagesUrl(new URLSearchParams({
       page: "1",
       size: String(pageSize),
       order_by: "DataHora",
       "filter__to__contains": normalizedPhone,
-    });
-    nextUrl = buildMessagesUrl(toParams);
+    }));
 
-    while (nextUrl) {
-      const response = await axios.get(nextUrl, {
-        headers: {
-          Authorization: `Token ${BASEROW_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        timeout: 30000,
-      });
-
-      const rows: BaserowCaseMessageRow[] = Array.isArray(response.data?.results)
-        ? response.data.results
-        : [];
-      collected.push(...rows);
-      nextUrl = normalizeNextUrl(response.data?.next);
-    }
+    const [fromRows, toRows] = await Promise.all([
+      fetchAllPages(fromUrl),
+      fetchAllPages(toUrl),
+    ]);
+    collected.push(...fromRows, ...toRows);
   }
 
-  // Se não encontrou por telefone, buscar por CaseId
+  // Se não encontrou por telefone, buscar por CaseId (em paralelo)
   if (!collected.length && normalizedIdentifiers.length) {
-    for (const identifier of normalizedIdentifiers) {
-      const caseParams = new URLSearchParams({
+    const identifierPromises = normalizedIdentifiers.map((identifier) => {
+      const url = buildMessagesUrl(new URLSearchParams({
         page: "1",
         size: String(pageSize),
         order_by: "DataHora",
         "filter__CaseId__equal": identifier,
-      });
-      let nextUrl: string | null = buildMessagesUrl(caseParams);
-
-      while (nextUrl) {
-        const response = await axios.get(nextUrl, {
-          headers: {
-            Authorization: `Token ${BASEROW_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          timeout: 30000,
-        });
-
-        const rows: BaserowCaseMessageRow[] = Array.isArray(response.data?.results)
-          ? response.data.results
-          : [];
-        collected.push(...rows);
-        nextUrl = normalizeNextUrl(response.data?.next);
-      }
+      }));
+      return fetchAllPages(url);
+    });
+    const results = await Promise.all(identifierPromises);
+    for (const rows of results) {
+      collected.push(...rows);
     }
   }
 

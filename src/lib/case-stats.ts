@@ -94,6 +94,8 @@ export type CaseStatistics = {
   stageCounts: Record<CaseStage, number>;
   stagePercentages: Record<CaseStage, number>;
   pausedPercentage: number;
+  casesLast7Days: number;
+  casesLast30Days: number;
 };
 
 const createEmptyCounts = (): Record<CaseStage, number> =>
@@ -120,10 +122,21 @@ export const getEmptyCaseStatistics = (): CaseStatistics => ({
   stageCounts: createEmptyCounts(),
   stagePercentages: createEmptyPercentages(),
   pausedPercentage: 0,
+  casesLast7Days: 0,
+  casesLast30Days: 0,
 });
 
 export const isCasePaused = (caseRow: BaserowCaseRow): boolean =>
   isPausedFlag(caseRow.IApause);
+
+const parseCaseDate = (caseRow: BaserowCaseRow): number => {
+  const raw = caseRow.Data ?? caseRow.data ?? (caseRow as Record<string, unknown>).created_on;
+  if (!raw) return 0;
+  const str = typeof raw === "string" ? raw.trim() : String(raw);
+  if (!str) return 0;
+  const parsed = new Date(str);
+  return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+};
 
 export const computeCaseStatistics = (
   rows: BaserowCaseRow[],
@@ -135,6 +148,12 @@ export const computeCaseStatistics = (
   const stageCounts = createEmptyCounts();
   let pausedCases = 0;
 
+  const now = Date.now();
+  const ms7Days = 7 * 24 * 60 * 60 * 1000;
+  const ms30Days = 30 * 24 * 60 * 60 * 1000;
+  let casesLast7Days = 0;
+  let casesLast30Days = 0;
+
   rows.forEach((caseRow) => {
     const stage = getCaseStage(caseRow);
     if (stage) {
@@ -143,6 +162,17 @@ export const computeCaseStatistics = (
 
     if (isCasePaused(caseRow)) {
       pausedCases += 1;
+    }
+
+    const ts = parseCaseDate(caseRow);
+    if (ts > 0) {
+      const age = now - ts;
+      if (age <= ms30Days) {
+        casesLast30Days += 1;
+        if (age <= ms7Days) {
+          casesLast7Days += 1;
+        }
+      }
     }
   });
 
@@ -167,5 +197,7 @@ export const computeCaseStatistics = (
     stageCounts,
     stagePercentages,
     pausedPercentage,
+    casesLast7Days,
+    casesLast30Days,
   };
 };

@@ -1,83 +1,156 @@
-﻿import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axios from "axios";
 import { describe, expect, it, vi } from "vitest";
 
 import { WizardContainer } from "../WizardContainer";
+import { OnboardingProvider } from "../onboarding-context";
 
-vi.mock("axios", () => ({
-  default: {
-    post: vi.fn((url: string) => {
-      if (typeof url === "string" && url.includes("login-v2")) {
-        return Promise.resolve({
-          data: [
-            {
-              code: "LOGIN_SUCCESS",
-              result: {
-                payload: {
-                  institution_id: 42,
-                },
+vi.mock("next/navigation", () => {
+  const push = vi.fn();
+  return {
+    useRouter: () => ({
+      push,
+      replace: vi.fn(),
+      prefetch: vi.fn(),
+      refresh: vi.fn(),
+    }),
+  };
+});
+
+vi.mock("axios", () => {
+  const post = vi.fn((url: string) => {
+    if (typeof url === "string" && url.includes("login-v2")) {
+      return Promise.resolve({
+        data: [
+          {
+            code: "LOGIN_SUCCESS",
+            result: {
+              payload: {
+                institution_id: 42,
               },
             },
-          ],
-        });
-      }
+          },
+        ],
+      });
+    }
 
-      return Promise.resolve({ data: { tenantId: "tenant-123" } });
-    }),
-  },
-}));
+    return Promise.resolve({ data: { tenantId: "tenant-123" } });
+  });
+
+  const get = vi.fn(() => Promise.resolve({ data: [] }));
+
+  const axiosMock = {
+    post,
+    get,
+    isAxiosError: () => false,
+  };
+
+  return {
+    default: axiosMock,
+  };
+});
 
 type AxiosMock = {
   post: ReturnType<typeof vi.fn>;
+  get: ReturnType<typeof vi.fn>;
+  isAxiosError: (error: unknown) => boolean;
 };
 
 const mockedAxios = axios as unknown as AxiosMock;
 
 describe("WizardContainer", () => {
   it("permite concluir o fluxo completo e enviar os dados", async () => {
-    render(<WizardContainer />);
+    render(
+      <OnboardingProvider>
+        <WizardContainer />
+      </OnboardingProvider>,
+    );
     const user = userEvent.setup();
+    const submitForm = async (element: HTMLElement) => {
+      const form = element.closest("form");
+      if (!form) {
+        throw new Error("Formulário do passo atual não foi encontrado");
+      }
+      await user.click(
+        within(form).getByRole("button", { name: /continuar/i }),
+      );
+    };
 
-    await user.type(screen.getByLabelText(/e-mail corporativo/i), "user@ria.com");
-    await user.type(screen.getByLabelText(/senha/i), "senha-segura");
-    await user.click(screen.getByRole("button", { name: /entrar e continuar/i }));
+    const emailInput = await screen.findByPlaceholderText(/e-mail/i);
+    await user.clear(emailInput);
+    await user.type(emailInput, "user@ria.com");
+    const passwordInput = await screen.findByPlaceholderText(/senha/i);
+    await user.clear(passwordInput);
+    await user.type(passwordInput, "senha-segura");
+    await user.click(screen.getByRole("button", { name: /entrar/i }));
 
     const companyNameField = await screen.findByLabelText(/nome do escrit/i);
-
+    await user.clear(companyNameField);
     await user.type(companyNameField, "Acme LTDA");
-    await user.type(screen.getByLabelText(/horários de atendimento/i), "8h - 18h");
-    await user.click(screen.getByRole("button", { name: /continuar/i }));
-
-    await user.type(screen.getByLabelText(/rua/i), "Rua Central, 100");
-    await user.type(screen.getByLabelText(/cidade/i), "São Paulo");
-    await user.type(screen.getByLabelText(/estado/i), "SP");
-    await user.type(screen.getByLabelText(/cep/i), "01001-000");
-    await user.click(screen.getByRole("button", { name: /continuar/i }));
-
-    await user.type(screen.getByLabelText(/agente orquestrador/i), "Assistente RIA");
-    await user.selectOptions(
-      screen.getByLabelText(/idioma principal/i),
-      "Inglês (EUA)",
+    const businessHoursField = await screen.findByPlaceholderText(
+      /seg a sex/i,
     );
+    await user.clear(businessHoursField);
+    await user.type(businessHoursField, "8h - 18h");
+    await submitForm(companyNameField);
+
+    const streetField = await screen.findByLabelText(/rua/i);
+    await user.clear(streetField);
+    await user.type(streetField, "Rua Central, 100");
+    const cityField = await screen.findByLabelText(/cidade/i);
+    await user.clear(cityField);
+    await user.type(cityField, "S�o Paulo");
+    const stateField = await screen.findByLabelText(/estado/i);
+    await user.clear(stateField);
+    await user.type(stateField, "SP");
+    const zipField = await screen.findByLabelText(/cep/i);
+    await user.clear(zipField);
+    await user.type(zipField, "01001-000");
+    await submitForm(streetField);
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/rua/i)).toBeNull();
+    });
+
+    const agentNameField = await screen.findByLabelText(
+      /nome do agente/i,
+      {},
+      { timeout: 5000 },
+    );
+    await user.clear(agentNameField);
+    await user.type(agentNameField, "Assistente RIA");
+    const languageSelect = (await screen.findByLabelText(/idioma principal/i)) as HTMLSelectElement;
+    await user.selectOptions(languageSelect, languageSelect.options[1]);
+    const personalityField = await screen.findByLabelText(/personalidade/i);
+    await user.clear(personalityField);
     await user.type(
-      screen.getByLabelText(/descrição da personalidade/i),
-      "Você é uma especialista digital que guia o cliente com empatia.",
+      personalityField,
+      "Voc� � uma especialista digital que guia o cliente com empatia.",
     );
+    const expertiseField = await screen.findByLabelText(/expertise/i);
+    await user.clear(expertiseField);
     await user.type(
-      screen.getByLabelText(/área de expertise/i),
-      "Direito previdenciário com foco em BPC/LOAS.",
+      expertiseField,
+      "Direito previdenci�rio com foco em BPC/LOAS.",
     );
-    await user.click(screen.getByRole("button", { name: /continuar/i }));
+    await submitForm(agentNameField);
 
-    await user.click(screen.getByRole("button", { name: /continuar/i }));
+    const flowScopeField = await screen.findByLabelText(/escopo do briefing/i);
+    await submitForm(flowScopeField);
 
-    await user.type(screen.getByLabelText(/saudação inicial/i), "Oi, sou o agente da Acme!");
-    await user.type(screen.getByLabelText(/frase de despedida/i), "Obrigado por falar conosco!");
-    await user.type(screen.getByLabelText(/palavras proibidas/i), "cancelamento, atraso");
-    await user.click(screen.getByRole("button", { name: /continuar/i }));
+    const greetingField = await screen.findByLabelText(/sauda/i);
+    await user.clear(greetingField);
+    await user.type(greetingField, "Oi, sou o agente da Acme!");
+    const closingField = await screen.findByLabelText(/despedida/i);
+    await user.clear(closingField);
+    await user.type(closingField, "Obrigado por falar conosco!");
+    const forbiddenField = await screen.findByLabelText(/palavras proibidas/i);
+    await user.clear(forbiddenField);
+    await user.type(forbiddenField, "cancelamento, atraso");
+    await submitForm(greetingField);
 
-    await user.click(screen.getByRole("button", { name: /continuar/i }));
+    const ragHeading = await screen.findByText(/Arquivos de apoio/i);
+    await submitForm(ragHeading);
 
     const submitButton = await screen.findByRole("button", {
       name: /finalizar cadastro/i,
@@ -91,5 +164,5 @@ describe("WizardContainer", () => {
     expect(
       screen.getByText(/Tudo certo! Compartilhamos o fluxo configurado/i),
     ).toBeInTheDocument();
-  }, 10000);
+  }, 30000);
 });

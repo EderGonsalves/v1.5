@@ -354,6 +354,25 @@ export const authenticate = async (
   }
 };
 
+export type SyncUserAccountPayload = {
+  institutionId: number;
+  legacyUserId: string;
+  email?: string;
+  name?: string;
+  isActive?: boolean;
+};
+
+export const syncUserAccount = async (
+  payload: SyncUserAccountPayload,
+): Promise<void> => {
+  await axios.post("/api/v1/auth/sync-user", payload, {
+    headers: {
+      "Content-Type": "application/json",
+    },
+    timeout: 15000,
+  });
+};
+
 const CONFIG_API_URL = "/api/config";
 
 export const getConfig = async (institutionId: number) => {
@@ -691,6 +710,18 @@ const BASEROW_CASES_TABLE_ID =
     process.env.NEXT_PUBLIC_BASEROW_CASES_TABLE_ID ||
       process.env.BASEROW_CASES_TABLE_ID,
   ) || 225;
+const DEFAULT_BASEROW_EVENTS_TABLE_ID = 234;
+const DEFAULT_BASEROW_EVENT_GUESTS_TABLE_ID = 235;
+const BASEROW_EVENTS_TABLE_ID =
+  Number(
+    process.env.NEXT_PUBLIC_BASEROW_EVENTS_TABLE_ID ||
+      process.env.BASEROW_EVENTS_TABLE_ID,
+  ) || DEFAULT_BASEROW_EVENTS_TABLE_ID;
+const BASEROW_EVENT_GUESTS_TABLE_ID =
+  Number(
+    process.env.NEXT_PUBLIC_BASEROW_EVENT_GUESTS_TABLE_ID ||
+      process.env.BASEROW_EVENT_GUESTS_TABLE_ID,
+  ) || DEFAULT_BASEROW_EVENT_GUESTS_TABLE_ID;
 
 export type AgentStateRow = {
   id: number;
@@ -889,16 +920,23 @@ const normalizeNextUrl = (value: unknown): string | null => {
 export const getBaserowCases = async ({
   institutionId,
   page = 1,
-  pageSize = 50,
+  pageSize = 200,
   fetchAll = false,
 }: GetBaserowCasesParams = {}): Promise<BaserowCasesResponse> => {
   try {
+    // Usar filtro server-side do Baserow para instituições não-admin
+    const useServerFilter =
+      typeof institutionId === "number" && institutionId !== 4;
+
     const buildUrl = (targetPage: number) => {
       const params = new URLSearchParams({
         user_field_names: "true",
         page: String(targetPage),
         size: String(pageSize),
       });
+      if (useServerFilter) {
+        params.set("filter__InstitutionID__equal", String(institutionId));
+      }
       return `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASES_TABLE_ID}/?${params.toString()}`;
     };
 
@@ -935,29 +973,9 @@ export const getBaserowCases = async ({
       }
     }
 
-    // Filtrar pelo InstitutionID se fornecido
-    const shouldFilterByInstitution =
-      typeof institutionId === "number" && institutionId !== 4 && allResults.length > 0;
-
-    let results = allResults;
-    if (shouldFilterByInstitution) {
-      results = allResults.filter((row: BaserowCaseRow) => {
-        const rowInstitutionId =
-          row.InstitutionID ??
-          row["body.auth.institutionId"] ??
-          null;
-        const hasInstitution =
-          rowInstitutionId !== undefined &&
-          rowInstitutionId !== null &&
-          rowInstitutionId !== "";
-
-        return hasInstitution && String(rowInstitutionId) === String(institutionId);
-      });
-    }
-
     return {
-      results,
-      totalCount: typeof totalCount === "number" ? totalCount : results.length,
+      results: allResults,
+      totalCount: typeof totalCount === "number" ? totalCount : allResults.length,
       hasNextPage,
     };
   } catch (error) {
@@ -2182,5 +2200,391 @@ export const searchClientByPhone = async (
   } catch (error) {
     console.error("Erro ao buscar cliente por telefone:", error);
     return null;
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Calendar Events & Guests
+// ---------------------------------------------------------------------------
+
+export type CalendarEventRow = {
+  id: number;
+  InstitutionID?: number | string | null;
+  user_id?: number | string | null;
+  title?: string | null;
+  description?: string | null;
+  start_datetime?: string | null;
+  end_datetime?: string | null;
+  timezone?: string | null;
+  location?: string | null;
+  meeting_link?: string | null;
+  reminder_minutes_before?: number | string | null;
+  notify_by_email?: boolean | string | null;
+  notify_by_phone?: boolean | string | null;
+  google_event_id?: string | null;
+  sync_status?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  deleted_at?: string | null;
+  event_guests?: { id: number; value: string }[];
+  [key: string]: unknown;
+};
+
+export type CalendarEventGuestRow = {
+  id: number;
+  event_id?: { id: number; value: string }[];
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  notification_status?: "pending" | "sent" | "failed" | string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  [key: string]: unknown;
+};
+
+export type ListCalendarEventsParams = {
+  institutionId?: number;
+  start?: string;
+  end?: string;
+  pageSize?: number;
+  includeDeleted?: boolean;
+};
+
+export type CreateCalendarEventPayload = {
+  InstitutionID: number;
+  user_id?: number;
+  title: string;
+  description?: string;
+  start_datetime: string;
+  end_datetime: string;
+  timezone: string;
+  location?: string;
+  meeting_link?: string;
+  reminder_minutes_before?: number;
+  notify_by_email?: string;
+  notify_by_phone?: string;
+  created_at?: string;
+  updated_at?: string;
+  google_event_id?: string | null;
+  sync_status?: string | null;
+};
+
+export type UpdateCalendarEventPayload = Partial<
+  Omit<CreateCalendarEventPayload, "InstitutionID" | "title" | "start_datetime" | "end_datetime" | "timezone">
+> & {
+  title?: string;
+  start_datetime?: string;
+  end_datetime?: string;
+  timezone?: string;
+  deleted_at?: string | null;
+};
+
+export type CreateCalendarEventGuestPayload = {
+  event_id: number;
+  name: string;
+  email?: string;
+  phone?: string;
+  notification_status?: "pending" | "sent" | "failed";
+  created_at?: string;
+  updated_at?: string;
+};
+
+type CalendarHeaders = {
+  Authorization: string;
+  "Content-Type": "application/json";
+};
+
+const getCalendarHeaders = (): CalendarHeaders => {
+  if (!BASEROW_API_KEY) {
+    throw new Error("BASEROW_API_KEY não configurado");
+  }
+  return {
+    Authorization: `Token ${BASEROW_API_KEY}`,
+    "Content-Type": "application/json",
+  };
+};
+
+const ensureCalendarTablesConfigured = (requireGuests = false): void => {
+  if (!BASEROW_API_URL) {
+    throw new Error("BASEROW_API_URL não configurado");
+  }
+  if (!BASEROW_EVENTS_TABLE_ID) {
+    throw new Error("BASEROW_EVENTS_TABLE_ID não configurado");
+  }
+  if (requireGuests && !BASEROW_EVENT_GUESTS_TABLE_ID) {
+    throw new Error("BASEROW_EVENT_GUESTS_TABLE_ID não configurado");
+  }
+};
+
+const sanitizePayload = (payload: Record<string, unknown>): Record<string, unknown> => {
+  const clean: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(payload)) {
+    if (value === undefined) {
+      continue;
+    }
+    clean[key] = value;
+  }
+  return clean;
+};
+
+const toTimestamp = (value?: string | null): number | null => {
+  if (!value) {
+    return null;
+  }
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? time : null;
+};
+
+const sortEvents = (
+  events: CalendarEventRow[],
+  start?: string,
+  end?: string,
+): CalendarEventRow[] => {
+  const startFilter = start ? toTimestamp(start) : null;
+  const endFilter = end ? toTimestamp(end) : null;
+
+  const filtered = events.filter((event) => {
+    const eventStart = toTimestamp(event.start_datetime);
+    const eventEnd = toTimestamp(event.end_datetime) ?? eventStart;
+
+    if (startFilter !== null && eventEnd !== null && eventEnd < startFilter) {
+      return false;
+    }
+
+    if (endFilter !== null && eventStart !== null && eventStart > endFilter) {
+      return false;
+    }
+
+    return true;
+  });
+
+  return filtered.sort((a, b) => {
+    const aStart = toTimestamp(a.start_datetime) ?? 0;
+    const bStart = toTimestamp(b.start_datetime) ?? 0;
+    return aStart - bStart;
+  });
+};
+
+export const listCalendarEvents = async (
+  params: ListCalendarEventsParams = {},
+): Promise<CalendarEventRow[]> => {
+  try {
+    ensureCalendarTablesConfigured();
+
+    const baseUrl = new URL(
+      `${BASEROW_API_URL}/database/rows/table/${BASEROW_EVENTS_TABLE_ID}/`,
+    );
+    baseUrl.searchParams.set("user_field_names", "true");
+    baseUrl.searchParams.set("size", String(params.pageSize ?? 200));
+
+    if (params.institutionId) {
+      baseUrl.searchParams.set(
+        "filter__InstitutionID__equal",
+        String(params.institutionId),
+      );
+    }
+
+    let nextUrl: string | null = baseUrl.toString();
+    const results: CalendarEventRow[] = [];
+
+    while (nextUrl) {
+      const response: AxiosResponse<
+        BaserowListResponse<CalendarEventRow>
+      > = await axios.get<BaserowListResponse<CalendarEventRow>>(nextUrl, {
+        headers: getCalendarHeaders(),
+        timeout: 20000,
+      });
+
+      const pageResults = response.data?.results ?? [];
+      if (Array.isArray(pageResults)) {
+        results.push(...(pageResults as CalendarEventRow[]));
+      }
+
+      nextUrl = response.data?.next ?? null;
+    }
+
+    if (params.includeDeleted) {
+      return sortEvents(results, params.start, params.end);
+    }
+
+    const activeEvents = results.filter((row) => !row.deleted_at);
+    return sortEvents(activeEvents, params.start, params.end);
+  } catch (error) {
+    console.error("Erro ao listar eventos:", error);
+    throw error;
+  }
+};
+
+export const getCalendarEventById = async (
+  eventId: number,
+): Promise<CalendarEventRow | null> => {
+  try {
+    ensureCalendarTablesConfigured();
+    if (!eventId) {
+      return null;
+    }
+
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_EVENTS_TABLE_ID}/${eventId}/?user_field_names=true`;
+    const response = await axios.get(url, {
+      headers: getCalendarHeaders(),
+      timeout: 20000,
+    });
+
+    return response.data as CalendarEventRow;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      return null;
+    }
+    console.error("Erro ao buscar evento:", error);
+    throw error;
+  }
+};
+
+export const createCalendarEvent = async (
+  payload: CreateCalendarEventPayload,
+): Promise<CalendarEventRow> => {
+  try {
+    ensureCalendarTablesConfigured();
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_EVENTS_TABLE_ID}/?user_field_names=true`;
+    const response = await axios.post(url, sanitizePayload(payload), {
+      headers: getCalendarHeaders(),
+      timeout: 20000,
+    });
+
+    return response.data as CalendarEventRow;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const detail =
+        error.response?.data &&
+        typeof error.response.data === "object"
+          ? JSON.stringify(error.response.data, null, 2)
+          : error.response?.data || error.message;
+      console.error("Erro Baserow createCalendarEvent:", detail);
+    } else {
+      console.error("Erro ao criar evento:", error);
+    }
+    throw error;
+  }
+};
+
+export const updateCalendarEvent = async (
+  eventId: number,
+  payload: UpdateCalendarEventPayload,
+): Promise<CalendarEventRow> => {
+  try {
+    ensureCalendarTablesConfigured();
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_EVENTS_TABLE_ID}/${eventId}/?user_field_names=true`;
+    const response = await axios.patch(url, sanitizePayload(payload), {
+      headers: getCalendarHeaders(),
+      timeout: 20000,
+    });
+
+    return response.data as CalendarEventRow;
+  } catch (error) {
+    console.error("Erro ao atualizar evento:", error);
+    throw error;
+  }
+};
+
+export const softDeleteCalendarEvent = async (
+  eventId: number,
+  deletedAt: Date = new Date(),
+): Promise<CalendarEventRow> => {
+  return updateCalendarEvent(eventId, { deleted_at: deletedAt.toISOString() });
+};
+
+export const deleteCalendarEvent = async (
+  eventId: number,
+): Promise<void> => {
+  try {
+    ensureCalendarTablesConfigured();
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_EVENTS_TABLE_ID}/${eventId}/`;
+    await axios.delete(url, {
+      headers: getCalendarHeaders(),
+      timeout: 20000,
+    });
+  } catch (error) {
+    console.error("Erro ao excluir evento:", error);
+    throw error;
+  }
+};
+
+export const createCalendarEventGuest = async (
+  payload: CreateCalendarEventGuestPayload,
+): Promise<CalendarEventGuestRow> => {
+  try {
+    ensureCalendarTablesConfigured(true);
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_EVENT_GUESTS_TABLE_ID}/?user_field_names=true`;
+    const body = sanitizePayload({
+      ...payload,
+      event_id: [payload.event_id],
+      notification_status: payload.notification_status ?? "pending",
+    });
+
+    const response = await axios.post(url, body, {
+      headers: getCalendarHeaders(),
+      timeout: 20000,
+    });
+
+    return response.data as CalendarEventGuestRow;
+  } catch (error) {
+    console.error("Erro ao criar convidado:", error);
+    throw error;
+  }
+};
+
+export const getCalendarEventGuestById = async (
+  guestId: number,
+): Promise<CalendarEventGuestRow | null> => {
+  try {
+    ensureCalendarTablesConfigured(true);
+    if (!guestId) {
+      return null;
+    }
+
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_EVENT_GUESTS_TABLE_ID}/${guestId}/?user_field_names=true`;
+    const response = await axios.get(url, {
+      headers: getCalendarHeaders(),
+      timeout: 20000,
+    });
+
+    return response.data as CalendarEventGuestRow;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      return null;
+    }
+    console.error("Erro ao buscar convidado:", error);
+    throw error;
+  }
+};
+
+export const deleteCalendarEventGuest = async (guestId: number): Promise<void> => {
+  try {
+    ensureCalendarTablesConfigured(true);
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_EVENT_GUESTS_TABLE_ID}/${guestId}/`;
+    await axios.delete(url, {
+      headers: getCalendarHeaders(),
+      timeout: 20000,
+    });
+  } catch (error) {
+    console.error("Erro ao excluir convidado:", error);
+    throw error;
+  }
+};
+
+export const listCalendarEventGuests = async (
+  eventId: number,
+): Promise<CalendarEventGuestRow[]> => {
+  try {
+    ensureCalendarTablesConfigured(true);
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_EVENT_GUESTS_TABLE_ID}/?user_field_names=true&filter__event_id__link_row_has=${eventId}`;
+    const response = await axios.get(url, {
+      headers: getCalendarHeaders(),
+      timeout: 20000,
+    });
+    return (response.data?.results as CalendarEventGuestRow[]) ?? [];
+  } catch (error) {
+    console.error("Erro ao listar convidados:", error);
+    throw error;
   }
 };

@@ -1,14 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { ArrowLeft, Loader2, MoreVertical, Phone, RefreshCw, User } from "lucide-react";
+import { useCallback, useMemo, useRef, useState, useEffect } from "react";
+import { ArrowLeft, Loader2, MoreVertical, Phone, RefreshCw, User, UserRoundCog } from "lucide-react";
 
 import { Switch } from "@/components/ui/switch";
 import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ChatMessageList } from "@/components/chat/ChatMessageList";
+import { ContactPanel } from "@/components/chat/ContactPanel";
+import { KanbanCardDetail } from "@/components/kanban/KanbanCardDetail";
 import { useCaseChat, type CaseSummary } from "@/hooks/use-case-chat";
 import { cn } from "@/lib/utils";
-import { updateBaserowCase } from "@/services/api";
+import { updateBaserowCase, type BaserowCaseRow } from "@/services/api";
+import { useOnboarding } from "@/components/onboarding/onboarding-context";
+import { useUsers } from "@/hooks/use-users";
+import { notifyTransferWebhook } from "@/services/transfer-notify";
 import type { Conversation } from "@/hooks/use-conversations";
 import type { WabaNumber } from "@/hooks/use-waba-numbers";
 
@@ -124,6 +129,68 @@ export const ChatPanel = ({
   const [isUpdatingPause, setIsUpdatingPause] = useState(false);
   const [pauseError, setPauseError] = useState<string | null>(null);
 
+  // Contact panel + case detail
+  const [showContactPanel, setShowContactPanel] = useState(false);
+  const [detailCase, setDetailCase] = useState<BaserowCaseRow | null>(null);
+
+  // Transfer feature
+  const { data: onbData } = useOnboarding();
+  const { users: institutionUsers } = useUsers(onbData.auth?.institutionId);
+  const [showTransferPanel, setShowTransferPanel] = useState(false);
+  const [transferValue, setTransferValue] = useState("");
+  const [isTransferring, setIsTransferring] = useState(false);
+  const [transferSuccess, setTransferSuccess] = useState(false);
+  const transferRef = useRef<HTMLDivElement>(null);
+
+  // Close panel on outside click
+  useEffect(() => {
+    if (!showTransferPanel) return;
+    const handler = (e: MouseEvent) => {
+      if (transferRef.current && !transferRef.current.contains(e.target as Node)) {
+        setShowTransferPanel(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showTransferPanel]);
+
+  const handleTransfer = useCallback(async () => {
+    if (!transferValue || !caseSummary) return;
+    setIsTransferring(true);
+    try {
+      await updateBaserowCase(caseSummary.id, { responsavel: transferValue });
+
+      // Notify webhook
+      const targetUser = institutionUsers.find((u) => u.name === transferValue);
+      if (targetUser) {
+        notifyTransferWebhook({
+          type: "transfer",
+          user: targetUser,
+          caseInfo: {
+            id: caseSummary.id,
+            caseId: caseSummary.caseIdentifier,
+            customerName: caseSummary.customerName,
+            customerPhone: caseSummary.customerPhone,
+            bjCaseId: caseSummary.bjCaseId ?? undefined,
+            institutionId: onbData.auth?.institutionId,
+            responsavel: transferValue,
+          },
+        });
+      }
+
+      setTransferSuccess(true);
+      setTimeout(() => {
+        setTransferSuccess(false);
+        setShowTransferPanel(false);
+        setTransferValue("");
+      }, 1500);
+    } catch (err) {
+      console.error("Erro ao transferir:", err);
+    } finally {
+      setIsTransferring(false);
+    }
+  }, [transferValue, caseSummary, institutionUsers, onbData.auth?.institutionId]);
+
   const windowInfo = useMemo(() => {
     const lastClientAt = meta?.lastClientMessageAt ?? null;
     const deadline = meta?.sessionDeadline ? new Date(meta.sessionDeadline) : null;
@@ -156,8 +223,12 @@ export const ChatPanel = ({
     }
   };
 
+  const contactInstitutionId = onbData.auth?.institutionId ?? 0;
+
   return (
-    <div className="flex h-full flex-col bg-muted/30">
+    <div className="flex h-full">
+      {/* Main chat column */}
+      <div className={cn("flex flex-col bg-muted/30", showContactPanel ? "flex-1 min-w-0" : "w-full")}>
       {/* Header */}
       <header className="flex items-center gap-3 bg-card border-b px-4 py-2 shadow-sm">
         {/* Back button - mobile only */}
@@ -171,19 +242,29 @@ export const ChatPanel = ({
           </button>
         )}
 
-        {/* Avatar */}
-        <div className="relative h-10 w-10 shrink-0">
+        {/* Avatar - clickable */}
+        <button
+          type="button"
+          onClick={() => setShowContactPanel(true)}
+          className="relative h-10 w-10 shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+        >
           <div className="flex h-full w-full items-center justify-center rounded-full bg-muted">
             <User className="h-6 w-6 text-muted-foreground" />
           </div>
           {windowInfo.label === "online" && (
             <div className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-card bg-emerald-500" />
           )}
-        </div>
+        </button>
 
         {/* Contact Info */}
         <div className="flex-1 min-w-0">
-          <h1 className="text-[17px] font-medium text-foreground truncate">
+          <h1
+            role="button"
+            tabIndex={0}
+            onClick={() => setShowContactPanel(true)}
+            onKeyDown={(e) => { if (e.key === "Enter") setShowContactPanel(true); }}
+            className="text-[17px] font-medium text-foreground truncate cursor-pointer hover:underline"
+          >
             {caseSummary?.customerName ?? conversation.customerName}
           </h1>
           <p className="text-[13px] text-muted-foreground truncate">
@@ -206,9 +287,54 @@ export const ChatPanel = ({
               <RefreshCw className="h-5 w-5" />
             )}
           </button>
-          <button type="button" className="p-2 hover:bg-muted rounded-full transition-colors">
-            <MoreVertical className="h-5 w-5" />
-          </button>
+          <div className="relative" ref={transferRef}>
+            <button
+              type="button"
+              onClick={() => setShowTransferPanel((v) => !v)}
+              className="p-2 hover:bg-muted rounded-full transition-colors"
+              title="Transferir atendimento"
+            >
+              <UserRoundCog className="h-5 w-5" />
+            </button>
+            {showTransferPanel && (
+              <div className="absolute right-0 top-full mt-1 z-50 w-72 rounded-lg border bg-card p-3 shadow-lg">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                  Transferir para
+                </p>
+                <select
+                  value={transferValue}
+                  onChange={(e) => setTransferValue(e.target.value)}
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm mb-2"
+                >
+                  <option value="">Selecione o responsável</option>
+                  {institutionUsers.map((u) => (
+                    <option key={u.id} value={u.name}>
+                      {u.name} ({u.email})
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleTransfer}
+                  disabled={!transferValue || isTransferring}
+                  className={cn(
+                    "w-full h-8 rounded-md text-xs font-medium transition-colors",
+                    transferSuccess
+                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-200"
+                      : "bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                  )}
+                >
+                  {isTransferring ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin mx-auto" />
+                  ) : transferSuccess ? (
+                    "Transferido!"
+                  ) : (
+                    "Transferir"
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
@@ -303,6 +429,54 @@ export const ChatPanel = ({
           isWindowClosed={windowInfo.isExpired}
         />
       </div>
+      </div>{/* end main chat column */}
+
+      {/* Contact side panel */}
+      {showContactPanel && (
+        <div className="hidden w-80 shrink-0 lg:block">
+          <ContactPanel
+            caseRowId={caseRowId}
+            customerName={caseSummary?.customerName ?? conversation.customerName}
+            customerPhone={caseSummary?.customerPhone ?? conversation.customerPhone}
+            institutionId={contactInstitutionId}
+            onClose={() => setShowContactPanel(false)}
+            onOpenCaseDetail={(caseData) => {
+              setDetailCase(caseData);
+            }}
+          />
+        </div>
+      )}
+
+      {/* Mobile: overlay panel */}
+      {showContactPanel && (
+        <div className="absolute inset-0 z-50 lg:hidden">
+          <div
+            className="absolute inset-0 bg-black/30"
+            onClick={() => setShowContactPanel(false)}
+          />
+          <div className="absolute right-0 top-0 bottom-0 w-full max-w-sm">
+            <ContactPanel
+              caseRowId={caseRowId}
+              customerName={caseSummary?.customerName ?? conversation.customerName}
+              customerPhone={caseSummary?.customerPhone ?? conversation.customerPhone}
+              institutionId={contactInstitutionId}
+              onClose={() => setShowContactPanel(false)}
+              onOpenCaseDetail={(caseData) => {
+                setDetailCase(caseData);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Case detail dialog */}
+      <KanbanCardDetail
+        caseData={detailCase}
+        open={!!detailCase}
+        onOpenChange={(open) => {
+          if (!open) setDetailCase(null);
+        }}
+      />
     </div>
   );
 };

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 
@@ -7,9 +7,12 @@ import {
   type OnboardingData,
   type AuthInfo,
 } from "@/lib/validations";
+import {
+  ONBOARDING_AUTH_COOKIE,
+  ONBOARDING_AUTH_STORAGE,
+} from "@/lib/auth/constants";
+import { ensureLegacyUserIdentifier } from "@/lib/auth/user";
 
-const AUTH_STORAGE_KEY = "onboarding_auth";
-const AUTH_COOKIE_NAME = "onboarding_auth";
 
 // Funções para gerenciar cookies
 const setCookie = (name: string, value: string, days = 7): void => {
@@ -40,11 +43,11 @@ const loadAuthFromStorage = (): AuthInfo | null => {
   if (typeof window === "undefined") return null;
   
   try {
-    const stored = localStorage.getItem(AUTH_STORAGE_KEY);
+    const stored = localStorage.getItem(ONBOARDING_AUTH_STORAGE);
     if (!stored) return null;
     
     const auth = JSON.parse(stored) as AuthInfo;
-    return auth;
+    return ensureLegacyUserIdentifier(auth);
   } catch (error) {
     console.error("Erro ao carregar autenticação do localStorage:", error);
     return null;
@@ -56,13 +59,14 @@ const saveAuthToStorage = (auth: AuthInfo | null): void => {
 
   try {
     if (auth) {
-      const authJson = JSON.stringify(auth);
-      localStorage.setItem(AUTH_STORAGE_KEY, authJson);
+      const normalizedAuth = ensureLegacyUserIdentifier(auth);
+      const authJson = JSON.stringify(normalizedAuth);
+      localStorage.setItem(ONBOARDING_AUTH_STORAGE, authJson);
       // Também salva em cookie para que as APIs possam acessar
-      setCookie(AUTH_COOKIE_NAME, authJson);
+      setCookie(ONBOARDING_AUTH_COOKIE, authJson);
     } else {
-      localStorage.removeItem(AUTH_STORAGE_KEY);
-      deleteCookie(AUTH_COOKIE_NAME);
+      localStorage.removeItem(ONBOARDING_AUTH_STORAGE);
+      deleteCookie(ONBOARDING_AUTH_COOKIE);
     }
   } catch (error) {
     console.error("Erro ao salvar autenticação no localStorage:", error);
@@ -77,13 +81,14 @@ export const OnboardingProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const savedAuth = loadAuthFromStorage();
     if (savedAuth) {
+      const ensuredAuth = ensureLegacyUserIdentifier(savedAuth);
       // eslint-disable-next-line react-hooks/set-state-in-effect -- sincroniza o auth do localStorage apenas depois do mount
       setData((prev) => ({
         ...prev,
-        auth: savedAuth,
+        auth: ensuredAuth,
       }));
       // Garantir que o cookie também esteja configurado (caso o usuário já estava logado)
-      setCookie(AUTH_COOKIE_NAME, JSON.stringify(savedAuth));
+      setCookie(ONBOARDING_AUTH_COOKIE, JSON.stringify(ensuredAuth));
     }
     setIsHydrated(true);
   }, []);
@@ -118,7 +123,7 @@ export const OnboardingProvider = ({ children }: { children: ReactNode }) => {
 
   const logout = () => {
     saveAuthToStorage(null);
-    deleteCookie(AUTH_COOKIE_NAME);
+    deleteCookie(ONBOARDING_AUTH_COOKIE);
     setData(defaultOnboardingData);
   };
 

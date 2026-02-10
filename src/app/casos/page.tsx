@@ -23,7 +23,7 @@ import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import { useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/ui/loading-screen";
 import { Input } from "@/components/ui/input";
-import { MessageSquareText, RefreshCw, List, Kanban, Check, X, Loader2 } from "lucide-react";
+import { MessageSquareText, RefreshCw, List, Kanban, Loader2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { KanbanView } from "@/components/kanban/KanbanView";
 import {
@@ -81,19 +81,6 @@ const setCasesCache = (institutionId: number, cases: BaserowCaseRow[], totalCoun
 type InstitutionOption = {
   id: string;
   label: string;
-};
-
-const formatCurrency = (value: number | string | null | undefined): string => {
-  if (value === null || value === undefined || value === "") return "R$ 0,00";
-  const num = typeof value === "string" ? parseFloat(value) : value;
-  if (isNaN(num)) return "R$ 0,00";
-  return num.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-};
-
-const parseCurrencyInput = (value: string): number => {
-  const cleaned = value.replace(/[^\d.,]/g, "").replace(",", ".");
-  const num = parseFloat(cleaned);
-  return isNaN(num) ? 0 : num;
 };
 
 const parseDateInput = (value: string, options?: { endOfDay?: boolean }) => {
@@ -157,9 +144,6 @@ export default function CasosPage() {
   const [endDate, setEndDate] = useState("");
   const [adminInstitutions, setAdminInstitutions] = useState<InstitutionOption[]>([]);
   const [activeView, setActiveView] = useState<"lista" | "kanban">("lista");
-  const [editingValorCaseId, setEditingValorCaseId] = useState<number | null>(null);
-  const [valorInput, setValorInput] = useState("");
-  const [updatingResultadoCaseId, setUpdatingResultadoCaseId] = useState<number | null>(null);
   const normalizedStartDate = useMemo(
     () => parseDateInput(startDate),
     [startDate],
@@ -467,6 +451,9 @@ export default function CasosPage() {
 
       setCases(sortedResults);
       setCasesCache(institutionId, sortedResults, response.totalCount);
+
+      // Auto-assign unassigned cases (fire-and-forget)
+      fetch("/api/v1/cases/auto-assign", { method: "POST" }).catch(() => {});
     } catch (err) {
       if (!silent) {
         console.error("Erro ao carregar casos:", err);
@@ -561,66 +548,13 @@ export default function CasosPage() {
     }
   };
 
-  const handleValorDoubleClick = (caseRow: BaserowCaseRow, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const currentValor = typeof caseRow.valor === "number"
-      ? caseRow.valor
-      : typeof caseRow.valor === "string"
-        ? parseFloat(caseRow.valor)
-        : 0;
-    setValorInput(isNaN(currentValor) ? "0" : currentValor.toString());
-    setEditingValorCaseId(caseRow.id);
-  };
-
-  const handleValorSave = async (caseId: number) => {
-    const newValor = parseCurrencyInput(valorInput);
-    setEditingValorCaseId(null);
-    try {
-      await updateBaserowCase(caseId, { valor: newValor });
-      setCases((prev) =>
-        prev.map((c) => (c.id === caseId ? { ...c, valor: newValor } : c))
-      );
-    } catch (err) {
-      console.error("Erro ao atualizar valor:", err);
-    }
-  };
-
-  const handleValorKeyDown = (e: React.KeyboardEvent, caseId: number) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      handleValorSave(caseId);
-    } else if (e.key === "Escape") {
-      setEditingValorCaseId(null);
-    }
-  };
-
-  const handleResultadoClick = async (
-    caseRow: BaserowCaseRow,
-    resultado: "ganho" | "perdido",
-    e: React.MouseEvent
-  ) => {
-    e.stopPropagation();
-    if (updatingResultadoCaseId) return;
-    setUpdatingResultadoCaseId(caseRow.id);
-    try {
-      await updateBaserowCase(caseRow.id, { resultado });
-      setCases((prev) =>
-        prev.map((c) => (c.id === caseRow.id ? { ...c, resultado } : c))
-      );
-    } catch (err) {
-      console.error("Erro ao atualizar resultado:", err);
-    } finally {
-      setUpdatingResultadoCaseId(null);
-    }
-  };
-
   if (isLoading) {
     return <LoadingScreen message="Carregando casos..." />;
   }
 
   if (error) {
     return (
-      <main className="min-h-screen bg-white py-8 dark:bg-zinc-900">
+      <main className="min-h-screen bg-background py-8">
         <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4">
           <Card>
             <CardHeader>
@@ -637,23 +571,13 @@ export default function CasosPage() {
   }
 
   return (
-    <main className="min-h-screen bg-white py-4 dark:bg-zinc-900">
+    <main className="min-h-screen bg-background py-4">
       <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4">
-        {/* Header compacto com título e estatísticas */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-primary">
-                  Gestão de Casos
-                </p>
-              </div>
-              <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-                Atendimentos
-              </h1>
-            </div>
+        {/* Header compacto com título e estatísticas alinhados */}
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
             {/* View Tabs */}
-            <div className="flex items-center gap-1 ml-4">
+            <div className="flex items-center gap-1">
               <Button
                 variant={activeView === "lista" ? "default" : "ghost"}
                 size="sm"
@@ -675,8 +599,8 @@ export default function CasosPage() {
             </div>
           </div>
 
-          {/* Estatísticas compactas inline */}
-          <div className="flex flex-wrap items-center gap-3">
+          {/* Estatísticas compactas inline - mesma linha do título */}
+          <div className="flex flex-wrap items-center gap-3 ml-auto">
               <div className="flex items-center gap-2 rounded-lg border bg-card px-3 py-1.5">
                 <span className="text-xs text-muted-foreground">Total:</span>
                 <span className="text-sm font-bold text-primary">
@@ -693,7 +617,7 @@ export default function CasosPage() {
               ))}
               <div className="flex items-center gap-2 rounded-lg border border-dashed bg-card px-3 py-1.5">
                 <span className="text-xs text-muted-foreground">IA Pausada:</span>
-                <span className="text-sm font-semibold text-amber-600">
+                <span className="text-sm font-semibold text-red-600 dark:text-red-400">
                   {statsLoading && caseStats.pausedCases === 0 ? "..." : caseStats.pausedCases}
                 </span>
               </div>
@@ -743,23 +667,12 @@ export default function CasosPage() {
           </div>
         ) : (
           <>
-        <Card>
-          <CardHeader className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Lista de Atendimentos</CardTitle>
-                <CardDescription>
-                  {visibleCases.length}{" "}
-                  {visibleCases.length === 1 ? "atendimento" : "atendimentos"}
-                  {visibleCases.length !== (totalCasesCount ?? cases.length) &&
-                    ` (filtrados de ${totalCasesCount ?? cases.length})`}
-                </CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={() => loadCases()}>
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
-              </div>
+        <div className="bg-transparent">
+          <div className="space-y-4 pb-4">
+            <div className="flex items-center justify-end">
+              <Button variant="outline" size="sm" onClick={() => loadCases()}>
+                <RefreshCw className="h-4 w-4" />
+              </Button>
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
               <div className="col-span-2 sm:col-span-1 lg:col-span-2 flex flex-col gap-1">
@@ -859,8 +772,8 @@ export default function CasosPage() {
                 </div>
               )}
             </div>
-          </CardHeader>
-          <CardContent>
+          </div>
+          <div>
             {visibleCases.length === 0 ? (
               <div className="py-12 text-center text-muted-foreground">
                 Nenhum caso encontrado.
@@ -871,159 +784,64 @@ export default function CasosPage() {
                   const stage = getCaseStage(caseRow);
                   const isPaused = isCasePaused(caseRow);
                   const pauseError = pauseErrors[caseRow.id];
-                  const resultado = (caseRow.resultado || "").toLowerCase();
-                  const isGanho = resultado === "ganho";
-                  const isPerdido = resultado === "perdido";
                   return (
                     <div
                       key={caseRow.id}
                       onClick={() => handleCaseClick(caseRow)}
-                      className="cursor-pointer rounded-lg border p-4 transition-colors hover:bg-accent"
+                      className="cursor-pointer border-b border-[#7E99B5] dark:border-border/60 px-4 py-3 transition-colors hover:bg-accent/50"
                     >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 space-y-2">
-                          <div className="flex flex-wrap items-center gap-3">
-                            <h3 className="text-lg font-semibold">
-                              {caseRow.CustumerName || "Sem nome"}
-                            </h3>
-                            {stage && (
-                              <span
-                                className={cn(
-                                  "rounded-full px-2.5 py-0.5 text-xs font-medium",
-                                  stageColors[stage],
-                                )}
-                              >
-                                {stageLabels[stage]}
-                              </span>
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <h3 className="text-sm font-semibold truncate max-w-[200px]">
+                          {caseRow.CustumerName || "Sem nome"}
+                        </h3>
+                        {stage && (
+                          <span
+                            className={cn(
+                              "rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap",
+                              stageColors[stage],
                             )}
-                            {isGanho && (
-                              <span className="rounded-full px-2.5 py-0.5 text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200">
-                                Ganho
-                              </span>
-                            )}
-                            {isPerdido && (
-                              <span className="rounded-full px-2.5 py-0.5 text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200">
-                                Perdido
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-                            {caseRow.Data && (
-                              <span className="text-xs">
-                                Data: {caseRow.Data}
-                              </span>
-                            )}
-                            {!caseRow.CustumerPhone && (
-                              <span>Sem telefone</span>
-                            )}
-                            <Link
-                              href={`/chat?case=${caseRow.id}`}
-                              className="inline-flex items-center gap-1 rounded-full border border-blue-500/30 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 dark:border-blue-500/40 dark:bg-blue-900/30 dark:text-blue-200"
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              <MessageSquareText className="h-3.5 w-3.5" />
-                              Abrir chat
-                            </Link>
-                            <div
-                              className="flex items-center gap-2"
-                              onClick={(event) => event.stopPropagation()}
-                              onPointerDown={(event) => event.stopPropagation()}
-                            >
-                              <span className="text-xs font-medium uppercase tracking-wide">
-                                Pausar IA
-                              </span>
-                              <Switch
-                                checked={isPaused}
-                                onCheckedChange={(checked) =>
-                                  handleToggleIAPause(caseRow, checked)
-                                }
-                                disabled={updatingCaseId === caseRow.id}
-                                aria-label="Alternar pausa da IA neste caso"
-                              />
-                            </div>
-                            {/* Valor da causa e Ganho/Perdido */}
-                            <div
-                              className="flex items-center gap-2"
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              <span className="text-xs text-muted-foreground">Valor da causa:</span>
-                              {editingValorCaseId === caseRow.id ? (
-                                <Input
-                                  type="text"
-                                  value={valorInput}
-                                  onChange={(e) => setValorInput(e.target.value)}
-                                  onBlur={() => handleValorSave(caseRow.id)}
-                                  onKeyDown={(e) => handleValorKeyDown(e, caseRow.id)}
-                                  className="h-6 w-24 text-xs px-1"
-                                  placeholder="0,00"
-                                  autoFocus
-                                />
-                              ) : (
-                                <span
-                                  className="text-xs font-medium text-green-600 dark:text-green-400 cursor-pointer hover:underline"
-                                  onDoubleClick={(e) => handleValorDoubleClick(caseRow, e)}
-                                  title="Clique duplo para editar"
-                                >
-                                  {formatCurrency(caseRow.valor)}
-                                </span>
-                              )}
-                              {!isGanho && !isPerdido && (
-                                <>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-6 px-2 text-[10px] gap-1 text-green-600 hover:text-green-700 hover:bg-green-50 border-green-200"
-                                    onClick={(e) => handleResultadoClick(caseRow, "ganho", e)}
-                                    disabled={updatingResultadoCaseId === caseRow.id}
-                                  >
-                                    <Check className="h-3 w-3" />
-                                    Ganho
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-6 px-2 text-[10px] gap-1 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
-                                    onClick={(e) => handleResultadoClick(caseRow, "perdido", e)}
-                                    disabled={updatingResultadoCaseId === caseRow.id}
-                                  >
-                                    <X className="h-3 w-3" />
-                                    Perdido
-                                  </Button>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                          {pauseError && (
-                            <p className="text-xs text-destructive">
-                              {pauseError}
-                            </p>
-                          )}
-                        </div>
-                        <div className="text-sm text-muted-foreground text-right space-y-1">
-                          <div>ID: {caseRow.CaseId || caseRow.id}</div>
-                          {caseRow.BJCaseId ? (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              asChild
-                              className="h-7 px-3"
-                            >
-                              <a
-                                href={`https://app.riasistemas.com.br/case/edit/${caseRow.BJCaseId}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                onClick={(event) => event.stopPropagation()}
-                              >
-                                Editar
-                              </a>
-                            </Button>
-                          ) : (
-                            <span className="text-muted-foreground/70">
-                              BJCaseId não informado
+                          >
+                            {stageLabels[stage]}
+                          </span>
+                        )}
+                        {caseRow.Data && (
+                          <span className="text-xs text-muted-foreground whitespace-nowrap">
+                            {caseRow.Data}
+                          </span>
+                        )}
+                        <div className="ml-auto flex items-center gap-3">
+                          <Link
+                            href={`/chat?case=${caseRow.id}`}
+                            className="inline-flex items-center gap-1 rounded-full border border-blue-500/30 bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 dark:border-blue-500/40 dark:bg-blue-900/30 dark:text-blue-200 whitespace-nowrap"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <MessageSquareText className="h-3 w-3" />
+                            Chat
+                          </Link>
+                          <div
+                            className="flex items-center gap-1.5"
+                            onClick={(event) => event.stopPropagation()}
+                            onPointerDown={(event) => event.stopPropagation()}
+                          >
+                            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                              Pausar IA
                             </span>
-                          )}
+                            <Switch
+                              checked={isPaused}
+                              onCheckedChange={(checked) =>
+                                handleToggleIAPause(caseRow, checked)
+                              }
+                              disabled={updatingCaseId === caseRow.id}
+                              aria-label="Alternar pausa da IA neste caso"
+                            />
+                          </div>
                         </div>
                       </div>
+                      {pauseError && (
+                        <p className="text-xs text-destructive mt-1">
+                          {pauseError}
+                        </p>
+                      )}
                     </div>
                   );
                 })}
@@ -1045,8 +863,8 @@ export default function CasosPage() {
                   ` (${totalCasesCount ?? cases.length} no total)`}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         <KanbanCardDetail
           caseData={selectedCase}

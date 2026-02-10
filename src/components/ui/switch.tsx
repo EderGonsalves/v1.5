@@ -12,13 +12,11 @@ export interface SwitchProps
 const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(
   ({ className, onCheckedChange, checked, disabled, ...props }, ref) => {
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      console.log("Switch handleChange chamado, checked:", e.target.checked, "disabled:", disabled);
       if (disabled) {
         e.preventDefault();
         return;
       }
       if (onCheckedChange) {
-        console.log("Chamando onCheckedChange com:", e.target.checked);
         onCheckedChange(e.target.checked);
       }
       if (props.onChange) {
@@ -42,11 +40,13 @@ const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(
         />
         <div
           className={cn(
-            "relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/30 rounded-full peer transition-colors duration-200",
-            "peer-checked:bg-primary",
+            "relative w-11 h-6 rounded-full peer transition-colors duration-200",
+            "bg-[#7E99B5] dark:bg-[#354F6D]",
+            "peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/30",
+            "peer-checked:bg-emerald-500 dark:peer-checked:bg-emerald-500",
             "after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all after:duration-200 after:shadow-sm",
             "peer-checked:after:translate-x-full peer-checked:after:border-white",
-            "group-hover:bg-gray-300 peer-checked:group-hover:bg-primary/90",
+            "group-hover:opacity-90",
             disabled && "opacity-50 cursor-not-allowed",
             className
           )}

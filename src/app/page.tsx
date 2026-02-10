@@ -34,7 +34,7 @@ const HomeContent = () => {
   }, [data.auth, router]);
 
   return (
-    <main className={data.auth ? "min-h-screen bg-white py-8 dark:bg-zinc-900" : "min-h-screen"}>
+    <main className={data.auth ? "min-h-screen bg-background py-8" : "min-h-screen"}>
       {data.auth ? (
         <div className="mx-auto flex max-w-5xl flex-col gap-8 px-4">
           <section className="space-y-3 text-center sm:text-left">

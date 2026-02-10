@@ -20,9 +20,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   loginSchema,
   type LoginCredentials,
+  type AuthInfo,
 } from "@/lib/validations";
-import { authenticate, getBaserowConfigs } from "@/services/api";
+import { getBaserowConfigs, syncUserAccount } from "@/services/api";
 import { cn } from "@/lib/utils";
+import { extractDisplayName } from "@/lib/auth/user";
 
 import { useOnboarding } from "./onboarding-context";
 
@@ -51,20 +53,56 @@ export const OnboardingLogin = () => {
     setErrorMessage("");
 
     try {
-      const authInfo = await authenticate(values);
+      const response = await fetch("/api/v1/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => null);
+        throw new Error(
+          errData?.error ?? "Não foi possível validar seu acesso",
+        );
+      }
+
+      const data = await response.json();
+      const authInfo: AuthInfo = {
+        institutionId: data.institutionId,
+        token: data.token,
+        expiresAt: data.expiresAt,
+        payload: data.payload,
+        legacyUserId: data.legacyUserId ?? values.email,
+      };
+
       updateSection({ auth: authInfo });
 
+      try {
+        const displayName =
+          extractDisplayName(authInfo.payload, values.email.split("@")[0]) ??
+          values.email.split("@")[0];
+
+        await syncUserAccount({
+          institutionId: authInfo.institutionId,
+          legacyUserId: authInfo.legacyUserId ?? values.email,
+          email: values.email.toLowerCase(),
+          name: displayName,
+          isActive: true,
+        });
+      } catch (syncError) {
+        console.error("Falha ao sincronizar usuário com o Baserow", syncError);
+      }
       // Verificar se já existe configuração no Baserow
       try {
-        const baserowConfigs = await getBaserowConfigs(authInfo.institutionId);
+        const baserowConfigs = await getBaserowConfigs(
+          authInfo.institutionId,
+        );
         if (baserowConfigs && baserowConfigs.length > 0) {
-          // Já existe configuração no Baserow, redirecionar para página de configurações
           console.log("Configuração encontrada no Baserow, redirecionando para página de configurações");
           router.push("/configuracoes");
           return;
         }
       } catch (configError) {
-        // Se não encontrar configuração, continuar com onboarding
         console.log("Nenhuma configuração encontrada no Baserow, continuando com onboarding");
       }
     } catch (error) {

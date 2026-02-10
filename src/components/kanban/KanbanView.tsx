@@ -29,7 +29,6 @@ import {
   createKanbanColumn,
   createCaseKanbanStatus,
   updateCaseKanbanStatus,
-  updateBaserowCase,
   type KanbanColumnRow,
   type CaseKanbanStatusRow,
   type BaserowCaseRow,
@@ -560,70 +559,6 @@ export function KanbanView({
     }
   };
 
-  const handleUpdateValor = async (caseId: number, valor: number) => {
-    try {
-      await updateBaserowCase(caseId, { valor });
-      // Notify parent to update case in list
-      onCaseUpdate?.(caseId, { valor });
-    } catch (err) {
-      console.error("Erro ao atualizar valor:", err);
-    }
-  };
-
-  const handleUpdateResultado = async (caseId: number, resultado: "ganho" | "perdido") => {
-    try {
-      // Update the case result in database
-      await updateBaserowCase(caseId, { resultado });
-
-      // Find the target column based on resultado
-      const targetColumnName = resultado === "ganho" ? "Concluidos Ganhos" : "Concluidos Perdidos";
-      const targetColumn = columns.find((col) =>
-        col.name?.toLowerCase().includes(resultado) ||
-        col.name?.toLowerCase().includes(targetColumnName.toLowerCase())
-      );
-
-      if (targetColumn) {
-        const targetColumnId = Number(targetColumn.id);
-
-        // Check if there's an existing status for this case
-        const existingStatus = caseStatuses.find(
-          (status) =>
-            Number(status.case_id) === caseId &&
-            Number(status.institution_id) === institutionId
-        );
-
-        if (existingStatus) {
-          // Update existing status
-          setCaseStatuses((prev) =>
-            prev.map((status) =>
-              status.id === existingStatus.id
-                ? { ...status, column_id: targetColumnId, moved_at: new Date().toISOString() }
-                : status
-            )
-          );
-          await updateCaseKanbanStatus(existingStatus.id, {
-            column_id: targetColumnId,
-            moved_by: "user",
-          });
-        } else {
-          // Create new status
-          const newStatus = await createCaseKanbanStatus({
-            case_id: caseId,
-            institution_id: institutionId,
-            column_id: targetColumnId,
-            moved_by: "user",
-          });
-          setCaseStatuses((prev) => [...prev, newStatus]);
-        }
-      }
-
-      // Notify parent to update case in list
-      onCaseUpdate?.(caseId, { resultado });
-    } catch (err) {
-      console.error("Erro ao atualizar resultado:", err);
-    }
-  };
-
   const handleSaveColumns = async (updatedColumns: KanbanColumnRow[]) => {
     if (!institutionId) return;
 
@@ -779,8 +714,6 @@ export function KanbanView({
                     cases={casesByColumn.get(Number(column.id)) || []}
                     onCardClick={handleCardClick}
                     onColumnUpdate={handleColumnNameUpdate}
-                    onUpdateValor={handleUpdateValor}
-                    onUpdateResultado={handleUpdateResultado}
                     isDraggingColumn={isDraggingColumn}
                   />
                 ))}
