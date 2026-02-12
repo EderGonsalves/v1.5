@@ -1,6 +1,7 @@
 import type { ZodIssue } from "zod";
 import { NextRequest, NextResponse } from "next/server";
 
+import { getRequestAuth } from "@/lib/auth/session";
 import { resolveInstitutionId } from "@/lib/calendar/request";
 import { calendarEventInputSchema } from "@/lib/calendar/schemas";
 import {
@@ -10,6 +11,8 @@ import {
   type CreateCalendarEventPayload,
 } from "@/services/api";
 import { serializeEvent, toTextFlag } from "./utils";
+
+const SYSADMIN_INSTITUTION_ID = 4;
 
 const respondWithError = (message: string, status = 400) => {
   return NextResponse.json({ error: message }, { status });
@@ -45,9 +48,18 @@ const normalizeDateParam = (
 
 export async function GET(request: NextRequest) {
   try {
+    const auth = getRequestAuth(request);
+    if (!auth) {
+      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+    }
+
     const institutionId = resolveInstitutionId(request);
     if (!institutionId) {
       return respondWithError("institutionId é obrigatório na query, header ou cookie");
+    }
+
+    if (auth.institutionId !== SYSADMIN_INSTITUTION_ID && auth.institutionId !== institutionId) {
+      return NextResponse.json({ error: "Acesso não autorizado a esta instituição" }, { status: 403 });
     }
 
     const rawStart = request.nextUrl.searchParams.get("start");
@@ -74,8 +86,7 @@ export async function GET(request: NextRequest) {
     console.error("[calendar/events] GET error:", error);
     return NextResponse.json(
       {
-        error:
-          error instanceof Error ? error.message : "Erro ao listar eventos",
+        error: "Erro ao listar eventos",
       },
       { status: 500 },
     );
@@ -99,6 +110,11 @@ const formatValidationError = (issues: ZodIssue[]) => {
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = getRequestAuth(request);
+    if (!auth) {
+      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+    }
+
     let parsedBody: unknown;
     try {
       parsedBody = await request.json();
@@ -119,6 +135,10 @@ export async function POST(request: NextRequest) {
       return respondWithError(
         "institutionId é obrigatório (query, header, cookie ou body.auth.institutionId).",
       );
+    }
+
+    if (auth.institutionId !== SYSADMIN_INSTITUTION_ID && auth.institutionId !== institutionId) {
+      return NextResponse.json({ error: "Acesso não autorizado a esta instituição" }, { status: 403 });
     }
 
     const parseResult = calendarEventInputSchema.safeParse(rawBody);
@@ -172,15 +192,14 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { id: event.id, status: "created" },
+      { id: event.id, status: "created", event: serializeEvent(event) },
       { status: 201 },
     );
   } catch (error) {
     console.error("[calendar/events] POST error:", error);
     return NextResponse.json(
       {
-        error:
-          error instanceof Error ? error.message : "Erro ao criar evento",
+        error: "Erro ao criar evento",
       },
       { status: 500 },
     );

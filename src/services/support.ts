@@ -53,6 +53,9 @@ export type SupportTicketRow = {
   status: string;
   sector: string;
   assigned_to: string;
+  department_id?: number | null;
+  department_name?: string | null;
+  assigned_to_user_id?: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -92,6 +95,9 @@ export type UpdateTicketData = {
   status?: string;
   sector?: string;
   assigned_to?: string;
+  department_id?: number | null;
+  department_name?: string | null;
+  assigned_to_user_id?: number | null;
 };
 
 export type CreateMessageData = {
@@ -244,6 +250,9 @@ export async function updateTicket(
   if (data.status !== undefined) payload.status = data.status;
   if (data.sector !== undefined) payload.sector = data.sector;
   if (data.assigned_to !== undefined) payload.assigned_to = data.assigned_to;
+  if (data.department_id !== undefined) payload.department_id = data.department_id;
+  if (data.department_name !== undefined) payload.department_name = data.department_name;
+  if (data.assigned_to_user_id !== undefined) payload.assigned_to_user_id = data.assigned_to_user_id;
 
   return updateRow<SupportTicketRow>(TABLE_IDS.tickets, ticketId, payload);
 }

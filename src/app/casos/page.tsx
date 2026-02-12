@@ -37,8 +37,22 @@ import {
   stageOrder,
 } from "@/lib/case-stats";
 import { useStatistics } from "@/hooks/use-statistics";
+import { useMyDepartments } from "@/hooks/use-my-departments";
+import { useDepartments } from "@/hooks/use-departments";
 
-// Cache de casos em sessionStorage
+// Cache em memória (persiste entre navegações SPA — module-level)
+type CasesMemoryCache = {
+  institutionId: number;
+  cases: BaserowCaseRow[];
+  totalCount: number;
+  nextPage: number | null;
+  timestamp: number;
+};
+
+const MEMORY_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
+let casesMemoryCache: CasesMemoryCache | null = null;
+
+// Cache em sessionStorage (persiste entre reloads completos)
 type CachedCases = {
   cases: BaserowCaseRow[];
   timestamp: number;
@@ -136,6 +150,8 @@ export default function CasosPage() {
   const [pauseErrors, setPauseErrors] = useState<Record<number, string | null>>({});
   const [totalCasesCount, setTotalCasesCount] = useState<number | null>(null);
   const [visibleCount, setVisibleCount] = useState(50); // Quantos casos exibir por vez
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const nextPageRef = useRef<number | null>(null); // próxima página a buscar (decrescente)
   const isSysAdmin = normalizedInstitutionId === 4;
   const [selectedInstitution, setSelectedInstitution] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -144,6 +160,19 @@ export default function CasosPage() {
   const [endDate, setEndDate] = useState("");
   const [adminInstitutions, setAdminInstitutions] = useState<InstitutionOption[]>([]);
   const [activeView, setActiveView] = useState<"lista" | "kanban">("lista");
+  const [filterDepartment, setFilterDepartment] = useState<string>("all");
+  const {
+    userDepartmentIds: myDeptIds,
+    userId: myUserId,
+    userName: myUserName,
+    isGlobalAdmin: isMyGlobalAdmin,
+    isOfficeAdmin: isMyOfficeAdmin,
+    departments: myDepartments,
+  } = useMyDepartments();
+  const { departments: allDepartments } = useDepartments(normalizedInstitutionId ?? undefined);
+  // For the dropdown: sysAdmin sees all departments, others see their own
+  const isFullAccessAdmin = isMyGlobalAdmin || isMyOfficeAdmin;
+  const filterableDepartments = isFullAccessAdmin ? allDepartments : myDepartments;
   const normalizedStartDate = useMemo(
     () => parseDateInput(startDate),
     [startDate],
@@ -204,6 +233,29 @@ export default function CasosPage() {
 
   const visibleCases = useMemo(() => {
     let filteredCases = [...cases];
+
+    // Filtro de visibilidade por departamento (não-sysAdmin)
+    if (!isFullAccessAdmin && myDeptIds.length > 0) {
+      filteredCases = filteredCases.filter((row) => {
+        // Caso pertence a um dos meus departamentos
+        if (row.department_id && myDeptIds.includes(row.department_id)) return true;
+        // Caso atribuído diretamente a mim (novo campo)
+        if (row.assigned_to_user_id && myUserId && row.assigned_to_user_id === myUserId) return true;
+        // Caso atribuído a mim (campo legado)
+        if (myUserName && row.responsavel && row.responsavel === myUserName) return true;
+        // Caso sem departamento e sem responsável (não atribuído)
+        if (!row.department_id && !row.responsavel) return true;
+        return false;
+      });
+    }
+
+    // Filtro manual por departamento (dropdown UI)
+    if (filterDepartment !== "all") {
+      const deptId = Number(filterDepartment);
+      filteredCases = filteredCases.filter(
+        (row) => row.department_id === deptId,
+      );
+    }
 
     if (isSysAdmin && selectedInstitution !== "all") {
       filteredCases = filteredCases.filter(
@@ -289,6 +341,11 @@ export default function CasosPage() {
   }, [
     cases,
     isSysAdmin,
+    isFullAccessAdmin,
+    myDeptIds,
+    myUserId,
+    myUserName,
+    filterDepartment,
     selectedInstitution,
     searchQuery,
     stageFilter,
@@ -301,8 +358,10 @@ export default function CasosPage() {
     return visibleCases.slice(0, visibleCount);
   }, [visibleCases, visibleCount]);
 
-  // Verifica se há mais casos para carregar na visualização
+  // Verifica se há mais casos para exibir (virtual) ou buscar (servidor)
   const hasMoreToShow = visibleCases.length > visibleCount;
+  const hasMoreFromServer = nextPageRef.current !== null;
+  const showSentinel = hasMoreToShow || hasMoreFromServer;
 
   // Calcular estatísticas localmente a partir dos casos carregados
   const localStats = useMemo(() => {
@@ -403,19 +462,52 @@ export default function CasosPage() {
       return;
     }
 
-    // Verificar cache primeiro
+    // 1. Cache em memória (navegação SPA — restauração instantânea)
+    if (
+      casesMemoryCache &&
+      casesMemoryCache.institutionId === normalizedInstitutionId &&
+      Date.now() - casesMemoryCache.timestamp < MEMORY_CACHE_TTL_MS
+    ) {
+      setCases(casesMemoryCache.cases);
+      setTotalCasesCount(casesMemoryCache.totalCount);
+      nextPageRef.current = casesMemoryCache.nextPage;
+      setIsLoading(false);
+      return;
+    }
+
+    // 2. Cache em sessionStorage (reload completo)
     const cached = getCasesFromCache(normalizedInstitutionId);
     if (cached) {
       setCases(cached.cases);
       setTotalCasesCount(cached.totalCount);
       setIsLoading(false);
-      // Atualiza em background
       loadCases(true);
     } else {
       loadCases();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHydrated, data.auth, normalizedInstitutionId]);
+
+  // Sincronizar estado → cache em memória
+  useEffect(() => {
+    if (normalizedInstitutionId !== null && cases.length > 0) {
+      casesMemoryCache = {
+        institutionId: normalizedInstitutionId,
+        cases,
+        totalCount: totalCasesCount ?? cases.length,
+        nextPage: nextPageRef.current,
+        timestamp: Date.now(),
+      };
+    }
+  }, [cases, totalCasesCount, normalizedInstitutionId]);
+
+  const PAGE_SIZE = 200;
+  const INITIAL_MAX_PAGES = 3;
+
+  const sortDesc = useCallback(
+    (arr: BaserowCaseRow[]) => [...arr].sort((a, b) => (b.id || 0) - (a.id || 0)),
+    [],
+  );
 
   const loadCases = async (silent: boolean = false) => {
     if (!Number.isFinite(normalizedInstitutionId)) {
@@ -431,26 +523,36 @@ export default function CasosPage() {
         setIsLoading(true);
         setCases([]);
         setError(null);
+        nextPageRef.current = null;
+        casesMemoryCache = null;
       }
 
       const response = await getBaserowCases({
         institutionId,
-        pageSize: 200,
-        fetchAll: true, // Carregar todos para ordenação correta
+        pageSize: PAGE_SIZE,
+        fetchAll: true,
+        newestFirst: true,
+        maxPages: INITIAL_MAX_PAGES,
+        onPageLoaded: (partial, total) => {
+          setCases(sortDesc(partial));
+          setTotalCasesCount(total);
+          if (!silent) setIsLoading(false);
+        },
       });
 
-      // Atualizar total de casos
+      const sortedResults = sortDesc(response.results);
+      setCases(sortedResults);
       setTotalCasesCount(response.totalCount);
 
-      // Ordenar por ID decrescente (mais recentes primeiro)
-      const sortedResults = [...response.results].sort((a, b) => {
-        const idA = a.id || 0;
-        const idB = b.id || 0;
-        return idB - idA;
-      });
-
-      setCases(sortedResults);
-      setCasesCache(institutionId, sortedResults, response.totalCount);
+      // Calcular próxima página a buscar (indo de trás para frente)
+      if (response.hasNextPage) {
+        const totalPages = Math.ceil(response.totalCount / PAGE_SIZE);
+        const pageBudget = INITIAL_MAX_PAGES - 1; // pages fetched from the end
+        nextPageRef.current = totalPages - pageBudget;
+      } else {
+        nextPageRef.current = null;
+        setCasesCache(institutionId, sortedResults, response.totalCount);
+      }
 
       // Auto-assign unassigned cases (fire-and-forget)
       fetch("/api/v1/cases/auto-assign", { method: "POST" }).catch(() => {});
@@ -468,6 +570,54 @@ export default function CasosPage() {
     }
   };
 
+  // Buscar mais páginas do Baserow (scroll infinito)
+  const loadMoreFromServer = useCallback(async () => {
+    if (isLoadingMore || nextPageRef.current === null || nextPageRef.current < 1) return;
+    if (!Number.isFinite(normalizedInstitutionId)) return;
+
+    setIsLoadingMore(true);
+
+    try {
+      const startPage = nextPageRef.current;
+      const endPage = Math.max(1, startPage - 2); // até 3 páginas por vez
+      const pagesToFetch: number[] = [];
+      for (let p = startPage; p >= endPage; p--) {
+        pagesToFetch.push(p);
+      }
+
+      const results = await Promise.all(
+        pagesToFetch.map((p) =>
+          getBaserowCases({
+            institutionId: normalizedInstitutionId!,
+            page: p,
+            pageSize: PAGE_SIZE,
+          }),
+        ),
+      );
+
+      const newCases = results.flatMap((r) => r.results);
+      setCases((prev) => {
+        const existingIds = new Set(prev.map((c) => c.id));
+        const unique = newCases.filter((c) => !existingIds.has(c.id));
+        return [...prev, ...unique].sort((a, b) => (b.id || 0) - (a.id || 0));
+      });
+
+      nextPageRef.current = endPage > 1 ? endPage - 1 : null;
+
+      // Se carregou tudo, salvar no cache
+      if (nextPageRef.current === null) {
+        setCases((prev) => {
+          setCasesCache(normalizedInstitutionId!, prev, totalCasesCount ?? prev.length);
+          return prev;
+        });
+      }
+    } catch (err) {
+      console.error("Erro ao carregar mais casos:", err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [isLoadingMore, normalizedInstitutionId, totalCasesCount, sortDesc]);
+
   // Função para mostrar mais casos (paginação virtual)
   const showMoreCases = useCallback(() => {
     setVisibleCount((prev) => prev + 50);
@@ -476,7 +626,7 @@ export default function CasosPage() {
   // Ref para o elemento sentinela do infinite scroll
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
-  // Infinite scroll com IntersectionObserver
+  // Infinite scroll com IntersectionObserver (virtual + server)
   useEffect(() => {
     const sentinel = loadMoreRef.current;
     if (!sentinel) return;
@@ -484,8 +634,12 @@ export default function CasosPage() {
     const observer = new IntersectionObserver(
       (entries) => {
         const entry = entries[0];
-        if (entry.isIntersecting && hasMoreToShow) {
-          showMoreCases();
+        if (entry.isIntersecting) {
+          if (hasMoreToShow) {
+            showMoreCases();
+          } else if (hasMoreFromServer && !isLoadingMore) {
+            loadMoreFromServer();
+          }
         }
       },
       { threshold: 0.1, rootMargin: "100px" }
@@ -496,12 +650,12 @@ export default function CasosPage() {
     return () => {
       observer.disconnect();
     };
-  }, [hasMoreToShow, showMoreCases]);
+  }, [hasMoreToShow, hasMoreFromServer, isLoadingMore, showMoreCases, loadMoreFromServer]);
 
   // Resetar visibleCount quando filtros mudam
   useEffect(() => {
     setVisibleCount(50);
-  }, [selectedInstitution, searchQuery, stageFilter, normalizedStartDate, normalizedEndDate]);
+  }, [selectedInstitution, searchQuery, stageFilter, filterDepartment, normalizedStartDate, normalizedEndDate]);
 
   const handleCaseClick = (caseRow: BaserowCaseRow) => {
     setSelectedCase(caseRow);
@@ -657,6 +811,7 @@ export default function CasosPage() {
             <KanbanView
               cases={visibleCases}
               institutionId={normalizedInstitutionId!}
+              departmentId={filterDepartment !== "all" ? Number(filterDepartment) : null}
               onRefresh={() => loadCases()}
               onCaseUpdate={(caseId, updates) => {
                 setCases((prev) =>
@@ -674,7 +829,7 @@ export default function CasosPage() {
                 <RefreshCw className="h-4 w-4" />
               </Button>
             </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-7">
               <div className="col-span-2 sm:col-span-1 lg:col-span-2 flex flex-col gap-1">
                 <label
                   htmlFor="cases-search"
@@ -771,6 +926,29 @@ export default function CasosPage() {
                   </select>
                 </div>
               )}
+              {filterableDepartments.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  <label
+                    htmlFor="department-filter"
+                    className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                  >
+                    Departamento
+                  </label>
+                  <select
+                    id="department-filter"
+                    value={filterDepartment}
+                    onChange={(event) => setFilterDepartment(event.target.value)}
+                    className="h-9 rounded-md border border-input bg-background px-3 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                  >
+                    <option value="all">Todos</option>
+                    {filterableDepartments.map((dept) => (
+                      <option key={dept.id} value={dept.id}>
+                        {dept.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           </div>
           <div>
@@ -847,8 +1025,8 @@ export default function CasosPage() {
                 })}
               </div>
             )}
-            {/* Sentinela para infinite scroll */}
-            {hasMoreToShow && (
+            {/* Sentinela para infinite scroll (virtual + server) */}
+            {showSentinel && (
               <div ref={loadMoreRef} className="py-4 text-center">
                 <div className="flex items-center justify-center gap-2 text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -856,11 +1034,9 @@ export default function CasosPage() {
                 </div>
               </div>
             )}
-            {!hasMoreToShow && visibleCases.length > 0 && (
+            {!showSentinel && visibleCases.length > 0 && (
               <div className="py-4 text-center text-muted-foreground text-sm">
-                Exibindo {paginatedCases.length} de {visibleCases.length} atendimentos
-                {visibleCases.length < (totalCasesCount ?? cases.length) &&
-                  ` (${totalCasesCount ?? cases.length} no total)`}
+                Exibindo {paginatedCases.length} de {totalCasesCount ?? cases.length} atendimentos
               </div>
             )}
           </div>

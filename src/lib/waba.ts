@@ -23,6 +23,8 @@ export type WabaPhoneInfo = {
   phoneNumber: string;
   configId: number;
   label?: string;
+  departmentId?: number | null;
+  departmentName?: string | null;
 };
 
 /**
@@ -53,10 +55,14 @@ export const getInstitutionWabaPhoneNumbers = async (
         const normalized = normalizePhoneValue(value);
         if (normalized && !seenPhones.has(normalized)) {
           seenPhones.add(normalized);
+          const deptId = record["phone_department_id"];
+          const deptName = record["phone_department_name"];
           phoneNumbers.push({
             phoneNumber: normalized,
             configId: config.id,
             label: record["waba_label"] as string | undefined,
+            departmentId: typeof deptId === "number" ? deptId : null,
+            departmentName: typeof deptName === "string" ? deptName : null,
           });
         }
       }
@@ -67,6 +73,38 @@ export const getInstitutionWabaPhoneNumbers = async (
     console.error("[waba] Falha ao buscar números do WhatsApp:", error);
     return [];
   }
+};
+
+/**
+ * Retorna um mapa telefone → departamento para a instituição.
+ * Usado pelo auto-assign para rotear casos pelo número de telefone.
+ */
+export const getPhoneDepartmentMap = async (
+  institutionId?: number,
+): Promise<Map<string, { deptId: number; deptName: string }>> => {
+  const map = new Map<string, { deptId: number; deptName: string }>();
+  try {
+    const phones = await getInstitutionWabaPhoneNumbers(institutionId);
+    for (const phone of phones) {
+      if (phone.departmentId && phone.departmentName) {
+        // Normalize: store both raw and digits-only for flexible matching
+        map.set(phone.phoneNumber, {
+          deptId: phone.departmentId,
+          deptName: phone.departmentName,
+        });
+        const digitsOnly = phone.phoneNumber.replace(/\D/g, "");
+        if (digitsOnly !== phone.phoneNumber) {
+          map.set(digitsOnly, {
+            deptId: phone.departmentId,
+            deptName: phone.departmentName,
+          });
+        }
+      }
+    }
+  } catch (error) {
+    console.error("[waba] Falha ao montar mapa telefone→departamento:", error);
+  }
+  return map;
 };
 
 export const getInstitutionWabaPhoneNumber = async (

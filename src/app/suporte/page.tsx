@@ -1,18 +1,23 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import { useSupport } from "@/hooks/use-support";
+import { useDepartments } from "@/hooks/use-departments";
+import { useUsers } from "@/hooks/use-users";
+import { useMyDepartments } from "@/hooks/use-my-departments";
 import {
   searchKBClient,
   fetchTicketMessagesClient,
   createTicketMessageClient,
 } from "@/services/support-client";
+import { fetchDepartmentUsersClient } from "@/services/departments-client";
 import type {
   SupportTicketRow,
   SupportKBRow,
   SupportMessageRow,
 } from "@/services/support";
+import type { UserPublicRow } from "@/services/permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -55,13 +60,6 @@ const STATUS_COLORS: Record<string, string> = {
     "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
 };
 
-const SECTORS = [
-  "Suporte Técnico",
-  "Personalização IA",
-  "Financeiro",
-  "Comercial",
-];
-
 type View = "kb" | "form" | "list" | "detail";
 
 // ---------------------------------------------------------------------------
@@ -83,10 +81,26 @@ export default function SuportePage() {
     updateTicket,
   } = useSupport();
 
+  const { departments } = useDepartments(institutionId);
+  const { users: institutionUsers } = useUsers(institutionId);
+  const {
+    userDepartmentIds: myDeptIds,
+    userId: myUserId,
+    userName: myUserName,
+    isGlobalAdmin: isMyGlobalAdmin,
+    isOfficeAdmin: isMyOfficeAdmin,
+    departments: myDepartments,
+  } = useMyDepartments();
+  const isFullAccessAdmin = isMyGlobalAdmin || isMyOfficeAdmin;
+  const filterableDepartments = isFullAccessAdmin ? departments : myDepartments;
+
   const [view, setView] = useState<View>("kb");
   const [selectedTicket, setSelectedTicket] = useState<SupportTicketRow | null>(
     null,
   );
+
+  // Department-filtered users for ticket detail
+  const [ticketDeptUsers, setTicketDeptUsers] = useState<UserPublicRow[] | null>(null);
 
   // KB Search state
   const [kbQuery, setKbQuery] = useState("");
@@ -110,6 +124,27 @@ export default function SuportePage() {
   // Filters (list view)
   const [filterStatus, setFilterStatus] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
+  const [filterDepartment, setFilterDepartment] = useState<string>("all");
+
+  // Load department users when selected ticket's department changes
+  const selectedDeptId = selectedTicket?.department_id ?? null;
+  useEffect(() => {
+    if (!selectedDeptId) {
+      setTicketDeptUsers(null);
+      return;
+    }
+    let active = true;
+    fetchDepartmentUsersClient(selectedDeptId)
+      .then((users) => { if (active) setTicketDeptUsers(users); })
+      .catch(() => { if (active) setTicketDeptUsers(null); });
+    return () => { active = false; };
+  }, [selectedDeptId]);
+
+  // Users shown in the Responsável dropdown (filtered by department)
+  const availableTicketUsers = useMemo(() => {
+    if (selectedDeptId && ticketDeptUsers) return ticketDeptUsers.filter((u) => u.isActive);
+    return institutionUsers.filter((u) => u.isActive);
+  }, [selectedDeptId, ticketDeptUsers, institutionUsers]);
 
   // KB search handler
   const handleKBSearch = useCallback(async () => {
@@ -183,7 +218,7 @@ export default function SuportePage() {
     }
   }, [newMessage, selectedTicket]);
 
-  // sysAdmin update ticket
+  // sysAdmin update ticket — generic field update (used for status)
   const handleUpdateTicket = useCallback(
     async (field: string, value: string) => {
       if (!selectedTicket) return;
@@ -199,17 +234,87 @@ export default function SuportePage() {
     [selectedTicket, updateTicket],
   );
 
+  // Handle department change (cascading: reset user)
+  const handleDeptChange = useCallback(
+    async (deptIdStr: string) => {
+      if (!selectedTicket) return;
+      const deptId = deptIdStr ? Number(deptIdStr) : null;
+      const dept = departments.find((d) => d.id === deptId);
+      try {
+        const updated = await updateTicket(selectedTicket.id, {
+          department_id: deptId,
+          department_name: dept?.name ?? null,
+          sector: dept?.name ?? "",
+          assigned_to_user_id: null,
+          assigned_to: "",
+        });
+        setSelectedTicket(updated);
+      } catch (err) {
+        console.error("Erro ao atualizar departamento:", err);
+      }
+    },
+    [selectedTicket, updateTicket, departments],
+  );
+
+  // Handle user assignment change
+  const handleUserAssignChange = useCallback(
+    async (userIdStr: string) => {
+      if (!selectedTicket) return;
+      const userId = userIdStr ? Number(userIdStr) : null;
+      const user = institutionUsers.find((u) => u.id === userId);
+      try {
+        const updated = await updateTicket(selectedTicket.id, {
+          assigned_to_user_id: userId,
+          assigned_to: user?.name ?? "",
+        });
+        setSelectedTicket(updated);
+      } catch (err) {
+        console.error("Erro ao atualizar responsável:", err);
+      }
+    },
+    [selectedTicket, updateTicket, institutionUsers],
+  );
+
   // Scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   // Filtered tickets
-  const filteredTickets = tickets.filter((t) => {
-    if (filterStatus && t.status !== filterStatus) return false;
-    if (filterCategory && t.category !== filterCategory) return false;
-    return true;
-  });
+  const filteredTickets = useMemo(() => {
+    let result = [...tickets];
+
+    // Visibility filter by department (non-admin)
+    if (!isFullAccessAdmin && myDeptIds.length > 0) {
+      result = result.filter((t) => {
+        // Ticket belongs to one of my departments
+        if (t.department_id && myDeptIds.includes(t.department_id)) return true;
+        // Ticket assigned directly to me
+        if (t.assigned_to_user_id && myUserId && t.assigned_to_user_id === myUserId) return true;
+        // Ticket assigned to me (legacy)
+        if (myUserName && t.assigned_to && t.assigned_to === myUserName) return true;
+        // Ticket created by me
+        if (myUserName && t.created_by_name === myUserName) return true;
+        // Ticket with no department and no assignee
+        if (!t.department_id && !t.assigned_to) return true;
+        return false;
+      });
+    }
+
+    // Manual department filter (dropdown)
+    if (filterDepartment !== "all") {
+      const deptId = Number(filterDepartment);
+      result = result.filter((t) => t.department_id === deptId);
+    }
+
+    if (filterStatus && filterStatus !== "") {
+      result = result.filter((t) => t.status === filterStatus);
+    }
+    if (filterCategory && filterCategory !== "") {
+      result = result.filter((t) => t.category === filterCategory);
+    }
+    return result;
+  }, [tickets, isFullAccessAdmin, myDeptIds, myUserId, myUserName, filterDepartment, filterStatus, filterCategory]);
 
   const formatDate = (iso: string) => {
     if (!iso) return "";
@@ -465,6 +570,23 @@ export default function SuportePage() {
                 </select>
                 <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
               </div>
+              {filterableDepartments.length > 0 && (
+                <div className="relative">
+                  <select
+                    value={filterDepartment}
+                    onChange={(e) => setFilterDepartment(e.target.value)}
+                    className="flex h-8 rounded-md border border-input bg-background px-2 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring appearance-none pr-7"
+                  >
+                    <option value="all">Todos os departamentos</option>
+                    {filterableDepartments.map((dept) => (
+                      <option key={dept.id} value={dept.id}>
+                        {dept.name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                </div>
+              )}
               <div className="ml-auto">
                 <button
                   onClick={refresh}
@@ -622,37 +744,43 @@ export default function SuportePage() {
                   </div>
                   <div className="space-y-1">
                     <label className="text-[11px] font-medium text-muted-foreground">
-                      Setor
+                      Departamento
                     </label>
                     <div className="relative">
                       <select
-                        value={selectedTicket.sector}
-                        onChange={(e) =>
-                          handleUpdateTicket("sector", e.target.value)
-                        }
+                        value={selectedTicket.department_id ?? ""}
+                        onChange={(e) => handleDeptChange(e.target.value)}
                         className="flex h-8 w-full rounded-md border border-input bg-background px-2 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring appearance-none pr-7"
                       >
-                        {SECTORS.map((s) => (
-                          <option key={s} value={s}>
-                            {s}
+                        <option value="">Sem departamento</option>
+                        {departments.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.name}
                           </option>
                         ))}
                       </select>
                       <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
                     </div>
                   </div>
-                  <div className="space-y-1 min-w-0">
+                  <div className="space-y-1">
                     <label className="text-[11px] font-medium text-muted-foreground">
                       Responsável
                     </label>
-                    <Input
-                      value={selectedTicket.assigned_to}
-                      onChange={(e) =>
-                        handleUpdateTicket("assigned_to", e.target.value)
-                      }
-                      className="h-8 text-xs w-full"
-                      placeholder="Responsável"
-                    />
+                    <div className="relative">
+                      <select
+                        value={selectedTicket.assigned_to_user_id ?? ""}
+                        onChange={(e) => handleUserAssignChange(e.target.value)}
+                        className="flex h-8 w-full rounded-md border border-input bg-background px-2 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring appearance-none pr-7"
+                      >
+                        <option value="">Selecione o responsável</option>
+                        {availableTicketUsers.map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.name}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                    </div>
                   </div>
                 </div>
               )}
@@ -661,12 +789,12 @@ export default function SuportePage() {
               {!isSysAdmin && (
                 <div className="flex flex-wrap gap-4 text-[11px] text-muted-foreground">
                   <span>
-                    Setor: <strong>{selectedTicket.sector || "—"}</strong>
+                    Departamento: <strong>{selectedTicket.department_name || selectedTicket.sector || "—"}</strong>
                   </span>
-                  {selectedTicket.assigned_to && (
+                  {(selectedTicket.assigned_to || selectedTicket.assigned_to_user_id) && (
                     <span>
                       Responsável:{" "}
-                      <strong>{selectedTicket.assigned_to}</strong>
+                      <strong>{selectedTicket.assigned_to || "—"}</strong>
                     </span>
                   )}
                 </div>

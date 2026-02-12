@@ -33,7 +33,10 @@ import { getCaseStage, stageLabels, stageColors } from "@/lib/case-stats";
 import { cn } from "@/lib/utils";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import { useUsers } from "@/hooks/use-users";
+import { useDepartments } from "@/hooks/use-departments";
+import { fetchDepartmentUsersClient } from "@/services/departments-client";
 import { notifyTransferWebhook } from "@/services/transfer-notify";
+import type { UserPublicRow } from "@/services/permissions";
 
 type KanbanCardDetailProps = {
   caseData: BaserowCaseRow | null;
@@ -78,19 +81,48 @@ export function KanbanCardDetail({
   const { data } = useOnboarding();
   const institutionId = data.auth?.institutionId;
   const { users: institutionUsers } = useUsers(institutionId);
+  const { departments } = useDepartments(institutionId);
 
   const [clientData, setClientData] = useState<ClientRow | null>(null);
   const [isLoadingClient, setIsLoadingClient] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [responsavel, setResponsavel] = useState("");
+  const [selectedDeptId, setSelectedDeptId] = useState<number | null>(null);
+  const [deptUsers, setDeptUsers] = useState<UserPublicRow[] | null>(null);
   const [valorInput, setValorInput] = useState("");
   const [updatingResultado, setUpdatingResultado] = useState(false);
   const [formData, setFormData] = useState<Partial<ClientRow>>({});
 
+  // Load department users when department changes
+  useEffect(() => {
+    if (!selectedDeptId) {
+      setDeptUsers(null);
+      return;
+    }
+    let active = true;
+    fetchDepartmentUsersClient(selectedDeptId)
+      .then((users) => {
+        if (active) setDeptUsers(users);
+      })
+      .catch(() => {
+        if (active) setDeptUsers(null);
+      });
+    return () => { active = false; };
+  }, [selectedDeptId]);
+
+  // The list of users shown in the Responsável dropdown
+  const availableUsers = useMemo(() => {
+    if (selectedDeptId && deptUsers) return deptUsers.filter((u) => u.isActive);
+    return institutionUsers.filter((u) => u.isActive);
+  }, [selectedDeptId, deptUsers, institutionUsers]);
+
   useEffect(() => {
     if (open && caseData) {
       setResponsavel(caseData.responsavel || "");
+      setSelectedDeptId(
+        typeof caseData.department_id === "number" ? caseData.department_id : null,
+      );
       const currentValor = typeof caseData.valor === "number"
         ? caseData.valor
         : typeof caseData.valor === "string"
@@ -179,15 +211,29 @@ export function KanbanCardDetail({
       // Get phone number - this is the unique identifier for clients
       const phone = caseData.CustumerPhone || formData.celular || "";
 
-      // Save case information (responsavel + valor)
+      // Save case information (responsavel + valor + department)
       const newValor = parseCurrencyInput(valorInput);
       const previousResponsavel = caseData.responsavel || "";
-      await updateBaserowCase(caseData.id, { responsavel, valor: newValor });
-      onCaseUpdate?.(caseData.id, { responsavel, valor: newValor });
+      const selectedDept = departments.find((d) => d.id === selectedDeptId);
+      const targetUser = institutionUsers.find((u) => u.name === responsavel);
+      const caseUpdates: Record<string, unknown> = {
+        responsavel,
+        valor: newValor,
+        department_id: selectedDeptId ?? null,
+        department_name: selectedDept?.name ?? null,
+        assigned_to_user_id: targetUser?.id ?? null,
+      };
+      await updateBaserowCase(caseData.id, caseUpdates);
+      onCaseUpdate?.(caseData.id, {
+        responsavel,
+        valor: newValor,
+        department_id: selectedDeptId,
+        department_name: selectedDept?.name ?? null,
+        assigned_to_user_id: targetUser?.id ?? null,
+      });
 
       // Notify webhook if responsavel changed
       if (responsavel && responsavel !== previousResponsavel) {
-        const targetUser = institutionUsers.find((u) => u.name === responsavel);
         if (targetUser) {
           notifyTransferWebhook({
             type: previousResponsavel ? "transfer" : "new_case",
@@ -201,6 +247,9 @@ export function KanbanCardDetail({
               institutionId: institutionId,
               responsavel,
             },
+            department: selectedDept
+              ? { id: selectedDept.id, name: selectedDept.name }
+              : undefined,
           });
         }
       }
@@ -307,6 +356,28 @@ export function KanbanCardDetail({
                 <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground uppercase tracking-wide">
+                      Departamento
+                    </Label>
+                    <select
+                      value={selectedDeptId ?? ""}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSelectedDeptId(val ? Number(val) : null);
+                        // Reset responsável when department changes
+                        setResponsavel("");
+                      }}
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    >
+                      <option value="">Todos (sem filtro)</option>
+                      {departments.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground uppercase tracking-wide">
                       Responsável
                     </Label>
                     <select
@@ -315,7 +386,7 @@ export function KanbanCardDetail({
                       className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     >
                       <option value="">Selecione o responsável</option>
-                      {institutionUsers.map((u) => (
+                      {availableUsers.map((u) => (
                         <option key={u.id} value={u.name}>
                           {u.name} ({u.email})
                         </option>

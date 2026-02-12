@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { getRequestAuth } from "@/lib/auth/session";
 import { eventBelongsToInstitution } from "@/lib/calendar/event-helpers";
 import { resolveInstitutionId } from "@/lib/calendar/request";
 import {
@@ -43,6 +44,11 @@ export async function DELETE(
   { params }: RouteParams,
 ) {
   try {
+    const auth = getRequestAuth(request);
+    if (!auth) {
+      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+    }
+
     const resolvedParams = await params;
     const eventId = parseId(resolvedParams?.eventId);
     const guestId = parseId(resolvedParams?.guestId);
@@ -86,8 +92,7 @@ export async function DELETE(
     console.error("[calendar/events/:id/guests/:guestId] DELETE error:", error);
     return NextResponse.json(
       {
-        error:
-          error instanceof Error ? error.message : "Erro ao remover convidado",
+        error: "Erro ao remover convidado",
       },
       { status: 500 },
     );

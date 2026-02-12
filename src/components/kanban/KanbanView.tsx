@@ -89,6 +89,7 @@ const generateUpdateId = (): string => {
 type KanbanViewProps = {
   cases: BaserowCaseRow[];
   institutionId: number;
+  departmentId?: number | null;
   onRefresh?: () => void;
   onCaseUpdate?: (caseId: number, updates: Partial<BaserowCaseRow>) => void;
 };
@@ -96,6 +97,7 @@ type KanbanViewProps = {
 export function KanbanView({
   cases,
   institutionId,
+  departmentId,
   onRefresh,
   onCaseUpdate,
 }: KanbanViewProps) {
@@ -225,24 +227,32 @@ export function KanbanView({
     try {
       setIsLoading(true);
 
-      // Load columns (initialize defaults if none exist)
-      let kanbanColumns = await getKanbanColumns(institutionId);
+      // Load columns and statuses in parallel
+      const [columnsResult, statusesResult] = await Promise.allSettled([
+        getKanbanColumns(institutionId, departmentId),
+        getCaseKanbanStatus(undefined, institutionId),
+      ]);
+
+      // Process columns
+      let kanbanColumns: KanbanColumnRow[] = [];
+      if (columnsResult.status === "fulfilled") {
+        kanbanColumns = columnsResult.value;
+      }
       if (kanbanColumns.length === 0) {
-        kanbanColumns = await initializeDefaultKanbanColumns(institutionId);
+        kanbanColumns = await initializeDefaultKanbanColumns(institutionId, departmentId);
       }
       setColumns(kanbanColumns);
 
-      // Load case statuses
-      try {
-        const statuses = await getCaseKanbanStatus(undefined, institutionId);
-        setCaseStatuses(statuses);
+      // Process statuses
+      if (statusesResult.status === "fulfilled") {
+        setCaseStatuses(statusesResult.value);
         setStatusLoadError(null);
-      } catch (statusError) {
+      } else {
         const message =
-          statusError instanceof Error
-            ? statusError.message
+          statusesResult.reason instanceof Error
+            ? statusesResult.reason.message
             : "Nao foi possivel carregar status do Kanban";
-        console.error("Falha ao buscar status do Kanban:", statusError);
+        console.error("Falha ao buscar status do Kanban:", statusesResult.reason);
         setStatusLoadError(message);
       }
     } catch (err) {
@@ -250,7 +260,7 @@ export function KanbanView({
     } finally {
       setIsLoading(false);
     }
-  }, [institutionId]);
+  }, [institutionId, departmentId]);
 
   useEffect(() => {
     loadKanbanData();
@@ -587,9 +597,10 @@ export function KanbanView({
           });
           newColumns.push(updated);
         } else {
-          // Create new
+          // Create new — scoped by department
           const created = await createKanbanColumn({
             institution_id: institutionId,
+            department_id: departmentId ?? null,
             name: col.name || "Nova Coluna",
             ordem: col.ordem || newColumns.length + 1,
             color: col.color || "gray",

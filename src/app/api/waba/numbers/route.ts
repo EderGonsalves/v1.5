@@ -1,36 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { getRequestAuth } from "@/lib/auth/session";
 import { getInstitutionWabaPhoneNumbers } from "@/lib/waba";
 import { getBaserowConfigs } from "@/services/api";
 
-const verifyAuth = (request: NextRequest): { institutionId: number } | null => {
-  const authCookie = request.cookies.get("onboarding_auth");
-
-  if (!authCookie?.value) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(authCookie.value);
-    const institutionId = parsed?.institutionId;
-    if (typeof institutionId !== "number") {
-      return null;
-    }
-    return { institutionId };
-  } catch {
-    return null;
-  }
-};
-
 export async function GET(request: NextRequest) {
   try {
-    const auth = verifyAuth(request);
-    console.log("[waba/numbers] Auth result:", auth);
+    const auth = getRequestAuth(request);
 
     if (!auth) {
-      console.log("[waba/numbers] Unauthorized - no auth cookie or invalid");
       return NextResponse.json(
-        { error: "unauthorized", message: "Não autenticado" },
+        { error: "Não autenticado" },
         { status: 401 }
       );
     }
@@ -89,10 +69,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[waba/numbers] Erro ao buscar números:", error);
     return NextResponse.json(
-      {
-        error: "server_error",
-        message: error instanceof Error ? error.message : "Erro ao buscar números WABA",
-      },
+      { error: "Erro ao buscar números WABA" },
       { status: 500 }
     );
   }

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 
+import { getRequestAuth } from "@/lib/auth/session";
 import { onboardingPayloadSchema } from "@/lib/validations";
 
 const CONFIG_API_URL =
@@ -13,31 +14,17 @@ type RouteContext = {
 
 // Função auxiliar para verificar autenticação
 const verifyAuth = (request: NextRequest, institutionId: string): { valid: boolean; error?: string } => {
-  // Verificar se há um token de autenticação
-  const authCookie = request.cookies.get("onboarding_auth");
-
-  if (!authCookie?.value) {
+  const auth = getRequestAuth(request);
+  if (!auth) {
     return { valid: false, error: "Não autenticado" };
   }
-
-  try {
-    const authData = JSON.parse(authCookie.value);
-    const userInstitutionId = authData?.institutionId;
-
-    // Admin (institutionId 4) pode acessar qualquer instituição
-    if (userInstitutionId === 4) {
-      return { valid: true };
-    }
-
-    // Usuário normal só pode acessar sua própria instituição
-    if (String(userInstitutionId) !== String(institutionId)) {
-      return { valid: false, error: "Acesso não autorizado a esta instituição" };
-    }
-
+  if (auth.institutionId === 4) {
     return { valid: true };
-  } catch {
-    return { valid: false, error: "Token de autenticação inválido" };
   }
+  if (String(auth.institutionId) !== String(institutionId)) {
+    return { valid: false, error: "Acesso não autorizado a esta instituição" };
+  }
+  return { valid: true };
 };
 
 export async function GET(
@@ -126,8 +113,6 @@ export async function GET(
     return NextResponse.json(
       {
         error: "Erro interno ao buscar configuração",
-        message:
-          error instanceof Error ? error.message : "Erro desconhecido",
       },
       { status: 500 },
     );
@@ -269,8 +254,6 @@ export async function PUT(
     return NextResponse.json(
       {
         error: "Erro interno ao atualizar configuração",
-        message:
-          error instanceof Error ? error.message : "Erro desconhecido",
       },
       { status: 500 },
     );

@@ -239,8 +239,7 @@ export async function POST(request: NextRequest) {
     console.error("[permissions/seed] error:", error);
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "Erro no seed",
-        details: error instanceof Error ? error.stack : undefined,
+        error: "Erro no seed",
       },
       { status: 500 },
     );

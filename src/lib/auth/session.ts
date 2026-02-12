@@ -1,9 +1,12 @@
-import type { NextRequest } from "next/server";
+import type { NextRequest, NextResponse } from "next/server";
 
 import type { AuthInfo } from "@/lib/validations";
 
 import { ONBOARDING_AUTH_COOKIE } from "./constants";
 import { ensureLegacyUserIdentifier, extractLegacyUserId } from "./user";
+
+const COOKIE_MAX_AGE = 7 * 24 * 60 * 60; // 7 days in seconds
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
 const coerceNumber = (value: unknown): number | undefined => {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -79,6 +82,33 @@ export const getRequestAuth = (request: NextRequest): AuthInfo | null => {
     return null;
   }
   return parseAuthCookie(cookie.value);
+};
+
+/**
+ * Sets the auth cookie on a NextResponse with HttpOnly, Secure, SameSite flags.
+ */
+export const setAuthCookie = (response: NextResponse, auth: AuthInfo): void => {
+  const value = JSON.stringify(auth);
+  response.cookies.set(ONBOARDING_AUTH_COOKIE, value, {
+    httpOnly: true,
+    secure: IS_PRODUCTION,
+    sameSite: "lax",
+    path: "/",
+    maxAge: COOKIE_MAX_AGE,
+  });
+};
+
+/**
+ * Clears the auth cookie on a NextResponse.
+ */
+export const clearAuthCookie = (response: NextResponse): void => {
+  response.cookies.set(ONBOARDING_AUTH_COOKIE, "", {
+    httpOnly: true,
+    secure: IS_PRODUCTION,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+  });
 };
 
 export const resolveLegacyIdentifier = (auth: AuthInfo): string | null => {

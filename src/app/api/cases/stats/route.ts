@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { getRequestAuth } from "@/lib/auth/session";
 import {
   computeCaseStatistics,
   type CaseStatistics,
@@ -49,30 +50,17 @@ const verifyAuth = (
   request: NextRequest,
   institutionId: string,
 ): { valid: boolean; error?: string; userInstitutionId?: number } => {
-  const authCookie = request.cookies.get("onboarding_auth");
-
-  if (!authCookie?.value) {
+  const auth = getRequestAuth(request);
+  if (!auth) {
     return { valid: false, error: "Não autenticado" };
   }
-
-  try {
-    const authData = JSON.parse(authCookie.value);
-    const userInstitutionId = authData?.institutionId;
-
-    // Admin (institutionId 4) pode acessar qualquer instituição
-    if (userInstitutionId === 4) {
-      return { valid: true, userInstitutionId };
-    }
-
-    // Usuário normal só pode acessar sua própria instituição
-    if (String(userInstitutionId) !== String(institutionId)) {
-      return { valid: false, error: "Acesso não autorizado a esta instituição" };
-    }
-
-    return { valid: true, userInstitutionId };
-  } catch {
-    return { valid: false, error: "Token de autenticação inválido" };
+  if (auth.institutionId === 4) {
+    return { valid: true, userInstitutionId: auth.institutionId };
   }
+  if (String(auth.institutionId) !== String(institutionId)) {
+    return { valid: false, error: "Acesso não autorizado a esta instituição" };
+  }
+  return { valid: true, userInstitutionId: auth.institutionId };
 };
 
 export async function GET(request: NextRequest) {
@@ -138,7 +126,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         error: "Erro interno ao calcular estatísticas",
-        message: error instanceof Error ? error.message : "Erro desconhecido",
       },
       { status: 500 },
     );

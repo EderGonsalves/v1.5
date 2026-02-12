@@ -77,6 +77,7 @@ type ColumnEditorModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSave: (columns: KanbanColumnRow[]) => Promise<void>;
+  departmentName?: string | null;
 };
 
 export function ColumnEditorModal({
@@ -84,6 +85,7 @@ export function ColumnEditorModal({
   open,
   onOpenChange,
   onSave,
+  departmentName,
 }: ColumnEditorModalProps) {
   const [editableColumns, setEditableColumns] = useState<EditableColumn[]>(() =>
     columns.map((col, idx) => ({
@@ -230,7 +232,9 @@ export function ColumnEditorModal({
             Configurar Colunas
           </DialogTitle>
           <DialogDescription>
-            Personalize as colunas do seu quadro Kanban
+            {departmentName
+              ? `Colunas do departamento: ${departmentName}`
+              : "Colunas padrão da instituição"}
           </DialogDescription>
         </DialogHeader>
 

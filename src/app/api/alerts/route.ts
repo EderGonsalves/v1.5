@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getRequestAuth } from "@/lib/auth/session";
 import { getBaserowCaseById } from "@/services/api";
 import { sendCaseAlert } from "@/lib/alerts";
 import type { CaseStage } from "@/lib/case-stats";
+
+const SYSADMIN_INSTITUTION_ID = 4;
 
 const VALID_STAGES: CaseStage[] = [
   "DepoimentoInicial",
@@ -14,10 +17,28 @@ const isValidStage = (value: unknown): value is CaseStage => {
 };
 
 export async function POST(request: NextRequest) {
+  const auth = getRequestAuth(request);
+  if (!auth) {
+    return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  }
+
   try {
     const body = await request.json();
 
     const { caseId, alertType, institutionId } = body;
+
+    // Verify institution access
+    const parsedInst = Number(institutionId);
+    if (
+      auth.institutionId !== SYSADMIN_INSTITUTION_ID &&
+      Number.isFinite(parsedInst) &&
+      auth.institutionId !== parsedInst
+    ) {
+      return NextResponse.json(
+        { error: "Sem permissão para esta instituição" },
+        { status: 403 },
+      );
+    }
 
     // Validate required fields
     if (!caseId) {
@@ -93,15 +114,18 @@ export async function POST(request: NextRequest) {
     console.error("Erro ao processar alerta:", error);
 
     return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : "Erro interno do servidor",
-      },
+      { error: "Erro interno do servidor" },
       { status: 500 },
     );
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = getRequestAuth(request);
+  if (!auth) {
+    return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  }
+
   return NextResponse.json({
     message: "API de Alertas",
     endpoints: {

@@ -8,7 +8,16 @@ import {
   Building2,
   LayoutGrid,
   Loader2,
+  FileText,
+  MessageCircle,
+  CalendarDays,
+  BarChart3,
+  Settings,
+  Plug,
+  Repeat2,
+  CircleHelp,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import { Button } from "@/components/ui/button";
@@ -22,6 +31,19 @@ import {
   updateInstitutionFeaturesClient,
 } from "@/services/permissions-client";
 import type { InstitutionFeature } from "@/services/permissions";
+
+const FEATURE_ICONS: Record<string, LucideIcon> = {
+  casos: FileText,
+  chat: MessageCircle,
+  agenda: CalendarDays,
+  estatisticas: BarChart3,
+  configuracoes: Settings,
+  conexoes: Plug,
+  "follow-up": Repeat2,
+  usuarios: Users,
+  departamentos: Building2,
+  suporte: CircleHelp,
+};
 
 export default function PermissionsAdminPage() {
   const { data, isHydrated } = useOnboarding();
@@ -278,16 +300,20 @@ export default function PermissionsAdminPage() {
         ) : (
           features.map((feature) => {
             const isUpdating = updatingFeatureKeys.has(feature.key);
+            const Icon = FEATURE_ICONS[feature.key];
             return (
               <div
                 key={feature.key}
                 className="flex items-center justify-between border-b border-[#7E99B5] px-4 py-3 dark:border-border/60"
               >
-                <div>
-                  <p className="text-sm font-semibold">{feature.label}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {feature.path}
-                  </p>
+                <div className="flex items-center gap-2">
+                  {Icon && <Icon className="h-4 w-4 text-muted-foreground shrink-0" />}
+                  <div>
+                    <p className="text-sm font-semibold">{feature.label}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {feature.path}
+                    </p>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   {isUpdating && (

@@ -11,6 +11,7 @@ import {
   Eye,
   EyeOff,
   Building2,
+  ShieldOff,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import { LoadingScreen } from "@/components/ui/loading-screen";
 import { Switch } from "@/components/ui/switch";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import { useUsers } from "@/hooks/use-users";
+import { useMyDepartments } from "@/hooks/use-my-departments";
 import { fetchInstitutionsClient } from "@/services/permissions-client";
 
 type UserFormData = {
@@ -28,6 +30,7 @@ type UserFormData = {
   phone: string;
   oab: string;
   isActive: boolean;
+  isOfficeAdmin: boolean;
 };
 
 const emptyForm: UserFormData = {
@@ -37,6 +40,7 @@ const emptyForm: UserFormData = {
   phone: "",
   oab: "",
   isActive: true,
+  isOfficeAdmin: false,
 };
 
 function UserForm({
@@ -45,12 +49,14 @@ function UserForm({
   onSubmit,
   onCancel,
   isSubmitting,
+  canToggleAdmin,
 }: {
   initial: UserFormData;
   isEdit: boolean;
   onSubmit: (data: UserFormData) => Promise<void>;
   onCancel: () => void;
   isSubmitting: boolean;
+  canToggleAdmin?: boolean;
 }) {
   const [form, setForm] = useState<UserFormData>(initial);
   const [showPassword, setShowPassword] = useState(false);
@@ -143,6 +149,19 @@ function UserForm({
             </span>
           </div>
         )}
+        {canToggleAdmin && (
+          <div className="flex items-center gap-2 h-9">
+            <Switch
+              checked={form.isOfficeAdmin}
+              onCheckedChange={(checked) =>
+                setForm({ ...form, isOfficeAdmin: checked })
+              }
+            />
+            <span className="text-sm text-foreground">
+              {form.isOfficeAdmin ? "Admin do Escritório" : "Usuário comum"}
+            </span>
+          </div>
+        )}
       </div>
 
       {formError && (
@@ -182,6 +201,9 @@ function UserForm({
 export default function UsuariosPage() {
   const { data } = useOnboarding();
   const isSysAdmin = data.auth?.institutionId === 4;
+  const { isOfficeAdmin: isMyOfficeAdmin, userId: myUserId } = useMyDepartments();
+  // SysAdmin or office admin can toggle admin flag on other users
+  const canManageAdmins = isSysAdmin || isMyOfficeAdmin;
 
   const [selectedInstitutionId, setSelectedInstitutionId] = useState<
     number | undefined
@@ -206,6 +228,8 @@ export default function UsuariosPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isResettingAdmins, setIsResettingAdmins] = useState(false);
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
 
   // Load institutions list for sysAdmin
   useEffect(() => {
@@ -236,6 +260,23 @@ export default function UsuariosPage() {
     }
   }, [refresh]);
 
+  const handleResetAdmins = useCallback(async () => {
+    if (!confirm("Tem certeza? Isso vai remover o flag admin de TODOS os usuários.")) return;
+    setIsResettingAdmins(true);
+    setResetMessage(null);
+    try {
+      const res = await fetch("/api/v1/users/reset-admin", { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Erro ao resetar");
+      setResetMessage(json.message);
+      await refresh();
+    } catch (err) {
+      setResetMessage(err instanceof Error ? err.message : "Erro ao resetar flags");
+    } finally {
+      setIsResettingAdmins(false);
+    }
+  }, [refresh]);
+
   const handleCreate = useCallback(
     async (form: UserFormData) => {
       setIsSubmitting(true);
@@ -247,6 +288,7 @@ export default function UsuariosPage() {
           phone: form.phone || undefined,
           oab: form.oab || undefined,
           institutionId: selectedInstitutionId,
+          isOfficeAdmin: form.isOfficeAdmin || undefined,
         });
         setShowCreateForm(false);
       } finally {
@@ -270,13 +312,16 @@ export default function UsuariosPage() {
         if (form.password) {
           payload.password = form.password;
         }
+        if (canManageAdmins) {
+          payload.isOfficeAdmin = form.isOfficeAdmin;
+        }
         await updateUser(userId, payload);
         setEditingId(null);
       } finally {
         setIsSubmitting(false);
       }
     },
-    [updateUser],
+    [updateUser, canManageAdmins],
   );
 
   if (isLoading) {
@@ -336,22 +381,47 @@ export default function UsuariosPage() {
               <Building2 className="h-4 w-4 text-muted-foreground" />
               <span className="text-xs text-muted-foreground">Instituição</span>
             </div>
-            <select
-              value={selectedInstitutionId ?? ""}
-              onChange={(e) => {
-                const val = e.target.value;
-                setSelectedInstitutionId(val ? Number(val) : undefined);
-              }}
-              className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs text-foreground truncate sm:w-auto sm:max-w-[280px]"
-              disabled={loadingInstitutions}
-            >
-              <option value="">Todas</option>
-              {institutions.map((inst) => (
-                <option key={inst.institutionId} value={inst.institutionId}>
-                  {inst.companyName} ({inst.institutionId})
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedInstitutionId ?? ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSelectedInstitutionId(val ? Number(val) : undefined);
+                }}
+                className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs text-foreground truncate sm:w-auto sm:max-w-[280px]"
+                disabled={loadingInstitutions}
+              >
+                <option value="">Todas</option>
+                {institutions.map((inst) => (
+                  <option key={inst.institutionId} value={inst.institutionId}>
+                    {inst.companyName} ({inst.institutionId})
+                  </option>
+                ))}
+              </select>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleResetAdmins}
+                disabled={isResettingAdmins}
+                className="gap-1 text-xs shrink-0"
+                title="Resetar flag admin de todos os usuários"
+              >
+                {isResettingAdmins ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <ShieldOff className="h-3.5 w-3.5" />
+                )}
+                <span className="hidden sm:inline">Reset Admins</span>
+              </Button>
+            </div>
+          </div>
+        )}
+        {resetMessage && (
+          <div className="mx-4 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200 flex items-center justify-between">
+            <span>{resetMessage}</span>
+            <button onClick={() => setResetMessage(null)} className="ml-2 text-blue-500 hover:text-blue-700">
+              <X className="h-3 w-3" />
+            </button>
           </div>
         )}
 
@@ -375,6 +445,7 @@ export default function UsuariosPage() {
               onSubmit={handleCreate}
               onCancel={() => setShowCreateForm(false)}
               isSubmitting={isSubmitting}
+              canToggleAdmin={canManageAdmins}
             />
           </div>
         )}
@@ -411,11 +482,13 @@ export default function UsuariosPage() {
                       phone: user.phone,
                       oab: user.oab,
                       isActive: user.isActive,
+                      isOfficeAdmin: user.isOfficeAdmin,
                     }}
                     isEdit
                     onSubmit={(form) => handleUpdate(user.id, form)}
                     onCancel={() => setEditingId(null)}
                     isSubmitting={isSubmitting}
+                    canToggleAdmin={canManageAdmins && user.id !== myUserId}
                   />
                 </div>
               );
@@ -435,6 +508,11 @@ export default function UsuariosPage() {
                     <p className="text-sm font-semibold truncate">
                       {user.name || "Sem nome"}
                     </p>
+                    {user.isOfficeAdmin && (
+                      <span className="shrink-0 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900 dark:text-blue-200">
+                        Admin
+                      </span>
+                    )}
                     {!user.isActive && (
                       <span className="shrink-0 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-900 dark:text-red-200">
                         Inativo

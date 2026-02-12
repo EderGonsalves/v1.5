@@ -1,24 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
 
-const verifyAuth = (request: NextRequest): { institutionId: number } | null => {
-  const authCookie = request.cookies.get("onboarding_auth");
-
-  if (!authCookie?.value) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(authCookie.value);
-    const institutionId = parsed?.institutionId;
-    if (typeof institutionId !== "number") {
-      return null;
-    }
-    return { institutionId };
-  } catch {
-    return null;
-  }
-};
+import { getRequestAuth } from "@/lib/auth/session";
 
 const BASEROW_API_URL =
   process.env.BASEROW_API_URL ??
@@ -63,10 +46,10 @@ const isBrazilianMobile = (num: string): boolean =>
  */
 export async function GET(request: NextRequest) {
   try {
-    const auth = verifyAuth(request);
+    const auth = getRequestAuth(request);
     if (!auth) {
       return NextResponse.json(
-        { error: "unauthorized", message: "Não autenticado" },
+        { error: "Não autenticado" },
         { status: 401 },
       );
     }
@@ -150,10 +133,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[waba/case-numbers] Erro:", error);
     return NextResponse.json(
-      {
-        error: "server_error",
-        message: error instanceof Error ? error.message : "Erro ao buscar números WABA dos casos",
-      },
+      { error: "Erro ao buscar números WABA dos casos" },
       { status: 500 },
     );
   }

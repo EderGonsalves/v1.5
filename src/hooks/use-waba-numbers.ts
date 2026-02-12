@@ -6,6 +6,8 @@ export type WabaNumber = {
   phoneNumber: string;
   configId: number;
   label?: string;
+  departmentId?: number | null;
+  departmentName?: string | null;
 };
 
 type WabaNumbersResponse = {

@@ -8,23 +8,28 @@ import {
   type AuthInfo,
 } from "@/lib/validations";
 import {
-  ONBOARDING_AUTH_COOKIE,
   ONBOARDING_AUTH_STORAGE,
 } from "@/lib/auth/constants";
 import { ensureLegacyUserIdentifier } from "@/lib/auth/user";
 
 
-// Funções para gerenciar cookies
-const setCookie = (name: string, value: string, days = 7): void => {
-  if (typeof document === "undefined") return;
-  const expires = new Date();
-  expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
-  document.cookie = `${name}=${encodeURIComponent(value)};expires=${expires.toUTCString()};path=/;SameSite=Lax`;
+// Server-side cookie management via API (HttpOnly cookie)
+const setSessionCookie = (auth: AuthInfo): Promise<void> => {
+  return fetch("/api/v1/auth/set-session", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(auth),
+  }).then(() => {}).catch(() => {
+    // Fallback: cookie will be set on next login
+  });
 };
 
-const deleteCookie = (name: string): void => {
-  if (typeof document === "undefined") return;
-  document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+const clearSessionCookie = (): void => {
+  fetch("/api/v1/auth/logout", {
+    method: "POST",
+  }).catch(() => {
+    // Non-blocking
+  });
 };
 
 type OnboardingContextValue = {
@@ -62,11 +67,10 @@ const saveAuthToStorage = (auth: AuthInfo | null): void => {
       const normalizedAuth = ensureLegacyUserIdentifier(auth);
       const authJson = JSON.stringify(normalizedAuth);
       localStorage.setItem(ONBOARDING_AUTH_STORAGE, authJson);
-      // Também salva em cookie para que as APIs possam acessar
-      setCookie(ONBOARDING_AUTH_COOKIE, authJson);
+      setSessionCookie(normalizedAuth);
     } else {
       localStorage.removeItem(ONBOARDING_AUTH_STORAGE);
-      deleteCookie(ONBOARDING_AUTH_COOKIE);
+      clearSessionCookie();
     }
   } catch (error) {
     console.error("Erro ao salvar autenticação no localStorage:", error);
@@ -78,19 +82,22 @@ export const OnboardingProvider = ({ children }: { children: ReactNode }) => {
   const [isHydrated, setIsHydrated] = useState(false);
 
   // Carregar auth do localStorage após montagem (evita hydration mismatch)
+  // Aguarda o cookie HttpOnly ser setado antes de marcar isHydrated,
+  // para que API calls subsequentes já tenham o cookie disponível.
   useEffect(() => {
-    const savedAuth = loadAuthFromStorage();
-    if (savedAuth) {
-      const ensuredAuth = ensureLegacyUserIdentifier(savedAuth);
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- sincroniza o auth do localStorage apenas depois do mount
-      setData((prev) => ({
-        ...prev,
-        auth: ensuredAuth,
-      }));
-      // Garantir que o cookie também esteja configurado (caso o usuário já estava logado)
-      setCookie(ONBOARDING_AUTH_COOKIE, JSON.stringify(ensuredAuth));
-    }
-    setIsHydrated(true);
+    const hydrate = async () => {
+      const savedAuth = loadAuthFromStorage();
+      if (savedAuth) {
+        const ensuredAuth = ensureLegacyUserIdentifier(savedAuth);
+        setData((prev) => ({
+          ...prev,
+          auth: ensuredAuth,
+        }));
+        await setSessionCookie(ensuredAuth);
+      }
+      setIsHydrated(true);
+    };
+    hydrate();
   }, []);
 
   useEffect(() => {
@@ -123,7 +130,6 @@ export const OnboardingProvider = ({ children }: { children: ReactNode }) => {
 
   const logout = () => {
     saveAuthToStorage(null);
-    deleteCookie(ONBOARDING_AUTH_COOKIE);
     setData(defaultOnboardingData);
   };
 

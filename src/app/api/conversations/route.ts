@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { getRequestAuth } from "@/lib/auth/session";
 import { getBaserowCases, type BaserowCaseRow } from "@/services/api";
 
 type ConversationItem = {
@@ -13,6 +14,10 @@ type ConversationItem = {
   bjCaseId?: string | number | null;
   etapa?: string;
   wabaPhoneNumber: string | null;
+  department_id?: number | null;
+  department_name?: string | null;
+  assigned_to_user_id?: number | null;
+  responsavel?: string | null;
 };
 
 type CacheEntry = {
@@ -27,23 +32,17 @@ const verifyAuth = (
   request: NextRequest,
   institutionId: string,
 ): { valid: boolean; error?: string; userInstitutionId?: number } => {
-  const authCookie = request.cookies.get("onboarding_auth");
-  if (!authCookie?.value) {
+  const auth = getRequestAuth(request);
+  if (!auth) {
     return { valid: false, error: "Não autenticado" };
   }
-  try {
-    const authData = JSON.parse(authCookie.value);
-    const userInstitutionId = authData?.institutionId;
-    if (userInstitutionId === 4) {
-      return { valid: true, userInstitutionId };
-    }
-    if (String(userInstitutionId) !== String(institutionId)) {
-      return { valid: false, error: "Acesso não autorizado" };
-    }
-    return { valid: true, userInstitutionId };
-  } catch {
-    return { valid: false, error: "Token inválido" };
+  if (auth.institutionId === 4) {
+    return { valid: true, userInstitutionId: auth.institutionId };
   }
+  if (String(auth.institutionId) !== String(institutionId)) {
+    return { valid: false, error: "Acesso não autorizado" };
+  }
+  return { valid: true, userInstitutionId: auth.institutionId };
 };
 
 const normalizeRow = (row: BaserowCaseRow): ConversationItem => {
@@ -72,6 +71,10 @@ const normalizeRow = (row: BaserowCaseRow): ConversationItem => {
     bjCaseId: row.BJCaseId ?? null,
     etapa: row.EtapaPerguntas ?? row.EtapaFinal ?? undefined,
     wabaPhoneNumber,
+    department_id: (row.department_id as number) ?? null,
+    department_name: (row.department_name as string) ?? null,
+    assigned_to_user_id: (row.assigned_to_user_id as number) ?? null,
+    responsavel: (row.responsavel as string) ?? null,
   };
 };
 
@@ -141,7 +144,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         error: "Erro ao carregar conversas",
-        message: error instanceof Error ? error.message : "Erro desconhecido",
       },
       { status: 500 },
     );

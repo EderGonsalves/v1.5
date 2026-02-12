@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 
+import { getRequestAuth } from "@/lib/auth/session";
+
 type UnknownRecord = Record<string, unknown>;
 
 const toNumber = (value: unknown): number | null => {
@@ -42,20 +44,6 @@ const extractFromBody = (body?: UnknownRecord | null): number | null => {
   return null;
 };
 
-const extractFromCookie = (request: NextRequest): number | null => {
-  const cookie = request.cookies.get("onboarding_auth");
-  if (!cookie?.value) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(cookie.value) as UnknownRecord;
-    return toNumber(parsed.institutionId);
-  } catch {
-    return null;
-  }
-};
-
 export const resolveInstitutionId = (
   request: NextRequest,
   body?: UnknownRecord | null,
@@ -68,10 +56,12 @@ export const resolveInstitutionId = (
     request.headers.get("x-inst-id") ??
     request.headers.get("x-tenant-id");
 
+  const auth = getRequestAuth(request);
+
   return (
     toNumber(queryInstitution) ??
     toNumber(headerInstitution) ??
     extractFromBody(body) ??
-    extractFromCookie(request)
+    (auth ? auth.institutionId : null)
   );
 };

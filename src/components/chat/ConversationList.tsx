@@ -13,6 +13,9 @@ type ConversationListProps = {
   onSelect: (conversation: Conversation) => void;
   isLoading: boolean;
   isRefreshing: boolean;
+  isLoadingMore?: boolean;
+  hasMoreFromServer?: boolean;
+  onLoadMore?: () => void;
   onRefresh: () => void;
   className?: string;
 };
@@ -26,6 +29,9 @@ export const ConversationList = ({
   onSelect,
   isLoading,
   isRefreshing,
+  isLoadingMore = false,
+  hasMoreFromServer = false,
+  onLoadMore,
   onRefresh,
   className,
 }: ConversationListProps) => {
@@ -49,15 +55,16 @@ export const ConversationList = ({
     return filteredConversations.slice(0, visibleCount);
   }, [filteredConversations, visibleCount]);
 
-  // Verifica se há mais para carregar
+  // Verifica se há mais para exibir (virtual) ou buscar (servidor)
   const hasMoreToShow = filteredConversations.length > visibleCount;
+  const showSentinel = hasMoreToShow || hasMoreFromServer;
 
-  // Função para carregar mais
+  // Função para carregar mais (virtual)
   const showMore = useCallback(() => {
     setVisibleCount((prev) => prev + LOAD_MORE_COUNT);
   }, []);
 
-  // Infinite scroll com IntersectionObserver
+  // Infinite scroll com IntersectionObserver (virtual + server)
   useEffect(() => {
     const sentinel = loadMoreRef.current;
     if (!sentinel) return;
@@ -65,8 +72,12 @@ export const ConversationList = ({
     const observer = new IntersectionObserver(
       (entries) => {
         const entry = entries[0];
-        if (entry.isIntersecting && hasMoreToShow) {
-          showMore();
+        if (entry.isIntersecting) {
+          if (hasMoreToShow) {
+            showMore();
+          } else if (hasMoreFromServer && !isLoadingMore && onLoadMore) {
+            onLoadMore();
+          }
         }
       },
       { threshold: 0.1, rootMargin: "100px" }
@@ -76,7 +87,7 @@ export const ConversationList = ({
     return () => {
       observer.disconnect();
     };
-  }, [hasMoreToShow, showMore]);
+  }, [hasMoreToShow, hasMoreFromServer, isLoadingMore, showMore, onLoadMore]);
 
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);
@@ -140,8 +151,8 @@ export const ConversationList = ({
                 onClick={() => onSelect(conversation)}
               />
             ))}
-            {/* Sentinela para infinite scroll */}
-            {hasMoreToShow && (
+            {/* Sentinela para infinite scroll (virtual + server) */}
+            {showSentinel && (
               <div ref={loadMoreRef} className="py-3 text-center">
                 <div className="flex items-center justify-center gap-2 text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -156,7 +167,7 @@ export const ConversationList = ({
       {/* Footer with count */}
       <div className="px-4 py-2 border-t text-xs text-muted-foreground">
         {visibleConversations.length}
-        {hasMoreToShow && `/${filteredConversations.length}`} conversa{filteredConversations.length !== 1 ? "s" : ""}
+        {(hasMoreToShow || hasMoreFromServer) && "+"} conversa{filteredConversations.length !== 1 ? "s" : ""}
         {search && conversations.length !== filteredConversations.length && (
           <span> (de {conversations.length} total)</span>
         )}

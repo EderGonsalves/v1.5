@@ -1,18 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
 
+import { getRequestAuth } from "@/lib/auth/session";
 import { fetchInstitutionUsers } from "@/services/permissions";
 import { updateBaserowCase } from "@/services/api";
 import type { BaserowCaseRow } from "@/services/api";
+import { getUserDepartmentIds, fetchDepartmentById, fetchDepartmentUserIds } from "@/services/departments";
+import { getPhoneDepartmentMap } from "@/lib/waba";
 
 const BASEROW_API_URL =
-  process.env.NEXT_PUBLIC_BASEROW_API_URL ||
   process.env.BASEROW_API_URL ||
+  process.env.NEXT_PUBLIC_BASEROW_API_URL ||
   process.env.AUTOMATION_DB_API_URL ||
   "";
 const BASEROW_API_KEY =
-  process.env.NEXT_PUBLIC_BASEROW_API_KEY ||
   process.env.BASEROW_API_KEY ||
+  process.env.NEXT_PUBLIC_BASEROW_API_KEY ||
   process.env.AUTOMATION_DB_TOKEN ||
   "";
 const BASEROW_CASES_TABLE_ID =
@@ -27,23 +30,6 @@ const TRANSFER_WEBHOOK_URL =
 // Throttle: max 1 execution per institution every 30 seconds
 const lastRunMap = new Map<number, number>();
 const THROTTLE_MS = 30_000;
-
-function verifyAuth(request: NextRequest) {
-  const authCookie = request.cookies.get("onboarding_auth");
-  if (!authCookie?.value) {
-    return { valid: false as const, error: "Não autenticado" };
-  }
-  try {
-    const authData = JSON.parse(authCookie.value);
-    const institutionId = authData?.institutionId as number | undefined;
-    if (!institutionId) {
-      return { valid: false as const, error: "Instituição não encontrada" };
-    }
-    return { valid: true as const, institutionId };
-  } catch {
-    return { valid: false as const, error: "Token inválido" };
-  }
-}
 
 async function fetchUnassignedCases(
   institutionId: number,
@@ -82,12 +68,12 @@ async function notifyWebhook(payload: Record<string, unknown>) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = verifyAuth(request);
-  if (!auth.valid) {
-    return NextResponse.json({ error: auth.error }, { status: 401 });
+  const auth = getRequestAuth(request);
+  if (!auth) {
+    return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   }
 
-  const { institutionId } = auth;
+  const institutionId = auth.institutionId;
 
   // Throttle check
   const lastRun = lastRunMap.get(institutionId) ?? 0;
@@ -97,18 +83,37 @@ export async function POST(request: NextRequest) {
   lastRunMap.set(institutionId, Date.now());
 
   try {
-    // Get institution users
-    const users = await fetchInstitutionUsers(institutionId);
+    // Fetch users + phone→department map in parallel
+    const [users, phoneDeptMap] = await Promise.all([
+      fetchInstitutionUsers(institutionId),
+      getPhoneDepartmentMap(institutionId),
+    ]);
     const activeUsers = users.filter((u) => u.isActive);
 
     if (activeUsers.length === 0) {
       return NextResponse.json({ assigned: [], reason: "no_active_users" });
     }
 
-    // Pick user with smallest (oldest) ID
-    const targetUser = activeUsers.reduce((oldest, current) =>
+    // Global fallback: oldest active user
+    const globalFallbackUser = activeUsers.reduce((oldest, current) =>
       current.id < oldest.id ? current : oldest,
     );
+
+    // Pre-compute fallback user's department (used when no phone→dept match)
+    let fallbackDeptId: number | null = null;
+    let fallbackDeptName: string | null = null;
+    try {
+      const deptIds = await getUserDepartmentIds(globalFallbackUser.id, institutionId);
+      if (deptIds.length > 0) {
+        const dept = await fetchDepartmentById(deptIds[0]);
+        if (dept) {
+          fallbackDeptId = dept.id;
+          fallbackDeptName = dept.name;
+        }
+      }
+    } catch {
+      // Non-critical: proceed without department
+    }
 
     // Fetch unassigned cases
     const unassigned = await fetchUnassignedCases(institutionId);
@@ -117,21 +122,65 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ assigned: [] });
     }
 
-    // Assign each case
+    // Cache dept user lookups to avoid repeated API calls for same dept
+    const deptUsersCache = new Map<number, number[]>();
+
+    // Assign each case based on phone→department routing
     const assigned: Array<{
       caseId: number;
       userName: string;
+      departmentName?: string | null;
     }> = [];
 
     for (const caseRow of unassigned) {
       try {
+        let targetUser = globalFallbackUser;
+        let assignDeptId: number | null = fallbackDeptId;
+        let assignDeptName: string | null = fallbackDeptName;
+
+        // Try to match case phone number to a department
+        const casePhone = caseRow.display_phone_number || caseRow.CustumerPhone || "";
+        if (casePhone && phoneDeptMap.size > 0) {
+          const phoneDigits = casePhone.replace(/\D/g, "");
+          const deptMatch = phoneDeptMap.get(casePhone) || phoneDeptMap.get(phoneDigits);
+
+          if (deptMatch) {
+            assignDeptId = deptMatch.deptId;
+            assignDeptName = deptMatch.deptName;
+
+            // Get users in this department (with cache)
+            try {
+              let deptUserIds = deptUsersCache.get(deptMatch.deptId);
+              if (!deptUserIds) {
+                deptUserIds = await fetchDepartmentUserIds(deptMatch.deptId);
+                deptUsersCache.set(deptMatch.deptId, deptUserIds);
+              }
+              const deptActiveUsers = activeUsers.filter((u) =>
+                deptUserIds!.includes(u.id),
+              );
+              if (deptActiveUsers.length > 0) {
+                targetUser = deptActiveUsers.reduce((oldest, current) =>
+                  current.id < oldest.id ? current : oldest,
+                );
+              }
+              // If no active users in dept, fallback to global user
+            } catch {
+              // Fallback to global user on error
+            }
+          }
+        }
+
         await updateBaserowCase(caseRow.id, {
           responsavel: targetUser.name,
+          assigned_to_user_id: targetUser.id,
+          department_id: assignDeptId,
+          department_name: assignDeptName,
         });
 
         assigned.push({
           caseId: caseRow.id,
           userName: targetUser.name,
+          departmentName: assignDeptName,
         });
 
         // Notify webhook (fire-and-forget)
@@ -154,11 +203,14 @@ export async function POST(request: NextRequest) {
             institutionId,
             responsavel: targetUser.name,
           },
+          ...(assignDeptId && assignDeptName
+            ? { department: { id: assignDeptId, name: assignDeptName } }
+            : {}),
           timestamp: new Date().toISOString(),
         });
       } catch (err) {
         console.error(
-          `Erro ao atribuir caso ${caseRow.id} para ${targetUser.name}:`,
+          `Erro ao atribuir caso ${caseRow.id} para ${globalFallbackUser.name}:`,
           err,
         );
       }

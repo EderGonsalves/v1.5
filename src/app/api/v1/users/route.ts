@@ -17,6 +17,7 @@ const createUserSchema = z.object({
   phone: z.string().max(50).optional(),
   oab: z.string().max(50).optional(),
   institutionId: z.number().int().positive().optional(),
+  isOfficeAdmin: z.boolean().optional(),
 });
 
 export async function GET(request: NextRequest) {
@@ -50,8 +51,7 @@ export async function GET(request: NextRequest) {
     console.error("[api/v1/users] GET error", error);
     return NextResponse.json(
       {
-        error:
-          error instanceof Error ? error.message : "Erro ao listar usuários",
+        error: "Erro ao listar usuários",
       },
       { status: 500 },
     );
@@ -80,21 +80,19 @@ export async function POST(request: NextRequest) {
         ? parsed.data.institutionId
         : auth.institutionId;
 
-    const { institutionId: _, ...userData } = parsed.data;
-    const user = await createInstitutionUser(targetInstitutionId, userData);
+    const { institutionId: _, isOfficeAdmin, ...userData } = parsed.data;
+    const user = await createInstitutionUser(targetInstitutionId, {
+      ...userData,
+      isOfficeAdmin,
+    });
     return NextResponse.json({ user }, { status: 201 });
   } catch (error) {
     console.error("[api/v1/users] POST error", error);
-    const status =
-      error instanceof Error && error.message.includes("Já existe")
-        ? 409
-        : 500;
+    const isDuplicate =
+      error instanceof Error && error.message.includes("Já existe");
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Erro ao criar usuário",
-      },
-      { status },
+      { error: isDuplicate ? "Usuário já existe" : "Erro ao criar usuário" },
+      { status: isDuplicate ? 409 : 500 },
     );
   }
 }

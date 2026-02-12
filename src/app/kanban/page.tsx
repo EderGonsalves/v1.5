@@ -24,7 +24,9 @@ import { LoadingScreen } from "@/components/ui/loading-screen";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { RefreshCw, Settings2 } from "lucide-react";
+import { RefreshCw, Settings2, Building2 } from "lucide-react";
+import { useMyDepartments } from "@/hooks/use-my-departments";
+import { useDepartments } from "@/hooks/use-departments";
 import {
   getKanbanColumns,
   getCaseKanbanStatus,
@@ -59,14 +61,28 @@ type PendingKanbanUpdate = {
   createdAt: string;
 };
 
-const PENDING_UPDATES_KEY = "kanban_pending_updates";
+// Cache em memória (persiste entre navegações SPA — module-level)
+type KanbanMemoryCache = {
+  institutionId: number;
+  departmentId: number | null;
+  columns: KanbanColumnRow[];
+  caseStatuses: CaseKanbanStatusRow[];
+  cases: BaserowCaseRow[];
+  timestamp: number;
+};
 
-const loadPendingUpdates = (): PendingKanbanUpdate[] => {
+const KANBAN_MEMORY_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
+let kanbanMemoryCache: KanbanMemoryCache | null = null;
+
+const getPendingUpdatesKey = (deptId: number | null) =>
+  deptId !== null ? `kanban_pending_updates_dept_${deptId}` : "kanban_pending_updates";
+
+const loadPendingUpdates = (deptId: number | null): PendingKanbanUpdate[] => {
   if (typeof window === "undefined") {
     return [];
   }
   try {
-    const raw = window.localStorage.getItem(PENDING_UPDATES_KEY);
+    const raw = window.localStorage.getItem(getPendingUpdatesKey(deptId));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -76,10 +92,10 @@ const loadPendingUpdates = (): PendingKanbanUpdate[] => {
   }
 };
 
-const persistPendingUpdates = (updates: PendingKanbanUpdate[]) => {
+const persistPendingUpdates = (updates: PendingKanbanUpdate[], deptId: number | null) => {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(PENDING_UPDATES_KEY, JSON.stringify(updates));
+    window.localStorage.setItem(getPendingUpdatesKey(deptId), JSON.stringify(updates));
   } catch {
     // ignore storage errors
   }
@@ -101,6 +117,23 @@ export default function KanbanPage() {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
   }, [data.auth?.institutionId]);
+
+  const {
+    userDepartmentIds: myDeptIds,
+    userId: myUserId,
+    userName: myUserName,
+    isGlobalAdmin: isMyGlobalAdmin,
+    isOfficeAdmin: isMyOfficeAdmin,
+    departments: myDepartments,
+  } = useMyDepartments();
+  const { departments: allDepartments } = useDepartments(normalizedInstitutionId ?? undefined);
+  const isFullAccessAdmin = isMyGlobalAdmin || isMyOfficeAdmin;
+  const viewableDepartments = useMemo(() => {
+    if (isFullAccessAdmin) return allDepartments;
+    return myDepartments;
+  }, [isFullAccessAdmin, allDepartments, myDepartments]);
+
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<number | null>(null);
 
   const [columns, setColumns] = useState<KanbanColumnRow[]>([]);
   const [caseStatuses, setCaseStatuses] = useState<CaseKanbanStatusRow[]>([]);
@@ -143,13 +176,20 @@ export default function KanbanPage() {
     return pointerWithin(args);
   }, []);
 
+  // Auto-select department for non-admin with a single dept
   useEffect(() => {
-    setPendingUpdates(loadPendingUpdates());
-  }, []);
+    if (!isFullAccessAdmin && myDeptIds.length === 1) {
+      setSelectedDepartmentId(myDeptIds[0]);
+    }
+  }, [isFullAccessAdmin, myDeptIds]);
 
   useEffect(() => {
-    persistPendingUpdates(pendingUpdates);
-  }, [pendingUpdates]);
+    setPendingUpdates(loadPendingUpdates(selectedDepartmentId));
+  }, [selectedDepartmentId]);
+
+  useEffect(() => {
+    persistPendingUpdates(pendingUpdates, selectedDepartmentId);
+  }, [pendingUpdates, selectedDepartmentId]);
 
   const processingUpdatesRef = useRef<Set<string>>(new Set());
 
@@ -227,41 +267,54 @@ export default function KanbanPage() {
     try {
       setIsLoading(true);
       setError(null);
+      kanbanMemoryCache = null;
 
-      // Load columns (initialize defaults if none exist)
-      let kanbanColumns = await getKanbanColumns(normalizedInstitutionId);
+      // Load columns, statuses and first page of cases in parallel
+      const [columnsResult, statusesResult] = await Promise.allSettled([
+        getKanbanColumns(normalizedInstitutionId, selectedDepartmentId),
+        getCaseKanbanStatus(undefined, normalizedInstitutionId),
+      ]);
+
+      // Process columns
+      let kanbanColumns: KanbanColumnRow[] = [];
+      if (columnsResult.status === "fulfilled") {
+        kanbanColumns = columnsResult.value;
+      }
       if (kanbanColumns.length === 0) {
-        kanbanColumns = await initializeDefaultKanbanColumns(normalizedInstitutionId);
+        kanbanColumns = await initializeDefaultKanbanColumns(normalizedInstitutionId, selectedDepartmentId);
       }
       setColumns(kanbanColumns);
 
-      // Load case statuses
-      try {
-        const statuses = await getCaseKanbanStatus(undefined, normalizedInstitutionId);
-        setCaseStatuses(statuses);
+      // Process statuses
+      if (statusesResult.status === "fulfilled") {
+        setCaseStatuses(statusesResult.value);
         setStatusLoadError(null);
-      } catch (statusError) {
+      } else {
         const message =
-          statusError instanceof Error
-            ? statusError.message
+          statusesResult.reason instanceof Error
+            ? statusesResult.reason.message
             : "Nao foi possivel carregar status do Kanban";
-        console.error("Falha ao buscar status do Kanban:", statusError);
+        console.error("Falha ao buscar status do Kanban:", statusesResult.reason);
         setStatusLoadError(message);
       }
 
-      // Load cases
-      const casesResponse = await getBaserowCases({
+      // Show board immediately, load cases progressively
+      setIsLoading(false);
+
+      await getBaserowCases({
         institutionId: normalizedInstitutionId,
         fetchAll: true,
+        newestFirst: true,
+        onPageLoaded: (partial) => {
+          setCases(partial);
+        },
       });
-      setCases(casesResponse.results);
     } catch (err) {
       console.error("Erro ao carregar dados do Kanban:", err);
       setError(err instanceof Error ? err.message : "Erro ao carregar dados");
-    } finally {
       setIsLoading(false);
     }
-  }, [normalizedInstitutionId]);
+  }, [normalizedInstitutionId, selectedDepartmentId]);
 
   useEffect(() => {
     if (!isHydrated) return;
@@ -270,8 +323,37 @@ export default function KanbanPage() {
       return;
     }
     if (normalizedInstitutionId === null) return;
+
+    // Cache em memória (navegação SPA — restauração instantânea)
+    if (
+      kanbanMemoryCache &&
+      kanbanMemoryCache.institutionId === normalizedInstitutionId &&
+      kanbanMemoryCache.departmentId === selectedDepartmentId &&
+      Date.now() - kanbanMemoryCache.timestamp < KANBAN_MEMORY_CACHE_TTL_MS
+    ) {
+      setColumns(kanbanMemoryCache.columns);
+      setCaseStatuses(kanbanMemoryCache.caseStatuses);
+      setCases(kanbanMemoryCache.cases);
+      setIsLoading(false);
+      return;
+    }
+
     loadData();
-  }, [isHydrated, data.auth, normalizedInstitutionId, loadData, router]);
+  }, [isHydrated, data.auth, normalizedInstitutionId, selectedDepartmentId, loadData, router]);
+
+  // Sincronizar estado → cache em memória
+  useEffect(() => {
+    if (normalizedInstitutionId !== null && columns.length > 0 && cases.length > 0) {
+      kanbanMemoryCache = {
+        institutionId: normalizedInstitutionId,
+        departmentId: selectedDepartmentId,
+        columns,
+        caseStatuses,
+        cases,
+        timestamp: Date.now(),
+      };
+    }
+  }, [normalizedInstitutionId, selectedDepartmentId, columns, caseStatuses, cases]);
 
   // Map cases to their columns
   const casesWithStatus = useMemo((): CaseWithStatus[] => {
@@ -312,11 +394,34 @@ export default function KanbanPage() {
     });
   }, [cases, caseStatuses, columns]);
 
+  // Filter cases by department visibility
+  const departmentFilteredCases = useMemo(() => {
+    let result = [...casesWithStatus];
+
+    // Non-admin: show only cases in my departments, assigned to me, or unassigned
+    if (!isFullAccessAdmin && myDeptIds.length > 0) {
+      result = result.filter((row) => {
+        if (row.department_id && myDeptIds.includes(row.department_id)) return true;
+        if (row.assigned_to_user_id && myUserId && row.assigned_to_user_id === myUserId) return true;
+        if (myUserName && row.responsavel && row.responsavel === myUserName) return true;
+        if (!row.department_id && !row.responsavel) return true;
+        return false;
+      });
+    }
+
+    // Manual department dropdown filter
+    if (selectedDepartmentId !== null) {
+      result = result.filter((row) => row.department_id === selectedDepartmentId);
+    }
+
+    return result;
+  }, [casesWithStatus, isFullAccessAdmin, myDeptIds, myUserId, myUserName, selectedDepartmentId]);
+
   // Filter cases by search
   const searchedCases = useMemo(() => {
-    if (!searchQuery.trim()) return casesWithStatus;
+    if (!searchQuery.trim()) return departmentFilteredCases;
     const query = searchQuery.toLowerCase();
-    return casesWithStatus.filter((caseRow) => {
+    return departmentFilteredCases.filter((caseRow) => {
       const name = (caseRow.CustumerName || "").toLowerCase();
       const phone = (caseRow.CustumerPhone || "").replace(/\D/g, "");
       const id = String(caseRow.id);
@@ -328,7 +433,7 @@ export default function KanbanPage() {
         bjId.includes(query)
       );
     });
-  }, [casesWithStatus, searchQuery]);
+  }, [departmentFilteredCases, searchQuery]);
 
   // Group cases by column
   const casesByColumn = useMemo(() => {
@@ -550,6 +655,7 @@ export default function KanbanPage() {
           // Create new
           const created = await createKanbanColumn({
             institution_id: normalizedInstitutionId,
+            department_id: selectedDepartmentId ?? null,
             name: col.name || "Nova Coluna",
             ordem: col.ordem || newColumns.length + 1,
             color: col.color || "gray",
@@ -599,7 +705,28 @@ export default function KanbanPage() {
         {/* Header */}
         <div className="border-b border-border/40 bg-background/95 px-4 py-4">
           <div className="mx-auto max-w-[1800px] flex items-center justify-between gap-4 flex-wrap">
-            <div></div>
+            <div className="flex items-center gap-2">
+              {(isFullAccessAdmin || viewableDepartments.length > 1) && (
+                <>
+                  <Building2 className="h-4 w-4 text-muted-foreground" />
+                  <select
+                    value={selectedDepartmentId ?? ""}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSelectedDepartmentId(val ? Number(val) : null);
+                    }}
+                    className="h-9 rounded-md border border-input bg-background px-3 py-1.5 text-sm text-foreground truncate max-w-[220px]"
+                  >
+                    <option value="">Padrão da Instituição</option>
+                    {viewableDepartments.map((dept) => (
+                      <option key={dept.id} value={dept.id}>
+                        {dept.name}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+            </div>
             <div className="flex items-center gap-3 flex-wrap justify-end">
               <Input
                 type="search"
@@ -675,6 +802,11 @@ export default function KanbanPage() {
         open={isColumnEditorOpen}
         onOpenChange={setIsColumnEditorOpen}
         onSave={handleSaveColumns}
+        departmentName={
+          selectedDepartmentId
+            ? viewableDepartments.find((d) => d.id === selectedDepartmentId)?.name ?? null
+            : null
+        }
       />
     </main>
   );

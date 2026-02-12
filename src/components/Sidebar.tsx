@@ -16,18 +16,21 @@ import {
   CalendarDays,
   ShieldCheck,
   Users,
+  Building2,
   CircleHelp,
 } from "lucide-react";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import { useSidebar } from "@/components/sidebar/sidebar-context";
 import { cn } from "@/lib/utils";
 import { usePermissionsStatus } from "@/hooks/use-permissions-status";
+import { useMyDepartments } from "@/hooks/use-my-departments";
 
 type NavItem = {
   href: string;
   label: string;
   icon: typeof FileText;
   requiresSysAdmin?: boolean;
+  requiresAdmin?: boolean;
 };
 
 const NAV_ITEMS: NavItem[] = [
@@ -39,6 +42,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/conexoes", label: "Conexões", icon: Plug },
   { href: "/follow-up", label: "Follow-up", icon: Repeat2 },
   { href: "/usuarios", label: "Usuários", icon: Users },
+  { href: "/departamentos", label: "Departamentos", icon: Building2, requiresAdmin: true },
 ];
 
 export function Sidebar() {
@@ -50,8 +54,11 @@ export function Sidebar() {
     ? `${data.auth.institutionId}:${data.auth.legacyUserId ?? ""}`
     : null;
   const { isSysAdmin, enabledPages } = usePermissionsStatus(authSignature);
+  const { isOfficeAdmin } = useMyDepartments();
+  const isAdmin = isSysAdmin || isOfficeAdmin;
   const baseNavItems = NAV_ITEMS.filter((item) => {
     if (item.requiresSysAdmin && !isSysAdmin) return false;
+    if (item.requiresAdmin && !isAdmin) return false;
     if (isSysAdmin) return true;
     return enabledPages.includes(item.href);
   });

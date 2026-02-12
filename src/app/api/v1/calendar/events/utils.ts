@@ -3,6 +3,10 @@ import type {
   CalendarEventRow,
 } from "@/services/api";
 
+// ---------------------------------------------------------------------------
+// Converters
+// ---------------------------------------------------------------------------
+
 const toBoolean = (value: unknown): boolean => {
   if (typeof value === "boolean") {
     return value;
@@ -38,6 +42,59 @@ const toNumber = (value: unknown): number | null => {
   return null;
 };
 
+// ---------------------------------------------------------------------------
+// Date formatting (pt-BR)
+// ---------------------------------------------------------------------------
+
+const dateTimeFormatter = new Intl.DateTimeFormat("pt-BR", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "America/Sao_Paulo",
+});
+
+const dateOnlyFormatter = new Intl.DateTimeFormat("pt-BR", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+  timeZone: "America/Sao_Paulo",
+});
+
+const timeOnlyFormatter = new Intl.DateTimeFormat("pt-BR", {
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "America/Sao_Paulo",
+});
+
+const formatDateTime = (value: unknown): string | null => {
+  if (!value || typeof value !== "string") return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return dateTimeFormatter.format(date);
+};
+
+const formatDateOnly = (value: unknown): string | null => {
+  if (!value || typeof value !== "string") return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return dateOnlyFormatter.format(date);
+};
+
+const formatTimeOnly = (value: unknown): string | null => {
+  if (!value || typeof value !== "string") return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return timeOnlyFormatter.format(date);
+};
+
+// ---------------------------------------------------------------------------
+// Guest serialization
+// ---------------------------------------------------------------------------
+
 const mapGuests = (
   guests?: CalendarEventGuestRow[],
 ): Array<{
@@ -57,6 +114,10 @@ const mapGuests = (
   }));
 };
 
+// ---------------------------------------------------------------------------
+// Event serialization
+// ---------------------------------------------------------------------------
+
 export const serializeEvent = (
   event: CalendarEventRow,
   guests?: CalendarEventGuestRow[],
@@ -66,6 +127,11 @@ export const serializeEvent = (
   description: event.description,
   start_datetime: event.start_datetime,
   end_datetime: event.end_datetime,
+  start_formatted: formatDateTime(event.start_datetime),
+  end_formatted: formatDateTime(event.end_datetime),
+  date_formatted: formatDateOnly(event.start_datetime),
+  start_time: formatTimeOnly(event.start_datetime),
+  end_time: formatTimeOnly(event.end_datetime),
   timezone: event.timezone,
   location: event.location,
   meeting_link: event.meeting_link,

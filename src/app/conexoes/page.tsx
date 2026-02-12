@@ -26,7 +26,9 @@ import {
   deleteWebhook,
   type WebhookRow,
 } from "@/services/api";
-import { Bell, Pencil, Plus, Trash2, Webhook } from "lucide-react";
+import { Bell, Pencil, Plus, Trash2, Webhook, Loader2, ChevronDown } from "lucide-react";
+import { useDepartments } from "@/hooks/use-departments";
+import { useMyDepartments } from "@/hooks/use-my-departments";
 
 // WhatsApp OAuth configuration - usando variáveis de ambiente
 const WHATSAPP_OAUTH_BASE_URL = "https://www.facebook.com/v22.0/dialog/oauth";
@@ -56,6 +58,8 @@ const buildWhatsAppOAuthUrl = (institutionId: number): string => {
 type ConnectedNumber = {
   id: number;
   phoneNumber: string;
+  departmentId?: number | null;
+  departmentName?: string | null;
 };
 
 type WebhookFormData = {
@@ -84,6 +88,10 @@ export default function ConexoesPage() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectedNumbers, setConnectedNumbers] = useState<ConnectedNumber[]>([]);
   const [isLoadingWaba, setIsLoadingWaba] = useState(false);
+  const [updatingPhoneDept, setUpdatingPhoneDept] = useState<number | null>(null);
+  const { departments } = useDepartments(data.auth?.institutionId);
+  const { isOfficeAdmin: isMyOfficeAdmin, isGlobalAdmin: isMyGlobalAdmin } = useMyDepartments();
+  const canManagePhoneDepts = isMyGlobalAdmin || isMyOfficeAdmin;
 
   // Webhook states
   const [webhooks, setWebhooks] = useState<WebhookRow[]>([]);
@@ -126,15 +134,20 @@ export default function ConexoesPage() {
         const numbers: ConnectedNumber[] = [];
 
         configs.forEach((config) => {
-          const phoneNumber = config.waba_phone_number;
+          const record = config as Record<string, unknown>;
+          const phoneNumber = record.waba_phone_number;
           if (phoneNumber) {
             const normalizedPhone = typeof phoneNumber === "string"
               ? phoneNumber.trim()
               : String(phoneNumber);
             if (normalizedPhone) {
+              const deptId = record.phone_department_id;
+              const deptName = record.phone_department_name;
               numbers.push({
                 id: config.id,
                 phoneNumber: normalizedPhone,
+                departmentId: typeof deptId === "number" ? deptId : null,
+                departmentName: typeof deptName === "string" ? deptName : null,
               });
             }
           }
@@ -151,6 +164,33 @@ export default function ConexoesPage() {
     fetchWabaNumbers();
     fetchWebhooks();
   }, [data.auth?.institutionId, fetchWebhooks]);
+
+  const handlePhoneDeptChange = useCallback(async (configId: number, deptIdStr: string) => {
+    const deptId = deptIdStr ? Number(deptIdStr) : null;
+    const dept = departments.find((d) => d.id === deptId);
+    setUpdatingPhoneDept(configId);
+    try {
+      await fetch(`/api/waba/numbers/${configId}/department`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          departmentId: deptId,
+          departmentName: dept?.name ?? null,
+        }),
+      });
+      setConnectedNumbers((prev) =>
+        prev.map((n) =>
+          n.id === configId
+            ? { ...n, departmentId: deptId, departmentName: dept?.name ?? null }
+            : n,
+        ),
+      );
+    } catch (err) {
+      console.error("Erro ao atualizar departamento do número:", err);
+    } finally {
+      setUpdatingPhoneDept(null);
+    }
+  }, [departments]);
 
   const handleOpenWebhookDialog = (webhook?: WebhookRow) => {
     if (webhook) {
@@ -453,7 +493,37 @@ export default function ConexoesPage() {
                     <h3 className="text-sm font-semibold">{connection.phoneNumber}</h3>
                     <p className="text-xs text-muted-foreground">Número conectado ao WhatsApp Business</p>
                   </div>
-                  <div className="ml-auto flex items-center gap-2 rounded-full bg-green-500/10 px-2.5 py-0.5 text-xs font-medium text-green-700 dark:text-green-400">
+                  {departments.length > 0 && canManagePhoneDepts && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] text-muted-foreground">Dept:</span>
+                      <div className="relative">
+                        <select
+                          value={connection.departmentId ?? ""}
+                          onChange={(e) => handlePhoneDeptChange(connection.id, e.target.value)}
+                          disabled={updatingPhoneDept === connection.id}
+                          className="flex h-7 rounded-md border border-input bg-background px-2 py-0.5 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring appearance-none pr-6 disabled:opacity-50"
+                        >
+                          <option value="">Nenhum</option>
+                          {departments.map((d) => (
+                            <option key={d.id} value={d.id}>
+                              {d.name}
+                            </option>
+                          ))}
+                        </select>
+                        {updatingPhoneDept === connection.id ? (
+                          <Loader2 className="absolute right-1 top-1/2 -translate-y-1/2 h-3 w-3 animate-spin text-muted-foreground" />
+                        ) : (
+                          <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {departments.length > 0 && !canManagePhoneDepts && connection.departmentName && (
+                    <span className="text-[11px] text-muted-foreground">
+                      Dept: {connection.departmentName}
+                    </span>
+                  )}
+                  <div className="flex items-center gap-2 rounded-full bg-green-500/10 px-2.5 py-0.5 text-xs font-medium text-green-700 dark:text-green-400">
                     <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>

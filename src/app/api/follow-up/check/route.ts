@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { getRequestAuth } from "@/lib/auth/session";
 import {
   getBaserowCases,
   getBaserowConfigs,
@@ -12,6 +13,8 @@ import {
 import { fetchCaseMessagesFromBaserow } from "@/lib/chat/baserow";
 import type { CaseMessage } from "@/lib/chat/types";
 import { getInstitutionWabaPhoneNumber } from "@/lib/waba";
+
+const CRON_SECRET = process.env.CRON_SECRET || "";
 
 // Webhook específico para follow-up (separado do webhook de chat)
 const FOLLOW_UP_WEBHOOK_URL = process.env.FOLLOW_UP_WEBHOOK_URL ?? "";
@@ -186,7 +189,20 @@ type ProcessResult = {
   reason?: string;
 };
 
+const isAuthorized = (request: NextRequest): boolean => {
+  // 1. Cookie auth (browser / logged-in user)
+  if (getRequestAuth(request)) return true;
+  // 2. Cron secret (server-to-server)
+  const bearer = request.headers.get("authorization")?.replace("Bearer ", "");
+  if (CRON_SECRET && bearer && bearer === CRON_SECRET) return true;
+  return false;
+};
+
 export async function POST(request: NextRequest) {
+  if (!isAuthorized(request)) {
+    return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  }
+
   try {
     // Optional: filter by institution_id in the request body
     let institutionId: number | undefined;
@@ -460,8 +476,7 @@ export async function POST(request: NextRequest) {
     console.error("[follow-up] Erro no processamento:", error);
     return NextResponse.json(
       {
-        error: "server_error",
-        message: error instanceof Error ? error.message : "Erro ao processar follow-ups",
+        error: "Erro ao processar follow-ups",
       },
       { status: 500 }
     );
@@ -470,6 +485,10 @@ export async function POST(request: NextRequest) {
 
 // GET endpoint for manual testing / status check
 export async function GET(request: NextRequest) {
+  if (!isAuthorized(request)) {
+    return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const institutionId = searchParams.get("institution_id");
 
@@ -497,8 +516,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     return NextResponse.json(
       {
-        error: "server_error",
-        message: error instanceof Error ? error.message : "Erro ao verificar configurações",
+        error: "Erro ao verificar configurações",
       },
       { status: 500 }
     );

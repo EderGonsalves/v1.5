@@ -106,7 +106,14 @@ export function useSupport() {
   const updateExistingTicket = useCallback(
     async (
       ticketId: number,
-      data: { status?: string; sector?: string; assigned_to?: string },
+      data: {
+        status?: string;
+        sector?: string;
+        assigned_to?: string;
+        department_id?: number | null;
+        department_name?: string | null;
+        assigned_to_user_id?: number | null;
+      },
     ) => {
       const updated = await updateTicketClient(ticketId, data);
       setTickets((prev) =>

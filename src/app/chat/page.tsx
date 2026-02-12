@@ -8,6 +8,7 @@ import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import { useConversations, type Conversation } from "@/hooks/use-conversations";
 import { useWabaNumbers } from "@/hooks/use-waba-numbers";
 import { useCaseWabaMap } from "@/hooks/use-case-waba-map";
+import { useMyDepartments } from "@/hooks/use-my-departments";
 import { ConversationList } from "@/components/chat/ConversationList";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 
@@ -21,6 +22,9 @@ function ChatContent() {
     conversations,
     isLoading,
     isRefreshing,
+    isLoadingMore,
+    hasMoreFromServer,
+    loadMore,
     error,
     refresh,
   } = useConversations(institutionId);
@@ -29,6 +33,16 @@ function ChatContent() {
 
   // Hook para mapa de case -> waba number
   const { getWabaForCase } = useCaseWabaMap(institutionId);
+
+  // Departamentos do usuário atual (para filtro de visibilidade)
+  const {
+    userDepartmentIds: myDeptIds,
+    userId: myUserId,
+    userName: myUserName,
+    isGlobalAdmin: isMyGlobalAdmin,
+    isOfficeAdmin: isMyOfficeAdmin,
+  } = useMyDepartments();
+  const isFullAccessAdmin = isMyGlobalAdmin || isMyOfficeAdmin;
 
   const selectedCaseId = searchParams.get("case");
   const selectedId = selectedCaseId ? Number(selectedCaseId) : null;
@@ -49,8 +63,23 @@ function ChatContent() {
     });
   }, [conversations, getWabaForCase]);
 
-  // Filtrar conversas pelo número WABA selecionado
-  const filteredConversations = enrichedConversations;
+  // Filtro de visibilidade por departamento (não-admin)
+  const filteredConversations = useMemo(() => {
+    if (isFullAccessAdmin || myDeptIds.length === 0) {
+      return enrichedConversations;
+    }
+    return enrichedConversations.filter((conv) => {
+      // Conversa pertence a um dos meus departamentos
+      if (conv.department_id && myDeptIds.includes(conv.department_id)) return true;
+      // Conversa atribuída diretamente a mim (novo campo)
+      if (conv.assigned_to_user_id && myUserId && conv.assigned_to_user_id === myUserId) return true;
+      // Conversa atribuída a mim (campo legado)
+      if (myUserName && conv.responsavel && conv.responsavel === myUserName) return true;
+      // Conversa sem departamento e sem responsável (não atribuída)
+      if (!conv.department_id && !conv.responsavel) return true;
+      return false;
+    });
+  }, [enrichedConversations, isFullAccessAdmin, myDeptIds, myUserId, myUserName]);
 
   const selectedConversation = useMemo(() => {
     if (!selectedId) return null;
@@ -114,6 +143,9 @@ function ChatContent() {
           onSelect={handleSelectConversation}
           isLoading={isLoading}
           isRefreshing={isRefreshing}
+          isLoadingMore={isLoadingMore}
+          hasMoreFromServer={hasMoreFromServer}
+          onLoadMore={loadMore}
           onRefresh={refresh}
           className="h-full"
         />

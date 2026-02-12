@@ -87,6 +87,7 @@ export type BaserowUserRow = {
   phone?: string;
   OAB?: string;
   is_active?: boolean;
+  is_office_admin?: boolean;
   created_at?: string;
   updated_at?: string;
   [key: string]: unknown;
@@ -99,6 +100,7 @@ export type UserPublicRow = {
   phone: string;
   oab: string;
   isActive: boolean;
+  isOfficeAdmin: boolean;
   institutionId?: number;
 };
 
@@ -893,6 +895,7 @@ const toUserPublic = (row: BaserowUserRow): UserPublicRow => {
     phone: (row.phone ?? "").trim(),
     oab: (row.OAB ?? "").trim(),
     isActive: isActiveValue(row.is_active),
+    isOfficeAdmin: row.is_office_admin === true,
     institutionId: Number.isFinite(instId) && instId > 0 ? instId : undefined,
   };
 };
@@ -918,6 +921,29 @@ export const fetchAllUsers = async (): Promise<UserPublicRow[]> => {
   return rows.map(toUserPublic);
 };
 
+/**
+ * Reseta is_office_admin para false em todos os usuários.
+ * Necessário porque Baserow boolean default = true para rows existentes.
+ */
+export const resetAllOfficeAdminFlags = async (): Promise<number> => {
+  const params = new URLSearchParams({
+    user_field_names: "true",
+    size: "200",
+    "filter__is_office_admin__boolean": "true",
+  });
+  const rows = await fetchTableRows<BaserowUserRow>(TABLE_IDS.users, params);
+  const client = baserowClient();
+  let count = 0;
+  for (const row of rows) {
+    await client.patch(
+      `/database/rows/table/${TABLE_IDS.users}/${row.id}/?user_field_names=true`,
+      { is_office_admin: false },
+    );
+    count++;
+  }
+  return count;
+};
+
 export const createInstitutionUser = async (
   institutionId: number,
   data: {
@@ -926,6 +952,7 @@ export const createInstitutionUser = async (
     password: string;
     phone?: string;
     oab?: string;
+    isOfficeAdmin?: boolean;
   },
 ): Promise<UserPublicRow> => {
   const normalizedEmail = data.email.trim().toLowerCase();
@@ -952,6 +979,7 @@ export const createInstitutionUser = async (
     email: normalizedEmail,
     password: data.password,
     is_active: true,
+    is_office_admin: data.isOfficeAdmin === true,
     created_at: now,
     updated_at: now,
   };
@@ -972,6 +1000,7 @@ export const updateInstitutionUser = async (
     phone?: string;
     oab?: string;
     isActive?: boolean;
+    isOfficeAdmin?: boolean;
   },
 ): Promise<UserPublicRow> => {
   // Verify the user belongs to this institution
@@ -1009,6 +1038,7 @@ export const updateInstitutionUser = async (
   if (data.phone !== undefined) payload.phone = data.phone.trim();
   if (data.oab !== undefined) payload.OAB = data.oab.trim();
   if (data.isActive !== undefined) payload.is_active = data.isActive;
+  if (data.isOfficeAdmin !== undefined) payload.is_office_admin = data.isOfficeAdmin;
 
   const client = baserowClient();
   const response = await client.patch<BaserowUserRow>(

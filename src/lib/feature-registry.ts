@@ -13,6 +13,7 @@ export const SYSTEM_FEATURES: SystemFeature[] = [
   { key: "conexoes", path: "/conexoes", label: "Conexões" },
   { key: "follow-up", path: "/follow-up", label: "Follow-up" },
   { key: "usuarios", path: "/usuarios", label: "Usuários" },
+  { key: "departamentos", path: "/departamentos", label: "Departamentos" },
   { key: "suporte", path: "/suporte", label: "Suporte" },
 ];
 

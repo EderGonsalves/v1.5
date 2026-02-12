@@ -22,6 +22,7 @@ type TransferNotifyPayload = {
     institutionId?: number | string;
     responsavel?: string;
   };
+  department?: { id: number; name: string };
   timestamp: string;
 };
 
@@ -41,8 +42,9 @@ export async function notifyTransferWebhook(params: {
     institutionId?: number | string;
     responsavel?: string;
   };
+  department?: { id: number; name: string };
 }): Promise<void> {
-  const { type, user, caseInfo } = params;
+  const { type, user, caseInfo, department } = params;
 
   const message =
     type === "transfer"
@@ -60,6 +62,7 @@ export async function notifyTransferWebhook(params: {
       institutionId: user.institutionId,
     },
     case: caseInfo,
+    ...(department ? { department } : {}),
     timestamp: new Date().toISOString(),
   };
 

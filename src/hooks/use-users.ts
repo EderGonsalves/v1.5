@@ -63,6 +63,7 @@ export const useUsers = (
       phone?: string;
       oab?: string;
       institutionId?: number;
+      isOfficeAdmin?: boolean;
     }) => {
       const user = await createUserClient(data);
       setUsers((prev) => [...prev, user]);
@@ -81,6 +82,7 @@ export const useUsers = (
         phone?: string;
         oab?: string;
         isActive?: boolean;
+        isOfficeAdmin?: boolean;
       },
     ) => {
       setUpdatingIds((prev) => new Set(prev).add(userId));

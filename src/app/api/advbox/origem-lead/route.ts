@@ -1,26 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { getRequestAuth } from "@/lib/auth/session";
+
 const ADVBOX_API_URL = process.env.ADVBOX_API_URL || "https://app.advbox.com.br/v1";
 const ADVBOX_API_TOKEN = process.env.ADVBOX_API_TOKEN;
-
-// Função auxiliar para verificar autenticação
-const verifyAuth = (request: NextRequest): { valid: boolean; error?: string } => {
-  const authCookie = request.cookies.get("onboarding_auth");
-
-  if (!authCookie?.value) {
-    return { valid: false, error: "Não autenticado" };
-  }
-
-  try {
-    const authData = JSON.parse(authCookie.value);
-    if (!authData?.institutionId) {
-      return { valid: false, error: "Token de autenticação inválido" };
-    }
-    return { valid: true };
-  } catch {
-    return { valid: false, error: "Token de autenticação inválido" };
-  }
-};
 
 type CreateLeadSourceRequest = {
   name: string;
@@ -30,11 +13,10 @@ type CreateLeadSourceRequest = {
 };
 
 export async function POST(request: NextRequest) {
-  // Verificar autenticação
-  const auth = verifyAuth(request);
-  if (!auth.valid) {
+  const auth = getRequestAuth(request);
+  if (!auth) {
     return NextResponse.json(
-      { error: auth.error },
+      { error: "Não autenticado" },
       { status: 401 },
     );
   }
@@ -101,21 +83,17 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     return NextResponse.json(
-      {
-        error: "server_error",
-        message: error instanceof Error ? error.message : "Erro interno do servidor",
-      },
+      { error: "Erro interno do servidor" },
       { status: 500 },
     );
   }
 }
 
 export async function GET(request: NextRequest) {
-  // Verificar autenticação
-  const auth = verifyAuth(request);
-  if (!auth.valid) {
+  const auth = getRequestAuth(request);
+  if (!auth) {
     return NextResponse.json(
-      { error: auth.error },
+      { error: "Não autenticado" },
       { status: 401 },
     );
   }
@@ -154,10 +132,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: true, data: sources }, { status: 200 });
   } catch (error) {
     return NextResponse.json(
-      {
-        error: "server_error",
-        message: error instanceof Error ? error.message : "Erro interno do servidor",
-      },
+      { error: "Erro interno do servidor" },
       { status: 500 },
     );
   }

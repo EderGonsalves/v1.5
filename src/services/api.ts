@@ -1,4 +1,4 @@
-import axios, { type AxiosResponse } from "axios";
+import axios from "axios";
 
 import type {
   AuthInfo,
@@ -531,8 +531,8 @@ const BASEROW_API_URL =
   process.env.AUTOMATION_DB_API_URL ||
   "";
 const BASEROW_API_KEY =
-  process.env.NEXT_PUBLIC_BASEROW_API_KEY ||
   process.env.BASEROW_API_KEY ||
+  process.env.NEXT_PUBLIC_BASEROW_API_KEY ||
   process.env.AUTOMATION_DB_TOKEN ||
   "";
 const BASEROW_TABLE_ID =
@@ -544,9 +544,91 @@ const BASEROW_TABLE_ID =
 // Validação de configuração (apenas em desenvolvimento para debug)
 if (
   process.env.NODE_ENV !== "production" &&
+  typeof window === "undefined" &&
   (!BASEROW_API_URL || !BASEROW_API_KEY)
 ) {
   console.error("AVISO: Configuração do Baserow incompleta. Verifique as variáveis de ambiente.");
+}
+
+// ---------------------------------------------------------------------------
+// Baserow HTTP helpers — keeps API key server-side
+// Server: direct axios (preserves AxiosError for existing catch blocks)
+// Client: routes through /api/v1/baserow-proxy
+// ---------------------------------------------------------------------------
+
+const _isServer = typeof window === "undefined";
+
+class BaserowHttpError extends Error {
+  status: number;
+  responseData: unknown;
+  constructor(message: string, status: number, data?: unknown) {
+    super(message);
+    this.name = "BaserowHttpError";
+    this.status = status;
+    this.responseData = data;
+  }
+}
+
+const _baserowHeaders = () => ({
+  Authorization: `Token ${BASEROW_API_KEY}`,
+  "Content-Type": "application/json" as const,
+});
+
+async function _proxyFetch(url: string, method: string, data?: unknown): Promise<Response> {
+  return fetch("/api/v1/baserow-proxy", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url, method, ...(data !== undefined ? { data } : {}) }),
+  });
+}
+
+async function _handleProxyResponse<T>(resp: Response): Promise<{ data: T; status: number }> {
+  const body = resp.status !== 204 ? await resp.json().catch(() => ({})) : {};
+  if (!resp.ok) {
+    throw new BaserowHttpError(
+      (body as Record<string, string>).error || `Erro Baserow: ${resp.status}`,
+      resp.status,
+      body,
+    );
+  }
+  return { data: body as T, status: resp.status };
+}
+
+async function baserowGet<T = unknown>(url: string, timeout = 30000): Promise<{ data: T; status: number }> {
+  if (_isServer) {
+    return axios.get<T>(url, { headers: _baserowHeaders(), timeout });
+  }
+  return _handleProxyResponse<T>(await _proxyFetch(url, "GET"));
+}
+
+async function baserowPost<T = unknown>(url: string, body: unknown, timeout = 30000): Promise<{ data: T; status: number }> {
+  if (_isServer) {
+    return axios.post<T>(url, body, { headers: _baserowHeaders(), timeout });
+  }
+  return _handleProxyResponse<T>(await _proxyFetch(url, "POST", body));
+}
+
+async function baserowPatch<T = unknown>(url: string, body: unknown, timeout = 30000): Promise<{ data: T; status: number }> {
+  if (_isServer) {
+    return axios.patch<T>(url, body, { headers: _baserowHeaders(), timeout });
+  }
+  return _handleProxyResponse<T>(await _proxyFetch(url, "PATCH", body));
+}
+
+async function baserowDelete(url: string, timeout = 30000): Promise<void> {
+  if (_isServer) {
+    await axios.delete(url, { headers: _baserowHeaders(), timeout });
+    return;
+  }
+  const resp = await _proxyFetch(url, "DELETE");
+  if (!resp.ok && resp.status !== 204) {
+    const body = await resp.json().catch(() => ({}));
+    throw new BaserowHttpError(
+      (body as Record<string, string>).error || `Erro Baserow: ${resp.status}`,
+      resp.status,
+      body,
+    );
+  }
 }
 
 export type BaserowConfigRow = {
@@ -565,15 +647,9 @@ export const getBaserowConfigs = async (institutionId?: number): Promise<Baserow
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_TABLE_ID}/?user_field_names=true`;
 
-    const response = await axios.get(url, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    });
+    const response = await baserowGet(url);
 
-    let results = response.data.results || [];
+    let results = (response.data as { results?: BaserowConfigRow[] }).results || [];
 
     // Filtrar pelo body.auth.institutionId se fornecido
     // O Baserow retorna campos com nomes como "body.auth.institutionId" (string literal)
@@ -615,15 +691,9 @@ export const updateBaserowConfig = async (
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_TABLE_ID}/${rowId}/?user_field_names=true`;
 
-    const response = await axios.patch(url, data, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    });
+    const response = await baserowPatch(url, data);
 
-    return response.data;
+    return response.data as BaserowConfigRow;
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response) {
@@ -676,15 +746,9 @@ export const createBaserowConfig = async (
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_TABLE_ID}/?user_field_names=true`;
 
-    const response = await axios.post(url, data, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    });
+    const response = await baserowPost(url, data);
 
-    return response.data;
+    return response.data as BaserowConfigRow;
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response) {
@@ -749,18 +813,11 @@ const buildAgentStateUrl = (phoneNumber?: string) => {
 export const getAgentStateRows = async (phoneNumber?: string): Promise<AgentStateRow[]> => {
   try {
     const url = buildAgentStateUrl(phoneNumber);
-    const response = await axios.get(url, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 15000,
-    });
+    const response = await baserowGet(url, 15000);
 
-    const results = Array.isArray(response.data?.results)
-      ? response.data.results
-      : [];
-    return results as AgentStateRow[];
+    const data = response.data as { results?: AgentStateRow[] };
+    const results = Array.isArray(data?.results) ? data.results : [];
+    return results;
   } catch (error) {
     console.error("Erro ao buscar EstadoAgente no Baserow:", error);
     if (axios.isAxiosError(error)) {
@@ -789,13 +846,7 @@ export const registerAgentState = async (data: { numero: string; estado: string 
       estado: data.estado?.trim() ?? "",
     };
 
-    const response = await axios.post(url, payload, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 15000,
-    });
+    const response = await baserowPost(url, payload, 15000);
 
     return response.data as AgentStateRow;
   } catch (error) {
@@ -840,6 +891,9 @@ export type BaserowCaseRow = {
   // New fields
   cliente?: { id: number; value: string }[] | null;
   responsavel?: string;
+  department_id?: number | null;
+  department_name?: string | null;
+  assigned_to_user_id?: number | null;
   status_caso?: { id: number; value: string; color: string } | string | null;
   // WABA phone number associated with this case
   display_phone_number?: string | null;
@@ -851,6 +905,12 @@ export type GetBaserowCasesParams = {
   page?: number;
   pageSize?: number;
   fetchAll?: boolean;
+  /** When true + fetchAll, fetches last page first so newest cases appear immediately */
+  newestFirst?: boolean;
+  /** Limits how many pages to fetch (newestFirst: from the end). Ignored without fetchAll. */
+  maxPages?: number;
+  /** Called after each page is fetched — enables progressive rendering */
+  onPageLoaded?: (partialResults: BaserowCaseRow[], totalCount: number) => void;
 };
 
 export type BaserowCasesResponse = {
@@ -868,20 +928,17 @@ export const getBaserowCaseById = async (
     }
 
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASES_TABLE_ID}/${rowId}/?user_field_names=true`;
-    const response = await axios.get(url, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 20000,
-    });
+    const response = await baserowGet(url, 20000);
 
     return response.data as BaserowCaseRow;
   } catch (error) {
+    if (
+      (axios.isAxiosError(error) && error.response?.status === 404) ||
+      (error instanceof BaserowHttpError && error.status === 404)
+    ) {
+      return null;
+    }
     if (axios.isAxiosError(error)) {
-      if (error.response?.status === 404) {
-        return null;
-      }
 
       if (error.response) {
         const errorMessage =
@@ -923,6 +980,9 @@ export const getBaserowCases = async ({
   page = 1,
   pageSize = 200,
   fetchAll = false,
+  newestFirst = false,
+  maxPages,
+  onPageLoaded,
 }: GetBaserowCasesParams = {}): Promise<BaserowCasesResponse> => {
   try {
     // Usar filtro server-side do Baserow para instituições não-admin
@@ -942,6 +1002,63 @@ export const getBaserowCases = async ({
     };
 
     const shouldFetchAll = Boolean(fetchAll);
+
+    // Newest-first: fetch last page first so the UI shows recent cases immediately
+    if (shouldFetchAll && newestFirst) {
+      // Step 1: Fetch page 1 to get total count
+      const firstResponse = await baserowGet<BaserowListResponse<FollowUpHistoryRow>>(
+        buildUrl(1),
+      );
+
+      const firstPageResults: BaserowCaseRow[] = firstResponse.data?.results || [];
+      const totalCount = typeof firstResponse.data?.count === "number"
+        ? firstResponse.data.count
+        : firstPageResults.length;
+      const totalPages = Math.ceil(totalCount / pageSize);
+
+      // Single page — return immediately
+      if (totalPages <= 1) {
+        if (onPageLoaded) {
+          onPageLoaded([...firstPageResults], totalCount);
+        }
+        return { results: firstPageResults, totalCount, hasNextPage: false };
+      }
+
+      // Step 2: Fetch from last page backwards (newest cases first)
+      // maxPages = total API calls allowed (page 1 already used one)
+      const pageBudget = maxPages && maxPages > 0 ? maxPages - 1 : totalPages - 1;
+      const allResults: BaserowCaseRow[] = [];
+      let pagesLoaded = 0;
+
+      for (let p = totalPages; p >= 2 && pagesLoaded < pageBudget; p--) {
+        const response = await baserowGet<BaserowListResponse<FollowUpHistoryRow>>(
+          buildUrl(p),
+        );
+        const pageResults: BaserowCaseRow[] = response.data?.results || [];
+        allResults.push(...pageResults);
+        pagesLoaded++;
+
+        if (onPageLoaded) {
+          onPageLoaded([...allResults], totalCount);
+        }
+      }
+
+      // Append page 1 data only if we fetched ALL remaining pages (complete dataset)
+      if (pagesLoaded >= totalPages - 1) {
+        allResults.push(...firstPageResults);
+        if (onPageLoaded) {
+          onPageLoaded([...allResults], totalCount);
+        }
+      }
+
+      return {
+        results: allResults,
+        totalCount,
+        hasNextPage: allResults.length < totalCount,
+      };
+    }
+
+    // Standard ascending fetch
     const initialUrl = buildUrl(shouldFetchAll ? 1 : page);
 
     const allResults: BaserowCaseRow[] = [];
@@ -950,18 +1067,17 @@ export const getBaserowCases = async ({
     let totalCount: number | null = null;
 
     while (nextUrl) {
-      const response = await axios.get<BaserowListResponse<FollowUpHistoryRow>>(nextUrl, {
-        headers: {
-          Authorization: `Token ${BASEROW_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        timeout: 30000,
-      });
+      const response = await baserowGet<BaserowListResponse<FollowUpHistoryRow>>(nextUrl);
 
       const pageResults: BaserowCaseRow[] = response.data?.results || [];
       allResults.push(...pageResults);
       if (typeof response.data?.count === "number") {
         totalCount = response.data.count;
+      }
+
+      // Notify caller with partial results for progressive rendering
+      if (onPageLoaded && totalCount !== null) {
+        onPageLoaded([...allResults], totalCount);
       }
 
       const nextFromResponse = normalizeNextUrl(response.data?.next);
@@ -1001,15 +1117,9 @@ export const updateBaserowCase = async (
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASES_TABLE_ID}/${rowId}/?user_field_names=true`;
 
-    const response = await axios.patch(url, data, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    });
+    const response = await baserowPatch(url, data);
 
-    return response.data;
+    return response.data as BaserowCaseRow;
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response) {
@@ -1069,15 +1179,9 @@ export const getWebhooks = async (institutionId?: number): Promise<WebhookRow[]>
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_WEBHOOKS_TABLE_ID}/?user_field_names=true`;
 
-    const response = await axios.get(url, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    });
+    const response = await baserowGet(url);
 
-    let results: WebhookRow[] = response.data?.results || [];
+    let results: WebhookRow[] = (response.data as { results?: WebhookRow[] })?.results || [];
 
     if (typeof institutionId === "number") {
       results = results.filter((row) => {
@@ -1117,15 +1221,9 @@ export const createWebhook = async (data: CreateWebhookPayload): Promise<Webhook
       updated_at: new Date().toISOString(),
     };
 
-    const response = await axios.post(url, payload, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    });
+    const response = await baserowPost(url, payload);
 
-    return response.data;
+    return response.data as WebhookRow;
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response) {
@@ -1153,15 +1251,9 @@ export const updateWebhook = async (
       updated_at: new Date().toISOString(),
     };
 
-    const response = await axios.patch(url, payload, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    });
+    const response = await baserowPatch(url, payload);
 
-    return response.data;
+    return response.data as WebhookRow;
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response) {
@@ -1181,13 +1273,7 @@ export const deleteWebhook = async (rowId: number): Promise<void> => {
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_WEBHOOKS_TABLE_ID}/${rowId}/`;
 
-    await axios.delete(url, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    });
+    await baserowDelete(url);
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response) {
@@ -1280,15 +1366,9 @@ export const getFollowUpConfigs = async (institutionId?: number): Promise<Follow
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_FOLLOW_UP_CONFIG_TABLE_ID}/?user_field_names=true&size=200`;
 
-    const response = await axios.get(url, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    });
+    const response = await baserowGet(url);
 
-    let results: FollowUpConfigRow[] = response.data?.results || [];
+    let results: FollowUpConfigRow[] = (response.data as { results?: FollowUpConfigRow[] })?.results || [];
 
     if (typeof institutionId === "number") {
       results = results.filter((row) => {
@@ -1331,15 +1411,9 @@ export const createFollowUpConfig = async (data: CreateFollowUpConfigPayload): P
       updated_at: new Date().toISOString(),
     };
 
-    const response = await axios.post(url, payload, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    });
+    const response = await baserowPost(url, payload);
 
-    return response.data;
+    return response.data as FollowUpConfigRow;
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response) {
@@ -1367,15 +1441,9 @@ export const updateFollowUpConfig = async (
       updated_at: new Date().toISOString(),
     };
 
-    const response = await axios.patch(url, payload, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    });
+    const response = await baserowPatch(url, payload);
 
-    return response.data;
+    return response.data as FollowUpConfigRow;
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response) {
@@ -1395,13 +1463,7 @@ export const deleteFollowUpConfig = async (rowId: number): Promise<void> => {
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_FOLLOW_UP_CONFIG_TABLE_ID}/${rowId}/`;
 
-    await axios.delete(url, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    });
+    await baserowDelete(url);
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response) {
@@ -1426,15 +1488,9 @@ export const getFollowUpHistory = async (caseId?: number, institutionId?: number
 
     // Paginar para buscar todos os registros
     while (nextUrl) {
-      const response: AxiosResponse<BaserowListResponse<FollowUpHistoryRow>> = await axios.get(nextUrl, {
-        headers: {
-          Authorization: `Token ${BASEROW_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        timeout: 30000,
-      });
+      const resp = await baserowGet<BaserowListResponse<FollowUpHistoryRow>>(nextUrl!);
 
-      const data = response.data;
+      const data: BaserowListResponse<FollowUpHistoryRow> = resp.data;
       const rows: FollowUpHistoryRow[] = data?.results || [];
       collected.push(...rows);
 
@@ -1495,15 +1551,9 @@ export const createFollowUpHistory = async (data: CreateFollowUpHistoryPayload):
       sent_at: data.sent_at ?? new Date().toISOString(),
     };
 
-    const response = await axios.post(url, payload, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    });
+    const response = await baserowPost(url, payload);
 
-    return response.data;
+    return response.data as FollowUpHistoryRow;
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response) {
@@ -1526,15 +1576,9 @@ export const updateFollowUpHistory = async (
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_FOLLOW_UP_HISTORY_TABLE_ID}/${rowId}/?user_field_names=true`;
 
-    const response = await axios.patch(url, data, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    });
+    const response = await baserowPatch(url, data);
 
-    return response.data;
+    return response.data as FollowUpHistoryRow;
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response) {
@@ -1570,6 +1614,7 @@ const BASEROW_CASE_KANBAN_STATUS_TABLE_ID =
 export type KanbanColumnRow = {
   id: number;
   institution_id?: number;
+  department_id?: number | null;
   name?: string;
   ordem?: number;
   color?: string;
@@ -1582,6 +1627,7 @@ export type KanbanColumnRow = {
 
 export type CreateKanbanColumnPayload = {
   institution_id: number;
+  department_id?: number | null;
   name: string;
   ordem: number;
   color?: string;
@@ -1613,29 +1659,48 @@ export type CreateCaseKanbanStatusPayload = {
 };
 
 // Kanban Columns CRUD
-export const getKanbanColumns = async (institutionId?: number): Promise<KanbanColumnRow[]> => {
+export const getKanbanColumns = async (
+  institutionId?: number,
+  departmentId?: number | null,
+): Promise<KanbanColumnRow[]> => {
   try {
-    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_KANBAN_COLUMNS_TABLE_ID}/?user_field_names=true&size=200`;
-
-    const response = await axios.get(url, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
+    const params = new URLSearchParams({
+      user_field_names: "true",
+      size: "200",
     });
 
-    let results: KanbanColumnRow[] = response.data?.results || [];
-
+    // Server-side filter by institution to reduce data transfer
     if (typeof institutionId === "number") {
-      results = results.filter((row) => {
-        const rowInstitutionId = row.institution_id;
-        return rowInstitutionId === institutionId ||
-          String(rowInstitutionId) === String(institutionId);
-      });
+      params.set("filter__institution_id__equal", String(institutionId));
     }
 
-    // Remove duplicates by name, keeping the one with the lowest ID
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_KANBAN_COLUMNS_TABLE_ID}/?${params.toString()}`;
+
+    const response = await baserowGet(url);
+
+    let results: KanbanColumnRow[] = (response.data as { results?: KanbanColumnRow[] })?.results || [];
+
+    // Department-scoped columns with fallback to institution defaults
+    if (departmentId !== undefined && departmentId !== null) {
+      const deptColumns = results.filter(
+        (row) => Number(row.department_id) === departmentId,
+      );
+      if (deptColumns.length > 0) {
+        results = deptColumns;
+      } else {
+        // Fallback: institution defaults (no department_id)
+        results = results.filter(
+          (row) => !row.department_id,
+        );
+      }
+    } else {
+      // No department selected: show institution defaults only
+      results = results.filter(
+        (row) => !row.department_id,
+      );
+    }
+
+    // Remove duplicates by name within scope, keeping the one with the lowest ID
     const seenNames = new Map<string, KanbanColumnRow>();
     for (const row of results) {
       const name = (row.name || "").toLowerCase().trim();
@@ -1670,20 +1735,15 @@ export const createKanbanColumn = async (data: CreateKanbanColumnPayload): Promi
 
     const payload = {
       ...data,
+      department_id: data.department_id ?? null,
       is_default: data.is_default ?? "não",
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
-    const response = await axios.post(url, payload, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    });
+    const response = await baserowPost(url, payload);
 
-    return response.data;
+    return response.data as KanbanColumnRow;
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response) {
@@ -1711,15 +1771,9 @@ export const updateKanbanColumn = async (
       updated_at: new Date().toISOString(),
     };
 
-    const response = await axios.patch(url, payload, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    });
+    const response = await baserowPatch(url, payload);
 
-    return response.data;
+    return response.data as KanbanColumnRow;
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response) {
@@ -1739,13 +1793,7 @@ export const deleteKanbanColumn = async (rowId: number): Promise<void> => {
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_KANBAN_COLUMNS_TABLE_ID}/${rowId}/`;
 
-    await axios.delete(url, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    });
+    await baserowDelete(url);
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response) {
@@ -1774,40 +1822,30 @@ export const getCaseKanbanStatus = async (
     while (hasMore) {
       const params = new URLSearchParams({
         user_field_names: "true",
-        size: "100",
+        size: "200",
         page: String(page),
       });
 
+      // Server-side filters to reduce data transfer
+      if (typeof institutionId === "number") {
+        params.set("filter__institution_id__equal", String(institutionId));
+      }
+      if (typeof caseId === "number") {
+        params.set("filter__case_id__equal", String(caseId));
+      }
+
       const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASE_KANBAN_STATUS_TABLE_ID}/?${params.toString()}`;
 
-      const response = await axios.get(url, {
-        headers: {
-          Authorization: `Token ${BASEROW_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        timeout: 30000,
-      });
+      const response = await baserowGet<BaserowListResponse<CaseKanbanStatusRow>>(url);
 
       const rows: CaseKanbanStatusRow[] = response.data?.results || [];
       collected.push(...rows);
 
-      const nextUrl = response.data?.next;
-      hasMore = Boolean(nextUrl && rows.length);
+      hasMore = Boolean(response.data?.next && rows.length);
       page += 1;
     }
 
-    return collected.filter((row) => {
-      const matchesCase =
-        typeof caseId !== "number"
-          ? true
-          : row.case_id === caseId || String(row.case_id) === String(caseId);
-      const matchesInstitution =
-        typeof institutionId !== "number"
-          ? true
-          : row.institution_id === institutionId ||
-            String(row.institution_id) === String(institutionId);
-      return matchesCase && matchesInstitution;
-    });
+    return collected;
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response) {
@@ -1833,15 +1871,9 @@ export const createCaseKanbanStatus = async (
       moved_at: data.moved_at ?? new Date().toISOString(),
     };
 
-    const response = await axios.post(url, payload, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    });
+    const response = await baserowPost(url, payload);
 
-    return response.data;
+    return response.data as CaseKanbanStatusRow;
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response) {
@@ -1869,15 +1901,9 @@ export const updateCaseKanbanStatus = async (
       moved_at: new Date().toISOString(),
     };
 
-    const response = await axios.patch(url, payload, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    });
+    const response = await baserowPatch(url, payload);
 
-    return response.data;
+    return response.data as CaseKanbanStatusRow;
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response) {
@@ -1897,13 +1923,7 @@ export const deleteCaseKanbanStatus = async (rowId: number): Promise<void> => {
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASE_KANBAN_STATUS_TABLE_ID}/${rowId}/`;
 
-    await axios.delete(url, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    });
+    await baserowDelete(url);
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response) {
@@ -1949,8 +1969,9 @@ export const upsertCaseKanbanStatus = async (
 // Função para inicializar colunas padrão para uma instituição
 export const initializeDefaultKanbanColumns = async (
   institutionId: number,
+  departmentId?: number | null,
 ): Promise<KanbanColumnRow[]> => {
-  const existingColumns = await getKanbanColumns(institutionId);
+  const existingColumns = await getKanbanColumns(institutionId, departmentId);
 
   if (existingColumns.length > 0) {
     return existingColumns;
@@ -1959,6 +1980,7 @@ export const initializeDefaultKanbanColumns = async (
   const defaultColumns: CreateKanbanColumnPayload[] = [
     {
       institution_id: institutionId,
+      department_id: departmentId ?? null,
       name: "Em Atendimento",
       ordem: 1,
       color: "blue",
@@ -1967,6 +1989,7 @@ export const initializeDefaultKanbanColumns = async (
     },
     {
       institution_id: institutionId,
+      department_id: departmentId ?? null,
       name: "Aguardando Revisao",
       ordem: 2,
       color: "amber",
@@ -1975,6 +1998,7 @@ export const initializeDefaultKanbanColumns = async (
     },
     {
       institution_id: institutionId,
+      department_id: departmentId ?? null,
       name: "Em Andamento",
       ordem: 3,
       color: "purple",
@@ -1983,6 +2007,7 @@ export const initializeDefaultKanbanColumns = async (
     },
     {
       institution_id: institutionId,
+      department_id: departmentId ?? null,
       name: "Concluidos Ganhos",
       ordem: 4,
       color: "green",
@@ -1991,6 +2016,7 @@ export const initializeDefaultKanbanColumns = async (
     },
     {
       institution_id: institutionId,
+      department_id: departmentId ?? null,
       name: "Concluidos Perdidos",
       ordem: 5,
       color: "red",
@@ -2051,17 +2077,14 @@ export const getClientById = async (
     }
 
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CLIENTS_TABLE_ID}/${rowId}/?user_field_names=true`;
-    const response = await axios.get(url, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 20000,
-    });
+    const response = await baserowGet(url, 20000);
 
     return response.data as ClientRow;
   } catch (error) {
-    if (axios.isAxiosError(error) && error.response?.status === 404) {
+    if (
+      (axios.isAxiosError(error) && error.response?.status === 404) ||
+      (error instanceof BaserowHttpError && error.status === 404)
+    ) {
       return null;
     }
     console.error("Erro ao buscar cliente:", error);
@@ -2074,15 +2097,9 @@ export const getClientsByInstitution = async (
 ): Promise<ClientRow[]> => {
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CLIENTS_TABLE_ID}/?user_field_names=true&size=200&filter__institution_id__equal=${institutionId}`;
-    const response = await axios.get(url, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    });
+    const response = await baserowGet(url);
 
-    return response.data?.results || [];
+    return (response.data as { results?: ClientRow[] })?.results || [];
   } catch (error) {
     console.error("Erro ao buscar clientes:", error);
     throw error;
@@ -2113,13 +2130,7 @@ export const createClient = async (
     }
 
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CLIENTS_TABLE_ID}/?user_field_names=true`;
-    const response = await axios.post(url, cleanPayload, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    });
+    const response = await baserowPost(url, cleanPayload);
 
     return response.data as ClientRow;
   } catch (error) {
@@ -2159,13 +2170,7 @@ export const updateClient = async (
     }
 
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CLIENTS_TABLE_ID}/${rowId}/?user_field_names=true`;
-    const response = await axios.patch(url, cleanPayload, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 30000,
-    });
+    const response = await baserowPatch(url, cleanPayload);
 
     return response.data as ClientRow;
   } catch (error) {
@@ -2188,15 +2193,9 @@ export const searchClientByPhone = async (
     // Clean phone number for search
     const cleanPhone = phone.replace(/\D/g, "");
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CLIENTS_TABLE_ID}/?user_field_names=true&filter__celular__contains=${cleanPhone}&filter__institution_id__equal=${institutionId}`;
-    const response = await axios.get(url, {
-      headers: {
-        Authorization: `Token ${BASEROW_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      timeout: 20000,
-    });
+    const response = await baserowGet(url, 20000);
 
-    const results = response.data?.results || [];
+    const results = (response.data as { results?: ClientRow[] })?.results || [];
     return results.length > 0 ? results[0] : null;
   } catch (error) {
     console.error("Erro ao buscar cliente por telefone:", error);
@@ -2290,21 +2289,6 @@ export type CreateCalendarEventGuestPayload = {
   updated_at?: string;
 };
 
-type CalendarHeaders = {
-  Authorization: string;
-  "Content-Type": "application/json";
-};
-
-const getCalendarHeaders = (): CalendarHeaders => {
-  if (!BASEROW_API_KEY) {
-    throw new Error("BASEROW_API_KEY não configurado");
-  }
-  return {
-    Authorization: `Token ${BASEROW_API_KEY}`,
-    "Content-Type": "application/json",
-  };
-};
-
 const ensureCalendarTablesConfigured = (requireGuests = false): void => {
   if (!BASEROW_API_URL) {
     throw new Error("BASEROW_API_URL não configurado");
@@ -2389,19 +2373,15 @@ export const listCalendarEvents = async (
     const results: CalendarEventRow[] = [];
 
     while (nextUrl) {
-      const response: AxiosResponse<
-        BaserowListResponse<CalendarEventRow>
-      > = await axios.get<BaserowListResponse<CalendarEventRow>>(nextUrl, {
-        headers: getCalendarHeaders(),
-        timeout: 20000,
-      });
+      const resp = await baserowGet<BaserowListResponse<CalendarEventRow>>(nextUrl!, 20000);
+      const data: BaserowListResponse<CalendarEventRow> = resp.data;
 
-      const pageResults = response.data?.results ?? [];
+      const pageResults = data?.results ?? [];
       if (Array.isArray(pageResults)) {
         results.push(...(pageResults as CalendarEventRow[]));
       }
 
-      nextUrl = response.data?.next ?? null;
+      nextUrl = data?.next ?? null;
     }
 
     if (params.includeDeleted) {
@@ -2426,14 +2406,14 @@ export const getCalendarEventById = async (
     }
 
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_EVENTS_TABLE_ID}/${eventId}/?user_field_names=true`;
-    const response = await axios.get(url, {
-      headers: getCalendarHeaders(),
-      timeout: 20000,
-    });
+    const response = await baserowGet(url, 20000);
 
     return response.data as CalendarEventRow;
   } catch (error) {
-    if (axios.isAxiosError(error) && error.response?.status === 404) {
+    if (
+      (axios.isAxiosError(error) && error.response?.status === 404) ||
+      (error instanceof BaserowHttpError && error.status === 404)
+    ) {
       return null;
     }
     console.error("Erro ao buscar evento:", error);
@@ -2447,10 +2427,7 @@ export const createCalendarEvent = async (
   try {
     ensureCalendarTablesConfigured();
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_EVENTS_TABLE_ID}/?user_field_names=true`;
-    const response = await axios.post(url, sanitizePayload(payload), {
-      headers: getCalendarHeaders(),
-      timeout: 20000,
-    });
+    const response = await baserowPost(url, sanitizePayload(payload), 20000);
 
     return response.data as CalendarEventRow;
   } catch (error) {
@@ -2475,10 +2452,7 @@ export const updateCalendarEvent = async (
   try {
     ensureCalendarTablesConfigured();
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_EVENTS_TABLE_ID}/${eventId}/?user_field_names=true`;
-    const response = await axios.patch(url, sanitizePayload(payload), {
-      headers: getCalendarHeaders(),
-      timeout: 20000,
-    });
+    const response = await baserowPatch(url, sanitizePayload(payload), 20000);
 
     return response.data as CalendarEventRow;
   } catch (error) {
@@ -2500,10 +2474,7 @@ export const deleteCalendarEvent = async (
   try {
     ensureCalendarTablesConfigured();
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_EVENTS_TABLE_ID}/${eventId}/`;
-    await axios.delete(url, {
-      headers: getCalendarHeaders(),
-      timeout: 20000,
-    });
+    await baserowDelete(url, 20000);
   } catch (error) {
     console.error("Erro ao excluir evento:", error);
     throw error;
@@ -2522,10 +2493,7 @@ export const createCalendarEventGuest = async (
       notification_status: payload.notification_status ?? "pending",
     });
 
-    const response = await axios.post(url, body, {
-      headers: getCalendarHeaders(),
-      timeout: 20000,
-    });
+    const response = await baserowPost(url, body, 20000);
 
     return response.data as CalendarEventGuestRow;
   } catch (error) {
@@ -2544,14 +2512,14 @@ export const getCalendarEventGuestById = async (
     }
 
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_EVENT_GUESTS_TABLE_ID}/${guestId}/?user_field_names=true`;
-    const response = await axios.get(url, {
-      headers: getCalendarHeaders(),
-      timeout: 20000,
-    });
+    const response = await baserowGet(url, 20000);
 
     return response.data as CalendarEventGuestRow;
   } catch (error) {
-    if (axios.isAxiosError(error) && error.response?.status === 404) {
+    if (
+      (axios.isAxiosError(error) && error.response?.status === 404) ||
+      (error instanceof BaserowHttpError && error.status === 404)
+    ) {
       return null;
     }
     console.error("Erro ao buscar convidado:", error);
@@ -2563,10 +2531,7 @@ export const deleteCalendarEventGuest = async (guestId: number): Promise<void> =
   try {
     ensureCalendarTablesConfigured(true);
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_EVENT_GUESTS_TABLE_ID}/${guestId}/`;
-    await axios.delete(url, {
-      headers: getCalendarHeaders(),
-      timeout: 20000,
-    });
+    await baserowDelete(url, 20000);
   } catch (error) {
     console.error("Erro ao excluir convidado:", error);
     throw error;
@@ -2579,11 +2544,8 @@ export const listCalendarEventGuests = async (
   try {
     ensureCalendarTablesConfigured(true);
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_EVENT_GUESTS_TABLE_ID}/?user_field_names=true&filter__event_id__link_row_has=${eventId}`;
-    const response = await axios.get(url, {
-      headers: getCalendarHeaders(),
-      timeout: 20000,
-    });
-    return (response.data?.results as CalendarEventGuestRow[]) ?? [];
+    const response = await baserowGet(url, 20000);
+    return ((response.data as { results?: CalendarEventGuestRow[] })?.results as CalendarEventGuestRow[]) ?? [];
   } catch (error) {
     console.error("Erro ao listar convidados:", error);
     throw error;

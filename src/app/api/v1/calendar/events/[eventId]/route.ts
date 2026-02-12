@@ -1,6 +1,7 @@
 import type { ZodIssue } from "zod";
 import { NextRequest, NextResponse } from "next/server";
 
+import { getRequestAuth } from "@/lib/auth/session";
 import { eventBelongsToInstitution } from "@/lib/calendar/event-helpers";
 import { resolveInstitutionId } from "@/lib/calendar/request";
 import { calendarEventUpdateSchema, type CalendarEventUpdateInput } from "@/lib/calendar/schemas";
@@ -105,6 +106,11 @@ export async function GET(
   { params }: RouteParams,
 ) {
   try {
+    const auth = getRequestAuth(request);
+    if (!auth) {
+      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+    }
+
     const eventId = await extractEventId(params);
     if (!eventId) {
       return respondWithError("eventId inválido na URL.");
@@ -130,8 +136,7 @@ export async function GET(
     console.error("[calendar/events/:id] GET error:", error);
     return NextResponse.json(
       {
-        error:
-          error instanceof Error ? error.message : "Erro ao buscar evento",
+        error: "Erro ao buscar evento",
       },
       { status: 500 },
     );
@@ -143,6 +148,11 @@ export async function PUT(
   { params }: RouteParams,
 ) {
   try {
+    const auth = getRequestAuth(request);
+    if (!auth) {
+      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+    }
+
     let parsedBody: unknown;
     try {
       parsedBody = await request.json();
@@ -192,8 +202,7 @@ export async function PUT(
     console.error("[calendar/events/:id] PUT error:", error);
     return NextResponse.json(
       {
-        error:
-          error instanceof Error ? error.message : "Erro ao atualizar evento",
+        error: "Erro ao atualizar evento",
       },
       { status: 500 },
     );
@@ -205,6 +214,11 @@ export async function DELETE(
   { params }: RouteParams,
 ) {
   try {
+    const auth = getRequestAuth(request);
+    if (!auth) {
+      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+    }
+
     const eventId = await extractEventId(params);
     if (!eventId) {
       return respondWithError("eventId inválido na URL.");
@@ -230,8 +244,7 @@ export async function DELETE(
     console.error("[calendar/events/:id] DELETE error:", error);
     return NextResponse.json(
       {
-        error:
-          error instanceof Error ? error.message : "Erro ao excluir evento",
+        error: "Erro ao excluir evento",
       },
       { status: 500 },
     );

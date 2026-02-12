@@ -7,10 +7,14 @@ import { listCalendarEvents } from "@/services/api";
 // ---------------------------------------------------------------------------
 
 type AvailableSlot = {
-  date: string;       // YYYY-MM-DD
-  day_of_week: string; // "mon" | "tue" | ... | "sun"
-  start: string;      // HH:mm
-  end: string;        // HH:mm
+  date: string;          // YYYY-MM-DD
+  date_formatted: string; // "quarta-feira, 11 de fevereiro de 2026"
+  day_of_week: string;   // "mon" | "tue" | ... | "sun"
+  day_label: string;     // "quarta-feira"
+  start: string;         // HH:mm
+  end: string;           // HH:mm
+  start_datetime: string; // ISO 8601 full
+  end_datetime: string;   // ISO 8601 full
 };
 
 type AvailabilityResponse = {
@@ -29,9 +33,62 @@ type AvailabilityResponse = {
 
 const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
+const DAY_LABELS: Record<string, string> = {
+  sun: "domingo",
+  mon: "segunda-feira",
+  tue: "terça-feira",
+  wed: "quarta-feira",
+  thu: "quinta-feira",
+  fri: "sexta-feira",
+  sat: "sábado",
+};
+
+const dateFormatter = new Intl.DateTimeFormat("pt-BR", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
 function timeToMinutes(time: string): number {
   const [h, m] = time.split(":").map(Number);
   return h * 60 + m;
+}
+
+/**
+ * Converts a UTC Date to local date string (YYYY-MM-DD) and minute-of-day
+ * using the given IANA timezone.
+ */
+function toLocalComponents(
+  date: Date,
+  timezone: string,
+): { dateStr: string; minutes: number } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+
+  const get = (type: string) =>
+    parts.find((p) => p.type === type)?.value ?? "0";
+  const dateStr = `${get("year")}-${get("month")}-${get("day")}`;
+  const hour = Number(get("hour"));
+  // Intl may return hour "24" for midnight; normalise to 0
+  const minutes = (hour === 24 ? 0 : hour) * 60 + Number(get("minute"));
+
+  return { dateStr, minutes };
+}
+
+/**
+ * Returns today's date string (YYYY-MM-DD) in the given timezone.
+ */
+function getLocalToday(timezone: string): string {
+  return toLocalComponents(new Date(), timezone).dateStr;
 }
 
 function minutesToTime(minutes: number): string {
@@ -54,7 +111,10 @@ function generateSlotsForDay(
 ): AvailableSlot[] {
   if (!dayStart || !dayEnd) return [];
 
-  const dayKey = DAY_KEYS[new Date(`${date}T12:00:00Z`).getUTCDay()];
+  const dateObj = new Date(`${date}T12:00:00Z`);
+  const dayKey = DAY_KEYS[dateObj.getUTCDay()];
+  const dayLabel = DAY_LABELS[dayKey] ?? dayKey;
+  const dateFormatted = dateFormatter.format(dateObj);
   const startMin = timeToMinutes(dayStart);
   const endMin = timeToMinutes(dayEnd);
   const slots: AvailableSlot[] = [];
@@ -69,11 +129,18 @@ function generateSlotsForDay(
     );
 
     if (!isBooked) {
+      const startTime = minutesToTime(cursor);
+      const endTime = minutesToTime(slotEnd);
+
       slots.push({
         date,
+        date_formatted: dateFormatted,
         day_of_week: dayKey,
-        start: minutesToTime(cursor),
-        end: minutesToTime(slotEnd),
+        day_label: dayLabel,
+        start: startTime,
+        end: endTime,
+        start_datetime: `${date}T${startTime}:00`,
+        end_datetime: `${date}T${endTime}:00`,
       });
     }
 
@@ -129,45 +196,49 @@ export async function GET(request: NextRequest) {
 
     const cfg = settings ?? DEFAULT_SETTINGS;
 
-    const slotDuration = cfg.slot_duration_minutes || 30;
-    const bufferMinutes = cfg.buffer_minutes || 0;
+    const slotDuration = Number(cfg.slot_duration_minutes) || 30;
+    const bufferMinutes = Number(cfg.buffer_minutes) || 0;
     const advanceDays = Math.min(
-      Number(daysParam) || cfg.advance_days || 30,
-      cfg.advance_days || 90,
+      Number(daysParam) || Number(cfg.advance_days) || 30,
+      Number(cfg.advance_days) || 90,
     );
 
-    // Build date range: tomorrow to advance_days
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-    const startDate = new Date(today);
-    startDate.setUTCDate(startDate.getUTCDate() + 1); // Start from tomorrow
+    // Build date range: tomorrow → advance_days (in local timezone)
+    const todayStr = getLocalToday(timezoneParam);
+    // Use noon UTC to avoid DST edge cases in date arithmetic
+    const todayDate = new Date(`${todayStr}T12:00:00Z`);
 
-    const endDate = new Date(today);
-    endDate.setUTCDate(endDate.getUTCDate() + advanceDays);
+    // Fetch existing events for the period (±1 day buffer for timezone edges)
+    const fetchStart = new Date(todayDate);
+    const fetchEnd = new Date(todayDate);
+    fetchEnd.setUTCDate(fetchEnd.getUTCDate() + advanceDays + 1);
 
-    // Fetch existing events for the period
     const events = await listCalendarEvents({
       institutionId,
-      start: startDate.toISOString(),
-      end: endDate.toISOString(),
+      start: fetchStart.toISOString(),
+      end: fetchEnd.toISOString(),
       pageSize: 200,
     });
 
-    // Build a map of booked time ranges per date
+    // Build a map of booked time ranges per LOCAL date
+    // Event datetimes are stored in UTC — convert to the target timezone
+    // so they align with the local-time working-hours from settings.
     const bookedByDate = new Map<string, { start: number; end: number }[]>();
     for (const ev of events) {
       if (!ev.start_datetime || !ev.end_datetime || ev.deleted_at) continue;
 
       const evStart = new Date(ev.start_datetime as string);
       const evEnd = new Date(ev.end_datetime as string);
-      const dateKey = evStart.toISOString().slice(0, 10);
 
-      const ranges = bookedByDate.get(dateKey) ?? [];
+      const localStart = toLocalComponents(evStart, timezoneParam);
+      const localEnd = toLocalComponents(evEnd, timezoneParam);
+
+      const ranges = bookedByDate.get(localStart.dateStr) ?? [];
       ranges.push({
-        start: evStart.getUTCHours() * 60 + evStart.getUTCMinutes(),
-        end: evEnd.getUTCHours() * 60 + evEnd.getUTCMinutes(),
+        start: localStart.minutes,
+        end: localEnd.minutes,
       });
-      bookedByDate.set(dateKey, ranges);
+      bookedByDate.set(localStart.dateStr, ranges);
     }
 
     // Day settings lookup
@@ -181,13 +252,14 @@ export async function GET(request: NextRequest) {
       sat: { start: cfg.sat_start, end: cfg.sat_end },
     };
 
-    // Generate slots for each day in the range
+    // Generate slots for each day in the range (local dates)
     const allSlots: AvailableSlot[] = [];
-    const cursor = new Date(startDate);
 
-    while (cursor <= endDate) {
-      const dateStr = cursor.toISOString().slice(0, 10);
-      const dayOfWeek = DAY_KEYS[cursor.getUTCDay()];
+    for (let d = 1; d <= advanceDays; d++) {
+      const dayDate = new Date(todayDate);
+      dayDate.setUTCDate(dayDate.getUTCDate() + d);
+      const dateStr = dayDate.toISOString().slice(0, 10);
+      const dayOfWeek = DAY_KEYS[dayDate.getUTCDay()];
       const dayCfg = daySettings[dayOfWeek];
 
       if (dayCfg?.start && dayCfg?.end) {
@@ -202,8 +274,6 @@ export async function GET(request: NextRequest) {
         );
         allSlots.push(...daySlots);
       }
-
-      cursor.setUTCDate(cursor.getUTCDate() + 1);
     }
 
     const response: AvailabilityResponse = {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { getRequestAuth } from "@/lib/auth/session";
 import { convertAudioToOggOpus } from "@/lib/audio-converter";
 import { isCasePaused } from "@/lib/case-stats";
 import {
@@ -345,10 +346,15 @@ const resolveRouteParams = async (context: RouteContext): Promise<RouteParams> =
 };
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   context: RouteContext,
 ) {
   try {
+    const auth = getRequestAuth(request);
+    if (!auth) {
+      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+    }
+
     const params = await resolveRouteParams(context);
     const resolved = await ensureCaseContext(params.caseId);
     if ("error" in resolved) {
@@ -406,9 +412,7 @@ export async function GET(
     console.error("[chat] Falha ao listar mensagens do caso:", error);
     return NextResponse.json(
       {
-        error: "server_error",
-        message:
-          error instanceof Error ? error.message : "Erro ao carregar mensagens",
+        error: "Erro ao carregar mensagens",
       },
       { status: 500 },
     );
@@ -420,6 +424,11 @@ export async function POST(
   context: RouteContext,
 ) {
   try {
+    const auth = getRequestAuth(request);
+    if (!auth) {
+      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+    }
+
     const params = await resolveRouteParams(context);
     const resolved = await ensureCaseContext(params.caseId);
     if ("error" in resolved) {
@@ -668,9 +677,7 @@ export async function POST(
     console.error("[chat] Falha ao registrar mensagem do caso:", error);
     return NextResponse.json(
       {
-        error: "server_error",
-        message:
-          error instanceof Error ? error.message : "Erro ao enviar mensagem",
+        error: "Erro ao enviar mensagem",
       },
       { status: 500 },
     );

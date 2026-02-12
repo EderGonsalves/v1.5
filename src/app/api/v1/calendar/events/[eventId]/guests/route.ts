@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import type { ZodIssue } from "zod";
 
+import { getRequestAuth } from "@/lib/auth/session";
 import { eventBelongsToInstitution } from "@/lib/calendar/event-helpers";
 import { resolveInstitutionId } from "@/lib/calendar/request";
 import { calendarGuestSchema } from "@/lib/calendar/schemas";
@@ -54,6 +55,11 @@ export async function POST(
   { params }: RouteParams,
 ) {
   try {
+    const auth = getRequestAuth(request);
+    if (!auth) {
+      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+    }
+
     const eventId = await extractEventId(params);
     if (!eventId) {
       return respondWithError("eventId inválido na URL.");
@@ -115,8 +121,7 @@ export async function POST(
     console.error("[calendar/events/:id/guests] POST error:", error);
     return NextResponse.json(
       {
-        error:
-          error instanceof Error ? error.message : "Erro ao adicionar convidado",
+        error: "Erro ao adicionar convidado",
       },
       { status: 500 },
     );
