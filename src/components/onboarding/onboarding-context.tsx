@@ -11,6 +11,7 @@ import {
   ONBOARDING_AUTH_STORAGE,
 } from "@/lib/auth/constants";
 import { ensureLegacyUserIdentifier } from "@/lib/auth/user";
+import { invalidatePermissionsStatusCache } from "@/services/permissions-client";
 
 
 // Server-side cookie management via API (HttpOnly cookie)
@@ -131,6 +132,16 @@ export const OnboardingProvider = ({ children }: { children: ReactNode }) => {
   const logout = () => {
     saveAuthToStorage(null);
     setData(defaultOnboardingData);
+    // Limpar caches de dados para forçar refresh no próximo login
+    invalidatePermissionsStatusCache();
+    if (typeof window !== "undefined") {
+      try {
+        sessionStorage.removeItem("onboarding_cases_cache");
+        sessionStorage.removeItem("onboarding_stats_cache");
+      } catch {
+        // Ignorar erros de storage
+      }
+    }
   };
 
   return (

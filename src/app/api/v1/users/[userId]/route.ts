@@ -19,6 +19,7 @@ const updateUserSchema = z.object({
   oab: z.string().max(50).optional(),
   isActive: z.boolean().optional(),
   isOfficeAdmin: z.boolean().optional(),
+  receivesCases: z.boolean().optional(),
 });
 
 type RouteContext = { params: Promise<{ userId: string }> };

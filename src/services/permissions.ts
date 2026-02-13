@@ -3,6 +3,8 @@ import axios from "axios";
 import {
   SYSTEM_FEATURES,
   ALL_FEATURE_PATHS,
+  ADMIN_DEFAULT_FEATURES,
+  USER_ACTION_FEATURES,
   type SystemFeature,
 } from "@/lib/feature-registry";
 
@@ -25,6 +27,7 @@ const DEFAULT_TABLES = {
   rolePermissions: 240,
   userRoles: 241,
   audit: 242,
+  userFeatures: 250,
 };
 
 const TABLE_IDS = {
@@ -70,6 +73,12 @@ const TABLE_IDS = {
         process.env.NEXT_PUBLIC_BASEROW_AUDIT_PERMISSION_TABLE_ID ??
         DEFAULT_TABLES.audit,
     ) || DEFAULT_TABLES.audit,
+  userFeatures:
+    Number(
+      process.env.BASEROW_USER_FEATURES_TABLE_ID ??
+        process.env.NEXT_PUBLIC_BASEROW_USER_FEATURES_TABLE_ID ??
+        DEFAULT_TABLES.userFeatures,
+    ) || DEFAULT_TABLES.userFeatures,
 };
 
 type LinkCell = { id: number; value?: string } | number;
@@ -88,6 +97,7 @@ export type BaserowUserRow = {
   OAB?: string;
   is_active?: boolean;
   is_office_admin?: boolean;
+  receives_cases?: boolean;
   created_at?: string;
   updated_at?: string;
   [key: string]: unknown;
@@ -101,6 +111,7 @@ export type UserPublicRow = {
   oab: string;
   isActive: boolean;
   isOfficeAdmin: boolean;
+  receivesCases: boolean;
   institutionId?: number;
 };
 
@@ -155,6 +166,15 @@ export type UserRoleRow = {
   id: number;
   user_id?: LinkCell[] | null;
   role_id?: LinkCell[] | null;
+  [key: string]: unknown;
+};
+
+export type UserFeatureRow = {
+  id: number;
+  user_id: number | string;
+  institution_id: number | string;
+  feature_key: string;
+  is_enabled: boolean | string;
   [key: string]: unknown;
 };
 
@@ -295,18 +315,44 @@ const buildUserPayload = (params: SyncUserParams) => {
 };
 
 const findExistingUser = async (params: SyncUserParams) => {
-  const searchParams = new URLSearchParams({
+  // 1. Buscar por legacy_user_id (prioridade)
+  const legacyParams = new URLSearchParams({
     user_field_names: "true",
     size: "1",
   });
-  searchParams.append("filter__legacy_user_id__equal", params.legacyUserId);
-  withInstitutionFilter(searchParams, params.institutionId);
+  legacyParams.append("filter__legacy_user_id__equal", params.legacyUserId);
+  withInstitutionFilter(legacyParams, params.institutionId);
 
-  const rows = await fetchTableRows<BaserowUserRow>(
+  const byLegacy = await fetchTableRows<BaserowUserRow>(
     TABLE_IDS.users,
-    searchParams,
+    legacyParams,
   );
-  return rows[0] ?? null;
+  if (byLegacy.length > 0) {
+    return byLegacy[0];
+  }
+
+  // 2. Fallback: buscar por email na mesma instituição
+  if (params.email) {
+    const emailParams = new URLSearchParams({
+      user_field_names: "true",
+      size: "1",
+    });
+    emailParams.append(
+      "filter__email__equal",
+      params.email.trim().toLowerCase(),
+    );
+    withInstitutionFilter(emailParams, params.institutionId);
+
+    const byEmail = await fetchTableRows<BaserowUserRow>(
+      TABLE_IDS.users,
+      emailParams,
+    );
+    if (byEmail.length > 0) {
+      return byEmail[0];
+    }
+  }
+
+  return null;
 };
 
 export const syncUserRecord = async (
@@ -559,39 +605,88 @@ export const fetchPermissionsStatus = async (
 ) => {
   const globalAdmin = isGlobalAdmin(institutionId);
 
+  const allActionKeys = USER_ACTION_FEATURES.map((f) => f.key);
+
   if (globalAdmin) {
     return {
       isSysAdmin: true,
       isGlobalAdmin: true,
+      isOfficeAdmin: false,
       userId: 0,
       enabledPages: ALL_FEATURE_PATHS,
+      enabledActions: allActionKeys,
     };
   }
 
-  // Buscar páginas habilitadas mesmo que o usuário não exista na tabela Users
-  let isSysAdmin = false;
-  let userId = 0;
+  // Run institution pages + user context in parallel
+  const [enabledPages, ctxResult] = await Promise.all([
+    getEnabledPagesForInstitution(institutionId),
+    loadCurrentUserContext(institutionId, legacyUserId)
+      .then((ctx) => ({
+        isSysAdmin: ctx.isSysAdmin,
+        isOfficeAdmin: isActiveValue(ctx.user.is_office_admin),
+        userId: ctx.user.id,
+      }))
+      .catch((error) => {
+        console.warn(
+          "[fetchPermissionsStatus] user context failed:",
+          error instanceof Error ? error.message : error,
+        );
+        return { isSysAdmin: false, isOfficeAdmin: false, userId: 0 };
+      }),
+  ]);
 
-  const enabledPages = await getEnabledPagesForInstitution(institutionId);
+  const { isSysAdmin, isOfficeAdmin, userId } = ctxResult;
 
-  try {
-    const ctx = await loadCurrentUserContext(institutionId, legacyUserId);
-    isSysAdmin = ctx.isSysAdmin;
-    userId = ctx.user.id;
-  } catch (error) {
-    // Usuário pode não estar na tabela Users ainda (primeiro login via webhook).
-    // Continuar com enabledPages mesmo assim.
-    console.warn(
-      "[fetchPermissionsStatus] user context failed, using enabledPages only:",
-      error instanceof Error ? error.message : error,
-    );
+  // Admins see everything
+  if (isSysAdmin || isOfficeAdmin) {
+    return {
+      isSysAdmin,
+      isGlobalAdmin: false,
+      isOfficeAdmin,
+      userId,
+      enabledPages: ALL_FEATURE_PATHS,
+      enabledActions: allActionKeys,
+    };
+  }
+
+  // Regular user: filter admin-default features based on user_features table
+  const adminDefaultPaths = new Set(
+    SYSTEM_FEATURES
+      .filter((f) => ADMIN_DEFAULT_FEATURES.includes(f.key))
+      .map((f) => f.path),
+  );
+
+  let filteredPages = enabledPages;
+  let enabledActions: string[] = [];
+  if (userId > 0) {
+    try {
+      const userEnabledKeys = await getUserEnabledFeatureKeys(userId, institutionId);
+      filteredPages = enabledPages.filter((path) => {
+        if (!adminDefaultPaths.has(path)) return true;
+        const feature = SYSTEM_FEATURES.find((f) => f.path === path);
+        return feature ? userEnabledKeys.has(feature.key) : true;
+      });
+      // Resolve action features
+      enabledActions = allActionKeys.filter((key) => userEnabledKeys.has(key));
+    } catch (error) {
+      console.warn(
+        "[fetchPermissionsStatus] user features lookup failed:",
+        error instanceof Error ? error.message : error,
+      );
+      filteredPages = enabledPages.filter((path) => !adminDefaultPaths.has(path));
+    }
+  } else {
+    filteredPages = enabledPages.filter((path) => !adminDefaultPaths.has(path));
   }
 
   return {
     isSysAdmin,
     isGlobalAdmin: false,
+    isOfficeAdmin,
     userId,
-    enabledPages: isSysAdmin ? ALL_FEATURE_PATHS : enabledPages,
+    enabledPages: filteredPages,
+    enabledActions,
   };
 };
 
@@ -882,6 +977,84 @@ export const updateInstitutionFeatures = async ({
 };
 
 // ---------------------------------------------------------------------------
+// User Features (per-user feature toggles, table 250)
+// ---------------------------------------------------------------------------
+
+const isEnabledValue = (val: unknown): boolean => {
+  if (typeof val === "boolean") return val;
+  if (typeof val === "string") return val.toLowerCase() === "true";
+  return false;
+};
+
+export const fetchUserFeatures = async (
+  userId: number,
+  institutionId: number,
+): Promise<UserFeatureRow[]> => {
+  const params = new URLSearchParams({
+    user_field_names: "true",
+    size: "200",
+    "filter__user_id__equal": String(userId),
+    "filter__institution_id__equal": String(institutionId),
+  });
+  return fetchTableRows<UserFeatureRow>(TABLE_IDS.userFeatures, params);
+};
+
+export const getUserEnabledFeatureKeys = async (
+  userId: number,
+  institutionId: number,
+): Promise<Set<string>> => {
+  const rows = await fetchUserFeatures(userId, institutionId);
+  const enabled = new Set<string>();
+  for (const row of rows) {
+    if (isEnabledValue(row.is_enabled)) {
+      enabled.add(row.feature_key);
+    }
+  }
+  return enabled;
+};
+
+export const updateUserFeatures = async (
+  userId: number,
+  institutionId: number,
+  features: Record<string, boolean>,
+): Promise<void> => {
+  const existing = await fetchUserFeatures(userId, institutionId);
+
+  const existingByKey = new Map<string, UserFeatureRow>();
+  for (const row of existing) {
+    existingByKey.set(row.feature_key, row);
+  }
+
+  const client = baserowClient();
+  const ops: Promise<unknown>[] = [];
+
+  for (const [key, enabled] of Object.entries(features)) {
+    const row = existingByKey.get(key);
+    if (row) {
+      // Update existing
+      ops.push(
+        client.patch(
+          `/database/rows/table/${TABLE_IDS.userFeatures}/${row.id}/?user_field_names=true`,
+          { is_enabled: enabled },
+        ),
+      );
+    } else {
+      // Create new
+      ops.push(
+        createRow(TABLE_IDS.userFeatures, {
+          user_id: userId,
+          institution_id: institutionId,
+          feature_key: key,
+          is_enabled: enabled,
+        }),
+      );
+    }
+  }
+
+  await Promise.all(ops);
+};
+
+// ---------------------------------------------------------------------------
 // User CRUD (institution-scoped)
 // ---------------------------------------------------------------------------
 
@@ -896,6 +1069,7 @@ const toUserPublic = (row: BaserowUserRow): UserPublicRow => {
     oab: (row.OAB ?? "").trim(),
     isActive: isActiveValue(row.is_active),
     isOfficeAdmin: row.is_office_admin === true,
+    receivesCases: String(row.receives_cases) !== "false",
     institutionId: Number.isFinite(instId) && instId > 0 ? instId : undefined,
   };
 };
@@ -1001,6 +1175,7 @@ export const updateInstitutionUser = async (
     oab?: string;
     isActive?: boolean;
     isOfficeAdmin?: boolean;
+    receivesCases?: boolean;
   },
 ): Promise<UserPublicRow> => {
   // Verify the user belongs to this institution
@@ -1039,6 +1214,7 @@ export const updateInstitutionUser = async (
   if (data.oab !== undefined) payload.OAB = data.oab.trim();
   if (data.isActive !== undefined) payload.is_active = data.isActive;
   if (data.isOfficeAdmin !== undefined) payload.is_office_admin = data.isOfficeAdmin;
+  if (data.receivesCases !== undefined) payload.receives_cases = data.receivesCases;
 
   const client = baserowClient();
   const response = await client.patch<BaserowUserRow>(

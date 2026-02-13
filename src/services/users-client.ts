@@ -61,6 +61,7 @@ export const updateUserClient = async (
     oab?: string;
     isActive?: boolean;
     isOfficeAdmin?: boolean;
+    receivesCases?: boolean;
   },
 ): Promise<UserPublicRow> => {
   const data = await handleResponse<{ user: UserPublicRow }>(
@@ -80,4 +81,14 @@ export const deleteUserClient = async (userId: number): Promise<void> => {
       headers: { "Content-Type": "application/json" },
     }),
   );
+};
+
+export const fetchMyProfileClient = async (): Promise<UserPublicRow> => {
+  const data = await handleResponse<{ user: UserPublicRow }>(
+    await fetch("/api/v1/users/me", {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
+  return data.user;
 };

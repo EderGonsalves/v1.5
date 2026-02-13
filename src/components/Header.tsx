@@ -8,6 +8,7 @@ import {
   Menu,
   Sun,
   Moon,
+  UserCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -299,6 +300,20 @@ export const Header = () => {
             ) : (
               <Moon className="h-5 w-5" />
             )}
+          </Button>
+
+          {/* My Account */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="p-2"
+            aria-label="Minha Conta"
+            asChild
+          >
+            <Link href="/minha-conta">
+              <UserCircle className="h-5 w-5" />
+            </Link>
           </Button>
         </div>
       </div>

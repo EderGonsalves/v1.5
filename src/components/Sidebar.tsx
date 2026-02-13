@@ -41,7 +41,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/configuracoes", label: "Configurações", icon: Settings },
   { href: "/conexoes", label: "Conexões", icon: Plug },
   { href: "/follow-up", label: "Follow-up", icon: Repeat2 },
-  { href: "/usuarios", label: "Usuários", icon: Users },
+  { href: "/usuarios", label: "Usuários", icon: Users, requiresAdmin: true },
   { href: "/departamentos", label: "Departamentos", icon: Building2, requiresAdmin: true },
 ];
 
@@ -53,13 +53,17 @@ export function Sidebar() {
   const authSignature = data.auth
     ? `${data.auth.institutionId}:${data.auth.legacyUserId ?? ""}`
     : null;
-  const { isSysAdmin, enabledPages } = usePermissionsStatus(authSignature);
+  const { isSysAdmin, isOfficeAdmin: isPermOfficeAdmin, enabledPages, isLoading: permLoading } = usePermissionsStatus(authSignature);
   const { isOfficeAdmin } = useMyDepartments();
-  const isAdmin = isSysAdmin || isOfficeAdmin;
+  const isAdmin = isSysAdmin || isOfficeAdmin || isPermOfficeAdmin;
+  // Pages always visible for any authenticated user (even during loading)
+  const alwaysVisiblePaths = new Set(["/casos", "/chat", "/suporte"]);
   const baseNavItems = NAV_ITEMS.filter((item) => {
     if (item.requiresSysAdmin && !isSysAdmin) return false;
     if (item.requiresAdmin && !isAdmin) return false;
-    if (isSysAdmin) return true;
+    if (isAdmin) return true;
+    // During loading, only show always-visible items
+    if (permLoading) return alwaysVisiblePaths.has(item.href);
     return enabledPages.includes(item.href);
   });
   const showSuport = isSysAdmin || enabledPages.includes("/suporte");

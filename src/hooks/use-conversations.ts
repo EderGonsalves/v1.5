@@ -97,9 +97,9 @@ const normalizeRow = (row: BaserowCaseRow): Conversation => {
     bjCaseId: row.BJCaseId ?? null,
     etapa: row.EtapaPerguntas ?? row.EtapaFinal ?? undefined,
     wabaPhoneNumber,
-    department_id: (row.department_id as number) ?? null,
-    department_name: (row.department_name as string) ?? null,
-    assigned_to_user_id: (row.assigned_to_user_id as number) ?? null,
+    department_id: Number(row.department_id) || null,
+    department_name: row.department_name ? String(row.department_name) : null,
+    assigned_to_user_id: Number(row.assigned_to_user_id) || null,
     responsavel: (row.responsavel as string) ?? null,
   };
 };

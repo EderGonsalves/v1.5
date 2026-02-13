@@ -83,6 +83,7 @@ export const useUsers = (
         oab?: string;
         isActive?: boolean;
         isOfficeAdmin?: boolean;
+        receivesCases?: boolean;
       },
     ) => {
       setUpdatingIds((prev) => new Set(prev).add(userId));

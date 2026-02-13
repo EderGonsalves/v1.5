@@ -5,8 +5,9 @@ import { getRequestAuth } from "@/lib/auth/session";
 import { fetchInstitutionUsers } from "@/services/permissions";
 import { updateBaserowCase } from "@/services/api";
 import type { BaserowCaseRow } from "@/services/api";
-import { getUserDepartmentIds, fetchDepartmentById, fetchDepartmentUserIds } from "@/services/departments";
+import { fetchDepartmentUserIds } from "@/services/departments";
 import { getPhoneDepartmentMap } from "@/lib/waba";
+import { fetchQueueRecords, recordAssignment, pickNextUser } from "@/services/assignment-queue";
 
 const BASEROW_API_URL =
   process.env.BASEROW_API_URL ||
@@ -83,36 +84,20 @@ export async function POST(request: NextRequest) {
   lastRunMap.set(institutionId, Date.now());
 
   try {
-    // Fetch users + phone→department map in parallel
-    const [users, phoneDeptMap] = await Promise.all([
+    // Fetch users + phone→department map + queue records in parallel
+    const [users, phoneDeptMap, queueRecords] = await Promise.all([
       fetchInstitutionUsers(institutionId),
       getPhoneDepartmentMap(institutionId),
+      fetchQueueRecords(institutionId),
     ]);
-    const activeUsers = users.filter((u) => u.isActive);
 
-    if (activeUsers.length === 0) {
-      return NextResponse.json({ assigned: [], reason: "no_active_users" });
-    }
-
-    // Global fallback: oldest active user
-    const globalFallbackUser = activeUsers.reduce((oldest, current) =>
-      current.id < oldest.id ? current : oldest,
+    // Only active users who receive cases are eligible
+    const eligibleUsers = users.filter(
+      (u) => u.isActive && u.receivesCases,
     );
 
-    // Pre-compute fallback user's department (used when no phone→dept match)
-    let fallbackDeptId: number | null = null;
-    let fallbackDeptName: string | null = null;
-    try {
-      const deptIds = await getUserDepartmentIds(globalFallbackUser.id, institutionId);
-      if (deptIds.length > 0) {
-        const dept = await fetchDepartmentById(deptIds[0]);
-        if (dept) {
-          fallbackDeptId = dept.id;
-          fallbackDeptName = dept.name;
-        }
-      }
-    } catch {
-      // Non-critical: proceed without department
+    if (eligibleUsers.length === 0) {
+      return NextResponse.json({ assigned: [], reason: "no_eligible_users" });
     }
 
     // Fetch unassigned cases
@@ -125,7 +110,7 @@ export async function POST(request: NextRequest) {
     // Cache dept user lookups to avoid repeated API calls for same dept
     const deptUsersCache = new Map<number, number[]>();
 
-    // Assign each case based on phone→department routing
+    // Assign each case using round-robin
     const assigned: Array<{
       caseId: number;
       userName: string;
@@ -134,39 +119,70 @@ export async function POST(request: NextRequest) {
 
     for (const caseRow of unassigned) {
       try {
-        let targetUser = globalFallbackUser;
-        let assignDeptId: number | null = fallbackDeptId;
-        let assignDeptName: string | null = fallbackDeptName;
+        let assignDeptId: number | null = null;
+        let assignDeptName: string | null = null;
+        let targetUser;
 
-        // Try to match case phone number to a department
-        const casePhone = caseRow.display_phone_number || caseRow.CustumerPhone || "";
-        if (casePhone && phoneDeptMap.size > 0) {
-          const phoneDigits = casePhone.replace(/\D/g, "");
-          const deptMatch = phoneDeptMap.get(casePhone) || phoneDeptMap.get(phoneDigits);
+        // Preservar departamento já definido manualmente (não sobrescrever)
+        const existingDeptId = Number(caseRow.department_id);
+        const hasExistingDept = existingDeptId > 0;
 
-          if (deptMatch) {
-            assignDeptId = deptMatch.deptId;
-            assignDeptName = deptMatch.deptName;
+        if (hasExistingDept) {
+          // Caso já tem departamento — manter e buscar usuários do departamento
+          assignDeptId = existingDeptId;
+          assignDeptName = (caseRow.department_name as string) || null;
 
-            // Get users in this department (with cache)
-            try {
-              let deptUserIds = deptUsersCache.get(deptMatch.deptId);
-              if (!deptUserIds) {
-                deptUserIds = await fetchDepartmentUserIds(deptMatch.deptId);
-                deptUsersCache.set(deptMatch.deptId, deptUserIds);
-              }
-              const deptActiveUsers = activeUsers.filter((u) =>
-                deptUserIds!.includes(u.id),
-              );
-              if (deptActiveUsers.length > 0) {
-                targetUser = deptActiveUsers.reduce((oldest, current) =>
-                  current.id < oldest.id ? current : oldest,
-                );
-              }
-              // If no active users in dept, fallback to global user
-            } catch {
-              // Fallback to global user on error
+          try {
+            let deptUserIds = deptUsersCache.get(existingDeptId);
+            if (!deptUserIds) {
+              deptUserIds = await fetchDepartmentUserIds(existingDeptId);
+              deptUsersCache.set(existingDeptId, deptUserIds);
             }
+            const deptEligibleUsers = eligibleUsers.filter((u) =>
+              deptUserIds!.includes(u.id),
+            );
+            if (deptEligibleUsers.length > 0) {
+              targetUser = pickNextUser(deptEligibleUsers, queueRecords);
+            } else {
+              // Nenhum elegível no departamento — round-robin global
+              targetUser = pickNextUser(eligibleUsers, queueRecords);
+            }
+          } catch {
+            targetUser = pickNextUser(eligibleUsers, queueRecords);
+          }
+        } else {
+          // Caso sem departamento — tentar mapear pelo telefone
+          const casePhone = caseRow.display_phone_number || caseRow.CustumerPhone || "";
+          if (casePhone && phoneDeptMap.size > 0) {
+            const phoneDigits = casePhone.replace(/\D/g, "");
+            const deptMatch = phoneDeptMap.get(casePhone) || phoneDeptMap.get(phoneDigits);
+
+            if (deptMatch) {
+              assignDeptId = deptMatch.deptId;
+              assignDeptName = deptMatch.deptName;
+
+              try {
+                let deptUserIds = deptUsersCache.get(deptMatch.deptId);
+                if (!deptUserIds) {
+                  deptUserIds = await fetchDepartmentUserIds(deptMatch.deptId);
+                  deptUsersCache.set(deptMatch.deptId, deptUserIds);
+                }
+                const deptEligibleUsers = eligibleUsers.filter((u) =>
+                  deptUserIds!.includes(u.id),
+                );
+                if (deptEligibleUsers.length > 0) {
+                  targetUser = pickNextUser(deptEligibleUsers, queueRecords);
+                } else {
+                  targetUser = pickNextUser(eligibleUsers, queueRecords);
+                }
+              } catch {
+                targetUser = pickNextUser(eligibleUsers, queueRecords);
+              }
+            } else {
+              targetUser = pickNextUser(eligibleUsers, queueRecords);
+            }
+          } else {
+            targetUser = pickNextUser(eligibleUsers, queueRecords);
           }
         }
 
@@ -176,6 +192,11 @@ export async function POST(request: NextRequest) {
           department_id: assignDeptId,
           department_name: assignDeptName,
         });
+
+        // Record assignment in queue (fire-and-forget to not block loop)
+        recordAssignment(targetUser.id, institutionId).catch((err) =>
+          console.error("Erro ao registrar atribuição na fila:", err),
+        );
 
         assigned.push({
           caseId: caseRow.id,
@@ -210,7 +231,7 @@ export async function POST(request: NextRequest) {
         });
       } catch (err) {
         console.error(
-          `Erro ao atribuir caso ${caseRow.id} para ${globalFallbackUser.name}:`,
+          `Erro ao atribuir caso ${caseRow.id}:`,
           err,
         );
       }

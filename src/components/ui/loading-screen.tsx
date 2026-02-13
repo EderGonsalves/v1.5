@@ -12,18 +12,14 @@ export function LoadingScreen({
   className,
 }: LoadingScreenProps) {
   return (
-    <main className={cn("min-h-screen bg-background py-8", className)}>
-      <div className="mx-auto flex max-w-5xl flex-col gap-8 px-4">
-        <div className="flex flex-col items-center justify-center rounded-xl border bg-card/60 py-16 shadow-sm dark:bg-card/40">
-          <div className="mb-6 flex items-center justify-center">
-            <span className="inline-flex size-14 items-center justify-center rounded-full border-4 border-primary/20 border-t-primary text-primary animate-spin">
-              <span className="sr-only">{message}</span>
-            </span>
-          </div>
-          <p className="text-center text-base text-muted-foreground animate-pulse">
-            {message}
-          </p>
-        </div>
+    <main className={cn("min-h-screen bg-background flex items-center justify-center", className)}>
+      <div className="flex flex-col items-center gap-4">
+        <span className="inline-flex size-10 items-center justify-center rounded-full border-4 border-primary/20 border-t-primary text-primary animate-spin">
+          <span className="sr-only">{message}</span>
+        </span>
+        <p className="text-sm text-muted-foreground animate-pulse">
+          {message}
+        </p>
       </div>
     </main>
   );

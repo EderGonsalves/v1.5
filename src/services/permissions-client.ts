@@ -37,12 +37,14 @@ export const fetchPermissionsOverviewClient = async (
 type PermissionsStatusResult = {
   isSysAdmin: boolean;
   isGlobalAdmin: boolean;
+  isOfficeAdmin?: boolean;
   userId?: number;
   enabledPages?: string[];
+  enabledActions?: string[];
 };
 
 let statusCache: { promise: Promise<PermissionsStatusResult>; ts: number } | null = null;
-const STATUS_CACHE_TTL = 10_000;
+const STATUS_CACHE_TTL = 60_000;
 
 export const fetchPermissionsStatusClient =
   async (): Promise<PermissionsStatusResult> => {
@@ -137,6 +139,42 @@ export const updateInstitutionFeaturesClient = async (
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ institutionId, features }),
+    }),
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Per-user feature toggles
+// ---------------------------------------------------------------------------
+
+export type UserFeature = {
+  key: string;
+  label: string;
+  path: string;
+  isEnabled: boolean;
+};
+
+export const fetchUserFeaturesClient = async (
+  userId: number,
+): Promise<UserFeature[]> => {
+  const data = await handleResponse<{ features: UserFeature[] }>(
+    await fetch(`/api/v1/users/${userId}/features`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
+  return data.features;
+};
+
+export const updateUserFeaturesClient = async (
+  userId: number,
+  features: Record<string, boolean>,
+): Promise<void> => {
+  await handleResponse(
+    await fetch(`/api/v1/users/${userId}/features`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ features }),
     }),
   );
 };

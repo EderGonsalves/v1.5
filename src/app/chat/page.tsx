@@ -41,6 +41,7 @@ function ChatContent() {
     userName: myUserName,
     isGlobalAdmin: isMyGlobalAdmin,
     isOfficeAdmin: isMyOfficeAdmin,
+    isLoading: isDeptLoading,
   } = useMyDepartments();
   const isFullAccessAdmin = isMyGlobalAdmin || isMyOfficeAdmin;
 
@@ -65,21 +66,25 @@ function ChatContent() {
 
   // Filtro de visibilidade por departamento (não-admin)
   const filteredConversations = useMemo(() => {
+    // Enquanto departamentos estão carregando, não mostrar nada para evitar flash
+    if (isDeptLoading) return [];
     if (isFullAccessAdmin || myDeptIds.length === 0) {
       return enrichedConversations;
     }
     return enrichedConversations.filter((conv) => {
+      const convDeptId = Number(conv.department_id) || 0;
+      const convAssignedUserId = Number(conv.assigned_to_user_id) || 0;
       // Conversa pertence a um dos meus departamentos
-      if (conv.department_id && myDeptIds.includes(conv.department_id)) return true;
+      if (convDeptId > 0 && myDeptIds.includes(convDeptId)) return true;
       // Conversa atribuída diretamente a mim (novo campo)
-      if (conv.assigned_to_user_id && myUserId && conv.assigned_to_user_id === myUserId) return true;
+      if (convAssignedUserId > 0 && myUserId && convAssignedUserId === myUserId) return true;
       // Conversa atribuída a mim (campo legado)
       if (myUserName && conv.responsavel && conv.responsavel === myUserName) return true;
       // Conversa sem departamento e sem responsável (não atribuída)
-      if (!conv.department_id && !conv.responsavel) return true;
+      if (!convDeptId && !conv.responsavel) return true;
       return false;
     });
-  }, [enrichedConversations, isFullAccessAdmin, myDeptIds, myUserId, myUserName]);
+  }, [enrichedConversations, isDeptLoading, isFullAccessAdmin, myDeptIds, myUserId, myUserName]);
 
   const selectedConversation = useMemo(() => {
     if (!selectedId) return null;

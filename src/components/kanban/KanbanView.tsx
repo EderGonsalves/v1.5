@@ -344,15 +344,10 @@ export function KanbanView({
       }
     });
 
-    return cases.map((caseRow) => {
-      const manualColumnId = statusMap.get(Number(caseRow.id));
+    // Set of column IDs in the current board view
+    const columnIdSet = new Set(columns.map((col) => Number(col.id)));
 
-      // If there's a manual column assignment, use it
-      if (manualColumnId) {
-        return { ...caseRow, kanbanColumnId: manualColumnId };
-      }
-
-      // Otherwise, auto-assign based on case stage
+    const autoAssign = (caseRow: BaserowCaseRow) => {
       const stage = getCaseStage(caseRow);
       const autoColumn = columns.find((col) => {
         if (!col.auto_rule) return false;
@@ -363,10 +358,21 @@ export function KanbanView({
           return false;
         }
       });
+      return autoColumn?.id || columns[0]?.id || null;
+    };
 
+    return cases.map((caseRow) => {
+      const manualColumnId = statusMap.get(Number(caseRow.id));
+
+      // If there's a manual column assignment AND the column exists in the current board, use it
+      if (manualColumnId && columnIdSet.has(manualColumnId)) {
+        return { ...caseRow, kanbanColumnId: manualColumnId };
+      }
+
+      // Otherwise, auto-assign based on case stage
       return {
         ...caseRow,
-        kanbanColumnId: autoColumn?.id || columns[0]?.id || null,
+        kanbanColumnId: autoAssign(caseRow),
       };
     });
   }, [cases, caseStatuses, columns]);

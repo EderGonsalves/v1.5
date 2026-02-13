@@ -7,15 +7,19 @@ import { fetchPermissionsStatusClient } from "@/services/permissions-client";
 
 export const usePermissionsStatus = (authSignature?: string | null) => {
   const [isSysAdmin, setIsSysAdmin] = useState(false);
-  const [enabledPages, setEnabledPages] = useState<string[]>(ALL_FEATURE_PATHS);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isOfficeAdmin, setIsOfficeAdmin] = useState(false);
+  const [enabledPages, setEnabledPages] = useState<string[]>([]);
+  const [enabledActions, setEnabledActions] = useState<string[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
 
     if (!authSignature) {
       setIsSysAdmin(false);
-      setEnabledPages(ALL_FEATURE_PATHS);
+      setIsOfficeAdmin(false);
+      setEnabledPages([]);
+      setEnabledActions([]);
       setIsLoading(false);
       return () => {
         active = false;
@@ -29,17 +33,25 @@ export const usePermissionsStatus = (authSignature?: string | null) => {
         const status = await fetchPermissionsStatusClient();
         if (active) {
           setIsSysAdmin(Boolean(status.isSysAdmin));
+          setIsOfficeAdmin(Boolean(status.isOfficeAdmin));
           setEnabledPages(
             Array.isArray(status.enabledPages)
               ? status.enabledPages
               : ALL_FEATURE_PATHS,
+          );
+          setEnabledActions(
+            Array.isArray(status.enabledActions)
+              ? status.enabledActions
+              : [],
           );
         }
       } catch (error) {
         console.warn("Não foi possível verificar status de permissões", error);
         if (active) {
           setIsSysAdmin(false);
+          setIsOfficeAdmin(false);
           setEnabledPages(ALL_FEATURE_PATHS);
+          setEnabledActions([]);
         }
       } finally {
         if (active) {
@@ -57,7 +69,9 @@ export const usePermissionsStatus = (authSignature?: string | null) => {
 
   return {
     isSysAdmin,
+    isOfficeAdmin,
     enabledPages,
+    enabledActions,
     isLoading,
   };
 };

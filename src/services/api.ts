@@ -897,6 +897,10 @@ export type BaserowCaseRow = {
   status_caso?: { id: number; value: string; color: string } | string | null;
   // WABA phone number associated with this case
   display_phone_number?: string | null;
+  // Case origin tracking
+  case_source?: string;
+  created_by_user_id?: number | null;
+  created_by_user_name?: string | null;
   [key: string]: unknown;
 };
 
@@ -1132,6 +1136,28 @@ export const updateBaserowCase = async (
       throw new Error(error.message || "Erro ao configurar a requisição");
     }
     throw new Error(error instanceof Error ? error.message : "Erro desconhecido ao atualizar caso");
+  }
+};
+
+export const createBaserowCase = async (
+  data: Partial<BaserowCaseRow>,
+): Promise<BaserowCaseRow> => {
+  try {
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASES_TABLE_ID}/?user_field_names=true`;
+    const response = await baserowPost(url, data);
+    return response.data as BaserowCaseRow;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const errorMessage =
+          error.response.data?.message || error.message || "Erro ao criar caso no Baserow";
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error("Não foi possível conectar ao Baserow");
+      }
+      throw new Error(error.message || "Erro ao configurar a requisição");
+    }
+    throw new Error(error instanceof Error ? error.message : "Erro desconhecido ao criar caso");
   }
 };
 
@@ -1680,19 +1706,12 @@ export const getKanbanColumns = async (
 
     let results: KanbanColumnRow[] = (response.data as { results?: KanbanColumnRow[] })?.results || [];
 
-    // Department-scoped columns with fallback to institution defaults
+    // Department-scoped columns — strict isolation (no fallback)
     if (departmentId !== undefined && departmentId !== null) {
-      const deptColumns = results.filter(
+      // Only return columns belonging to this specific department
+      results = results.filter(
         (row) => Number(row.department_id) === departmentId,
       );
-      if (deptColumns.length > 0) {
-        results = deptColumns;
-      } else {
-        // Fallback: institution defaults (no department_id)
-        results = results.filter(
-          (row) => !row.department_id,
-        );
-      }
     } else {
       // No department selected: show institution defaults only
       results = results.filter(

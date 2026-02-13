@@ -23,8 +23,17 @@ import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import { useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/ui/loading-screen";
 import { Input } from "@/components/ui/input";
-import { MessageSquareText, RefreshCw, List, Kanban, Loader2 } from "lucide-react";
+import { MessageSquareText, RefreshCw, List, Kanban, Loader2, Plus } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { usePermissionsStatus } from "@/hooks/use-permissions-status";
 import { KanbanView } from "@/components/kanban/KanbanView";
 import {
   CaseStage,
@@ -167,9 +176,24 @@ export default function CasosPage() {
     userName: myUserName,
     isGlobalAdmin: isMyGlobalAdmin,
     isOfficeAdmin: isMyOfficeAdmin,
+    isLoading: isDeptLoading,
     departments: myDepartments,
   } = useMyDepartments();
   const { departments: allDepartments } = useDepartments(normalizedInstitutionId ?? undefined);
+
+  // Permissões para criação de caso
+  const authSignature = data.auth
+    ? `${data.auth.institutionId}:${data.auth.legacyUserId ?? ""}`
+    : null;
+  const { isSysAdmin: permSysAdmin, isOfficeAdmin: permOfficeAdmin, enabledActions } = usePermissionsStatus(authSignature);
+  const canCreateCase = permSysAdmin || permOfficeAdmin || isMyGlobalAdmin || isMyOfficeAdmin || enabledActions.includes("criar_caso");
+
+  // Estado do modal de criação
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [newCaseName, setNewCaseName] = useState("");
+  const [newCasePhone, setNewCasePhone] = useState("");
+  const [isCreatingCase, setIsCreatingCase] = useState(false);
+  const [createCaseError, setCreateCaseError] = useState<string | null>(null);
   // For the dropdown: sysAdmin sees all departments, others see their own
   const isFullAccessAdmin = isMyGlobalAdmin || isMyOfficeAdmin;
   const filterableDepartments = isFullAccessAdmin ? allDepartments : myDepartments;
@@ -232,19 +256,24 @@ export default function CasosPage() {
   }, [adminInstitutions, caseInstitutionIds, isSysAdmin]);
 
   const visibleCases = useMemo(() => {
+    // Aguardar carregamento dos departamentos para não exibir casos indevidos
+    // isSysAdmin é síncrono (localStorage), isFullAccessAdmin depende de API async
+    if (!isSysAdmin && !isFullAccessAdmin && isDeptLoading) return [];
+
     let filteredCases = [...cases];
 
     // Filtro de visibilidade por departamento (não-sysAdmin)
     if (!isFullAccessAdmin && myDeptIds.length > 0) {
       filteredCases = filteredCases.filter((row) => {
-        // Caso pertence a um dos meus departamentos
-        if (row.department_id && myDeptIds.includes(row.department_id)) return true;
+        // Caso sem departamento → visível para todos (ainda não categorizado)
+        if (!row.department_id) return true;
+        // Caso pertence a um dos meus departamentos (Number() para evitar mismatch string/number do Baserow)
+        const caseDeptId = Number(row.department_id);
+        if (caseDeptId > 0 && myDeptIds.includes(caseDeptId)) return true;
         // Caso atribuído diretamente a mim (novo campo)
-        if (row.assigned_to_user_id && myUserId && row.assigned_to_user_id === myUserId) return true;
+        if (row.assigned_to_user_id && myUserId && Number(row.assigned_to_user_id) === myUserId) return true;
         // Caso atribuído a mim (campo legado)
         if (myUserName && row.responsavel && row.responsavel === myUserName) return true;
-        // Caso sem departamento e sem responsável (não atribuído)
-        if (!row.department_id && !row.responsavel) return true;
         return false;
       });
     }
@@ -253,7 +282,7 @@ export default function CasosPage() {
     if (filterDepartment !== "all") {
       const deptId = Number(filterDepartment);
       filteredCases = filteredCases.filter(
-        (row) => row.department_id === deptId,
+        (row) => Number(row.department_id) === deptId,
       );
     }
 
@@ -342,6 +371,7 @@ export default function CasosPage() {
     cases,
     isSysAdmin,
     isFullAccessAdmin,
+    isDeptLoading,
     myDeptIds,
     myUserId,
     myUserName,
@@ -455,6 +485,7 @@ export default function CasosPage() {
   useEffect(() => {
     if (!isHydrated) return;
     if (!data.auth) {
+      casesMemoryCache = null;
       router.push("/");
       return;
     }
@@ -463,6 +494,8 @@ export default function CasosPage() {
     }
 
     // 1. Cache em memória (navegação SPA — restauração instantânea)
+    //    Exibe dados do cache imediatamente, mas sempre busca dados atualizados
+    //    em background para refletir mudanças (ex: department_id alterado).
     if (
       casesMemoryCache &&
       casesMemoryCache.institutionId === normalizedInstitutionId &&
@@ -472,6 +505,7 @@ export default function CasosPage() {
       setTotalCasesCount(casesMemoryCache.totalCount);
       nextPageRef.current = casesMemoryCache.nextPage;
       setIsLoading(false);
+      loadCases(true);
       return;
     }
 
@@ -702,6 +736,47 @@ export default function CasosPage() {
     }
   };
 
+  const handleCreateCase = async () => {
+    const trimmedName = newCaseName.trim();
+    const trimmedPhone = newCasePhone.trim();
+    if (!trimmedName || !trimmedPhone) return;
+
+    setIsCreatingCase(true);
+    setCreateCaseError(null);
+
+    try {
+      const res = await fetch("/api/v1/cases", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerName: trimmedName,
+          customerPhone: trimmedPhone,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Erro ${res.status}`);
+      }
+
+      // Fechar modal, limpar campos e recarregar lista
+      setIsCreateModalOpen(false);
+      setNewCaseName("");
+      setNewCasePhone("");
+      casesMemoryCache = null;
+      if (typeof window !== "undefined") {
+        sessionStorage.removeItem(CASES_CACHE_KEY);
+      }
+      loadCases();
+    } catch (err) {
+      setCreateCaseError(
+        err instanceof Error ? err.message : "Erro ao criar caso",
+      );
+    } finally {
+      setIsCreatingCase(false);
+    }
+  };
+
   if (isLoading) {
     return <LoadingScreen message="Carregando casos..." />;
   }
@@ -751,6 +826,19 @@ export default function CasosPage() {
                 Kanban
               </Button>
             </div>
+            {canCreateCase && (
+              <Button
+                size="sm"
+                className="gap-1.5 h-8"
+                onClick={() => {
+                  setCreateCaseError(null);
+                  setIsCreateModalOpen(true);
+                }}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Novo Caso
+              </Button>
+            )}
           </div>
 
           {/* Estatísticas compactas inline - mesma linha do título */}
@@ -806,6 +894,136 @@ export default function CasosPage() {
           </div>
         </div>
 
+        {/* Filtros - visíveis em ambas as views */}
+        <div className="space-y-4 pb-4">
+          <div className="flex items-center justify-end">
+            <Button variant="outline" size="sm" onClick={() => loadCases()}>
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-7">
+            <div className="col-span-2 sm:col-span-1 lg:col-span-2 flex flex-col gap-1">
+              <label
+                htmlFor="cases-search"
+                className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+              >
+                Buscar casos
+              </label>
+              <Input
+                id="cases-search"
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Nome, ID, BJCaseId ou telefone"
+                className="w-full"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label
+                htmlFor="stage-filter"
+                className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+              >
+                Etapa
+              </label>
+              <select
+                id="stage-filter"
+                value={stageFilter}
+                onChange={(event) =>
+                  setStageFilter(event.target.value as CaseStage | "all")
+                }
+                className="h-9 rounded-md border border-input bg-background px-3 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+              >
+                <option value="all">Todas</option>
+                {stageOrder.map((stage) => (
+                  <option key={stage} value={stage}>
+                    {stageLabels[stage]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {isHydrated && (
+              <>
+                <div className="flex flex-col gap-1">
+                  <label
+                    htmlFor="start-date"
+                    className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                  >
+                    Data inicial
+                  </label>
+                  <Input
+                    id="start-date"
+                    type="date"
+                    value={startDate}
+                    onChange={(event) => setStartDate(event.target.value)}
+                    className="w-full"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label
+                    htmlFor="end-date"
+                    className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                  >
+                    Data final
+                  </label>
+                  <Input
+                    id="end-date"
+                    type="date"
+                    value={endDate}
+                    onChange={(event) => setEndDate(event.target.value)}
+                    className="w-full"
+                  />
+                </div>
+              </>
+            )}
+            {isSysAdmin && (
+              <div className="flex flex-col gap-1">
+                <label
+                  htmlFor="institution-filter"
+                  className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                >
+                  Instituição
+                </label>
+                <select
+                  id="institution-filter"
+                  value={selectedInstitution}
+                  onChange={(event) => setSelectedInstitution(event.target.value)}
+                  className="h-9 rounded-md border border-input bg-background px-3 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                >
+                  <option value="all">Todas</option>
+                  {institutionOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {filterableDepartments.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <label
+                  htmlFor="department-filter"
+                  className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                >
+                  Departamento
+                </label>
+                <select
+                  id="department-filter"
+                  value={filterDepartment}
+                  onChange={(event) => setFilterDepartment(event.target.value)}
+                  className="h-9 rounded-md border border-input bg-background px-3 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                >
+                  <option value="all">Todos</option>
+                  {filterableDepartments.map((dept) => (
+                    <option key={dept.id} value={dept.id}>
+                      {dept.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        </div>
+
         {activeView === "kanban" ? (
           <div className="min-h-[600px]">
             <KanbanView
@@ -822,239 +1040,172 @@ export default function CasosPage() {
           </div>
         ) : (
           <>
-        <div className="bg-transparent">
-          <div className="space-y-4 pb-4">
-            <div className="flex items-center justify-end">
-              <Button variant="outline" size="sm" onClick={() => loadCases()}>
-                <RefreshCw className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-7">
-              <div className="col-span-2 sm:col-span-1 lg:col-span-2 flex flex-col gap-1">
-                <label
-                  htmlFor="cases-search"
-                  className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                >
-                  Buscar casos
-                </label>
-                <Input
-                  id="cases-search"
-                  type="search"
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Nome, ID, BJCaseId ou telefone"
-                  className="w-full"
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label
-                  htmlFor="stage-filter"
-                  className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                >
-                  Etapa
-                </label>
-                <select
-                  id="stage-filter"
-                  value={stageFilter}
-                  onChange={(event) =>
-                    setStageFilter(event.target.value as CaseStage | "all")
-                  }
-                  className="h-9 rounded-md border border-input bg-background px-3 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
-                >
-                  <option value="all">Todas</option>
-                  {stageOrder.map((stage) => (
-                    <option key={stage} value={stage}>
-                      {stageLabels[stage]}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {isHydrated && (
-                <>
-                  <div className="flex flex-col gap-1">
-                    <label
-                      htmlFor="start-date"
-                      className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                    >
-                      Data inicial
-                    </label>
-                    <Input
-                      id="start-date"
-                      type="date"
-                      value={startDate}
-                      onChange={(event) => setStartDate(event.target.value)}
-                      className="w-full"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label
-                      htmlFor="end-date"
-                      className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                    >
-                      Data final
-                    </label>
-                    <Input
-                      id="end-date"
-                      type="date"
-                      value={endDate}
-                      onChange={(event) => setEndDate(event.target.value)}
-                      className="w-full"
-                    />
-                  </div>
-                </>
-              )}
-              {isSysAdmin && (
-                <div className="flex flex-col gap-1">
-                  <label
-                    htmlFor="institution-filter"
-                    className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                  >
-                    Instituição
-                  </label>
-                  <select
-                    id="institution-filter"
-                    value={selectedInstitution}
-                    onChange={(event) => setSelectedInstitution(event.target.value)}
-                    className="h-9 rounded-md border border-input bg-background px-3 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
-                  >
-                    <option value="all">Todas</option>
-                    {institutionOptions.map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+            <div>
+              {visibleCases.length === 0 ? (
+                <div className="py-12 text-center text-muted-foreground">
+                  Nenhum caso encontrado.
                 </div>
-              )}
-              {filterableDepartments.length > 0 && (
-                <div className="flex flex-col gap-1">
-                  <label
-                    htmlFor="department-filter"
-                    className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                  >
-                    Departamento
-                  </label>
-                  <select
-                    id="department-filter"
-                    value={filterDepartment}
-                    onChange={(event) => setFilterDepartment(event.target.value)}
-                    className="h-9 rounded-md border border-input bg-background px-3 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
-                  >
-                    <option value="all">Todos</option>
-                    {filterableDepartments.map((dept) => (
-                      <option key={dept.id} value={dept.id}>
-                        {dept.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </div>
-          </div>
-          <div>
-            {visibleCases.length === 0 ? (
-              <div className="py-12 text-center text-muted-foreground">
-                Nenhum caso encontrado.
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {paginatedCases.map((caseRow) => {
-                  const stage = getCaseStage(caseRow);
-                  const isPaused = isCasePaused(caseRow);
-                  const pauseError = pauseErrors[caseRow.id];
-                  return (
-                    <div
-                      key={caseRow.id}
-                      onClick={() => handleCaseClick(caseRow)}
-                      className="cursor-pointer border-b border-[#7E99B5] dark:border-border/60 px-4 py-3 transition-colors hover:bg-accent/50"
-                    >
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <h3 className="text-sm font-semibold truncate max-w-[200px]">
-                          {caseRow.CustumerName || "Sem nome"}
-                        </h3>
-                        {stage && (
-                          <span
-                            className={cn(
-                              "rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap",
-                              stageColors[stage],
-                            )}
-                          >
-                            {stageLabels[stage]}
-                          </span>
-                        )}
-                        {caseRow.Data && (
-                          <span className="text-xs text-muted-foreground whitespace-nowrap">
-                            {caseRow.Data}
-                          </span>
-                        )}
-                        <div className="ml-auto flex items-center gap-3">
-                          <Link
-                            href={`/chat?case=${caseRow.id}`}
-                            className="inline-flex items-center gap-1 rounded-full border border-blue-500/30 bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 dark:border-blue-500/40 dark:bg-blue-900/30 dark:text-blue-200 whitespace-nowrap"
-                            onClick={(event) => event.stopPropagation()}
-                          >
-                            <MessageSquareText className="h-3 w-3" />
-                            Chat
-                          </Link>
-                          <div
-                            className="flex items-center gap-1.5"
-                            onClick={(event) => event.stopPropagation()}
-                            onPointerDown={(event) => event.stopPropagation()}
-                          >
-                            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                              Pausar IA
+              ) : (
+                <div className="space-y-4">
+                  {paginatedCases.map((caseRow) => {
+                    const stage = getCaseStage(caseRow);
+                    const isPaused = isCasePaused(caseRow);
+                    const pauseError = pauseErrors[caseRow.id];
+                    return (
+                      <div
+                        key={caseRow.id}
+                        onClick={() => handleCaseClick(caseRow)}
+                        className="cursor-pointer border-b border-[#7E99B5] dark:border-border/60 px-4 py-3 transition-colors hover:bg-accent/50"
+                      >
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <h3 className="text-sm font-semibold truncate max-w-[200px]">
+                            {caseRow.CustumerName || "Sem nome"}
+                          </h3>
+                          {stage && (
+                            <span
+                              className={cn(
+                                "rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap",
+                                stageColors[stage],
+                              )}
+                            >
+                              {stageLabels[stage]}
                             </span>
-                            <Switch
-                              checked={isPaused}
-                              onCheckedChange={(checked) =>
-                                handleToggleIAPause(caseRow, checked)
-                              }
-                              disabled={updatingCaseId === caseRow.id}
-                              aria-label="Alternar pausa da IA neste caso"
-                            />
+                          )}
+                          {caseRow.Data && (
+                            <span className="text-xs text-muted-foreground whitespace-nowrap">
+                              {caseRow.Data}
+                            </span>
+                          )}
+                          <div className="ml-auto flex items-center gap-3">
+                            <Link
+                              href={`/chat?case=${caseRow.id}`}
+                              className="inline-flex items-center gap-1 rounded-full border border-blue-500/30 bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 dark:border-blue-500/40 dark:bg-blue-900/30 dark:text-blue-200 whitespace-nowrap"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <MessageSquareText className="h-3 w-3" />
+                              Chat
+                            </Link>
+                            <div
+                              className="flex items-center gap-1.5"
+                              onClick={(event) => event.stopPropagation()}
+                              onPointerDown={(event) => event.stopPropagation()}
+                            >
+                              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                                Pausar IA
+                              </span>
+                              <Switch
+                                checked={isPaused}
+                                onCheckedChange={(checked) =>
+                                  handleToggleIAPause(caseRow, checked)
+                                }
+                                disabled={updatingCaseId === caseRow.id}
+                                aria-label="Alternar pausa da IA neste caso"
+                              />
+                            </div>
                           </div>
                         </div>
+                        {pauseError && (
+                          <p className="text-xs text-destructive mt-1">
+                            {pauseError}
+                          </p>
+                        )}
                       </div>
-                      {pauseError && (
-                        <p className="text-xs text-destructive mt-1">
-                          {pauseError}
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            {/* Sentinela para infinite scroll (virtual + server) */}
-            {showSentinel && (
-              <div ref={loadMoreRef} className="py-4 text-center">
-                <div className="flex items-center justify-center gap-2 text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span className="text-sm">Carregando mais...</span>
+                    );
+                  })}
                 </div>
-              </div>
-            )}
-            {!showSentinel && visibleCases.length > 0 && (
-              <div className="py-4 text-center text-muted-foreground text-sm">
-                Exibindo {paginatedCases.length} de {totalCasesCount ?? cases.length} atendimentos
-              </div>
-            )}
-          </div>
-        </div>
+              )}
+              {/* Sentinela para infinite scroll (virtual + server) */}
+              {showSentinel && (
+                <div ref={loadMoreRef} className="py-4 text-center">
+                  <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-sm">Carregando mais...</span>
+                  </div>
+                </div>
+              )}
+              {!showSentinel && visibleCases.length > 0 && (
+                <div className="py-4 text-center text-muted-foreground text-sm">
+                  Exibindo {paginatedCases.length} de {totalCasesCount ?? cases.length} atendimentos
+                </div>
+              )}
+            </div>
 
-        <KanbanCardDetail
-          caseData={selectedCase}
-          open={isDialogOpen}
-          onOpenChange={handleDialogOpenChange}
-          onCaseUpdate={(caseId, updates) => {
-            setCases((prev) =>
-              prev.map((c) => (c.id === caseId ? { ...c, ...updates } : c))
-            );
-          }}
-        />
+            <KanbanCardDetail
+              caseData={selectedCase}
+              open={isDialogOpen}
+              onOpenChange={handleDialogOpenChange}
+              onCaseUpdate={(caseId, updates) => {
+                setCases((prev) =>
+                  prev.map((c) => (c.id === caseId ? { ...c, ...updates } : c))
+                );
+              }}
+            />
           </>
         )}
       </div>
+
+      {/* Modal de criação de caso */}
+      <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Novo Caso</DialogTitle>
+            <DialogDescription>
+              Preencha os dados do cliente para criar um novo caso.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="new-case-name" className="text-sm font-medium">
+                Nome do cliente *
+              </label>
+              <Input
+                id="new-case-name"
+                value={newCaseName}
+                onChange={(e) => setNewCaseName(e.target.value)}
+                placeholder="Nome completo"
+                maxLength={200}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="new-case-phone" className="text-sm font-medium">
+                Telefone *
+              </label>
+              <Input
+                id="new-case-phone"
+                value={newCasePhone}
+                onChange={(e) => setNewCasePhone(e.target.value)}
+                placeholder="(00) 00000-0000"
+                maxLength={50}
+              />
+            </div>
+            {createCaseError && (
+              <p className="text-sm text-destructive">{createCaseError}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsCreateModalOpen(false)}
+              disabled={isCreatingCase}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleCreateCase}
+              disabled={isCreatingCase || !newCaseName.trim() || !newCasePhone.trim()}
+            >
+              {isCreatingCase ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+                  Criando...
+                </>
+              ) : (
+                "Criar"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }

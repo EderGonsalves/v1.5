@@ -12,16 +12,31 @@ import {
   EyeOff,
   Building2,
   ShieldOff,
+  ShieldCheck,
+  ListOrdered,
+  CalendarClock,
+  Hash,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LoadingScreen } from "@/components/ui/loading-screen";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import { useUsers } from "@/hooks/use-users";
 import { useMyDepartments } from "@/hooks/use-my-departments";
-import { fetchInstitutionsClient } from "@/services/permissions-client";
+import {
+  fetchInstitutionsClient,
+  fetchUserFeaturesClient,
+  updateUserFeaturesClient,
+  invalidatePermissionsStatusCache,
+  type UserFeature,
+} from "@/services/permissions-client";
+import {
+  fetchQueueStatsClient,
+  type QueueStats,
+} from "@/services/assignment-queue-client";
 
 type UserFormData = {
   name: string;
@@ -151,13 +166,14 @@ function UserForm({
         )}
         {canToggleAdmin && (
           <div className="flex items-center gap-2 h-9">
+            <span className="text-xs text-muted-foreground">Perfil:</span>
             <Switch
               checked={form.isOfficeAdmin}
               onCheckedChange={(checked) =>
                 setForm({ ...form, isOfficeAdmin: checked })
               }
             />
-            <span className="text-sm text-foreground">
+            <span className="text-sm font-medium text-foreground">
               {form.isOfficeAdmin ? "Admin do Escritório" : "Usuário comum"}
             </span>
           </div>
@@ -230,6 +246,112 @@ export default function UsuariosPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isResettingAdmins, setIsResettingAdmins] = useState(false);
   const [resetMessage, setResetMessage] = useState<string | null>(null);
+
+  // Per-user feature toggles
+  const [userFeatures, setUserFeatures] = useState<UserFeature[]>([]);
+  const [loadingFeatures, setLoadingFeatures] = useState(false);
+  const [updatingFeatureKeys, setUpdatingFeatureKeys] = useState<Set<string>>(new Set());
+
+  // Queue stats
+  const [queueStats, setQueueStats] = useState<QueueStats | null>(null);
+  const [loadingQueueStats, setLoadingQueueStats] = useState(false);
+  const [updatingReceivesCases, setUpdatingReceivesCases] = useState(false);
+
+  // Load user features when editing a user
+  useEffect(() => {
+    if (!editingId) {
+      setUserFeatures([]);
+      return;
+    }
+    // Don't load for office admins (they see everything)
+    const editingUser = users.find((u) => u.id === editingId);
+    if (editingUser?.isOfficeAdmin) {
+      setUserFeatures([]);
+      return;
+    }
+    let active = true;
+    setLoadingFeatures(true);
+    fetchUserFeaturesClient(editingId)
+      .then((features) => {
+        if (active) setUserFeatures(features);
+      })
+      .catch((err) => {
+        console.warn("Erro ao carregar permissões do usuário:", err);
+        if (active) setUserFeatures([]);
+      })
+      .finally(() => {
+        if (active) setLoadingFeatures(false);
+      });
+    return () => { active = false; };
+  }, [editingId, users]);
+
+  const handleToggleUserFeature = useCallback(
+    async (featureKey: string, enabled: boolean) => {
+      if (!editingId) return;
+      setUpdatingFeatureKeys((prev) => new Set(prev).add(featureKey));
+      // Optimistic update
+      setUserFeatures((prev) =>
+        prev.map((f) => (f.key === featureKey ? { ...f, isEnabled: enabled } : f)),
+      );
+      try {
+        await updateUserFeaturesClient(editingId, { [featureKey]: enabled });
+        invalidatePermissionsStatusCache();
+      } catch (err) {
+        console.error("Erro ao atualizar permissão:", err);
+        // Rollback
+        setUserFeatures((prev) =>
+          prev.map((f) => (f.key === featureKey ? { ...f, isEnabled: !enabled } : f)),
+        );
+      } finally {
+        setUpdatingFeatureKeys((prev) => {
+          const next = new Set(prev);
+          next.delete(featureKey);
+          return next;
+        });
+      }
+    },
+    [editingId],
+  );
+
+  // Load queue stats when editing a user
+  useEffect(() => {
+    if (!editingId) {
+      setQueueStats(null);
+      return;
+    }
+    let active = true;
+    setLoadingQueueStats(true);
+    fetchQueueStatsClient(editingId)
+      .then((stats) => {
+        if (active) setQueueStats(stats);
+      })
+      .catch((err) => {
+        console.warn("Erro ao carregar stats da fila:", err);
+        if (active) setQueueStats(null);
+      })
+      .finally(() => {
+        if (active) setLoadingQueueStats(false);
+      });
+    return () => { active = false; };
+  }, [editingId]);
+
+  const handleToggleReceivesCases = useCallback(
+    async (userId: number, checked: boolean) => {
+      setUpdatingReceivesCases(true);
+      try {
+        await updateUser(userId, { receivesCases: checked });
+        // Reload queue stats
+        fetchQueueStatsClient(userId)
+          .then(setQueueStats)
+          .catch(() => {});
+      } catch (err) {
+        console.error("Erro ao atualizar receives_cases:", err);
+      } finally {
+        setUpdatingReceivesCases(false);
+      }
+    },
+    [updateUser],
+  );
 
   // Load institutions list for sysAdmin
   useEffect(() => {
@@ -474,22 +596,181 @@ export default function UsuariosPage() {
                       Editando: {user.name || user.email}
                     </p>
                   </div>
-                  <UserForm
-                    initial={{
-                      name: user.name,
-                      email: user.email,
-                      password: "",
-                      phone: user.phone,
-                      oab: user.oab,
-                      isActive: user.isActive,
-                      isOfficeAdmin: user.isOfficeAdmin,
-                    }}
-                    isEdit
-                    onSubmit={(form) => handleUpdate(user.id, form)}
-                    onCancel={() => setEditingId(null)}
-                    isSubmitting={isSubmitting}
-                    canToggleAdmin={canManageAdmins && user.id !== myUserId}
-                  />
+                  <Tabs defaultValue="dados" className="px-4 pb-3">
+                    <TabsList className="mb-2">
+                      <TabsTrigger value="dados">Dados</TabsTrigger>
+                      <TabsTrigger value="atendimento">Atendimento</TabsTrigger>
+                    </TabsList>
+
+                    {/* Tab: Dados */}
+                    <TabsContent value="dados">
+                      <UserForm
+                        initial={{
+                          name: user.name,
+                          email: user.email,
+                          password: "",
+                          phone: user.phone,
+                          oab: user.oab,
+                          isActive: user.isActive,
+                          isOfficeAdmin: user.isOfficeAdmin,
+                        }}
+                        isEdit
+                        onSubmit={(form) => handleUpdate(user.id, form)}
+                        onCancel={() => setEditingId(null)}
+                        isSubmitting={isSubmitting}
+                        canToggleAdmin={canManageAdmins && user.id !== myUserId}
+                      />
+                      {/* Per-user feature permissions (only for non-admin users) */}
+                      {!user.isOfficeAdmin && (
+                        <div className="pb-1">
+                          <div className="flex items-center gap-2 py-2 mb-2 border-t border-dashed border-[#7E99B5] dark:border-border/60">
+                            <ShieldCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                              Permissões de Acesso
+                            </span>
+                          </div>
+                          {loadingFeatures ? (
+                            <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              Carregando...
+                            </div>
+                          ) : userFeatures.length === 0 ? (
+                            <p className="text-xs text-muted-foreground py-1">
+                              Nenhuma permissão configurável disponível.
+                            </p>
+                          ) : (
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              {userFeatures.map((feature) => {
+                                const isUpdating = updatingFeatureKeys.has(feature.key);
+                                return (
+                                  <div
+                                    key={feature.key}
+                                    className="flex items-center justify-between rounded-md border border-border/40 px-3 py-2"
+                                  >
+                                    <span className="text-sm text-foreground">
+                                      {feature.label}
+                                    </span>
+                                    <div className="flex items-center gap-1.5">
+                                      {isUpdating && (
+                                        <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                                      )}
+                                      <Switch
+                                        checked={feature.isEnabled}
+                                        onCheckedChange={(checked) =>
+                                          handleToggleUserFeature(feature.key, checked)
+                                        }
+                                        disabled={isUpdating}
+                                      />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </TabsContent>
+
+                    {/* Tab: Atendimento */}
+                    <TabsContent value="atendimento">
+                      <div className="space-y-4 py-2">
+                        {/* Toggle Recebe Casos */}
+                        <div className="flex items-center justify-between rounded-md border border-border/40 px-4 py-3">
+                          <div>
+                            <p className="text-sm font-medium text-foreground">
+                              Recebe casos
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Quando ativado, este usuário entra na fila de distribuição automática
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {updatingReceivesCases && (
+                              <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                            )}
+                            <Switch
+                              checked={user.receivesCases}
+                              onCheckedChange={(checked) =>
+                                handleToggleReceivesCases(user.id, checked)
+                              }
+                              disabled={updatingReceivesCases}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Queue Stats */}
+                        <div className="flex items-center gap-2 py-1">
+                          <ListOrdered className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                            Estatísticas da Fila
+                          </span>
+                        </div>
+                        {loadingQueueStats ? (
+                          <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Carregando...
+                          </div>
+                        ) : queueStats ? (
+                          <div className="grid gap-2 sm:grid-cols-3">
+                            <div className="rounded-md border border-border/40 px-3 py-2.5 text-center">
+                              <div className="flex items-center justify-center gap-1.5 text-muted-foreground mb-1">
+                                <ListOrdered className="h-3 w-3" />
+                                <span className="text-[10px] uppercase tracking-wide">Posição</span>
+                              </div>
+                              <p className="text-lg font-bold text-foreground">
+                                {user.receivesCases
+                                  ? `${queueStats.position}/${queueStats.totalEligible}`
+                                  : "-"}
+                              </p>
+                            </div>
+                            <div className="rounded-md border border-border/40 px-3 py-2.5 text-center">
+                              <div className="flex items-center justify-center gap-1.5 text-muted-foreground mb-1">
+                                <Hash className="h-3 w-3" />
+                                <span className="text-[10px] uppercase tracking-wide">Atribuídos</span>
+                              </div>
+                              <p className="text-lg font-bold text-foreground">
+                                {queueStats.totalAssigned}
+                              </p>
+                            </div>
+                            <div className="rounded-md border border-border/40 px-3 py-2.5 text-center">
+                              <div className="flex items-center justify-center gap-1.5 text-muted-foreground mb-1">
+                                <CalendarClock className="h-3 w-3" />
+                                <span className="text-[10px] uppercase tracking-wide">Última</span>
+                              </div>
+                              <p className="text-xs font-medium text-foreground">
+                                {queueStats.lastAssignedAt
+                                  ? new Date(queueStats.lastAssignedAt).toLocaleString("pt-BR", {
+                                      day: "2-digit",
+                                      month: "2-digit",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })
+                                  : "Nunca"}
+                              </p>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted-foreground py-1">
+                            Sem dados disponíveis.
+                          </p>
+                        )}
+
+                        {/* Cancel button for this tab */}
+                        <div className="pt-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setEditingId(null)}
+                            className="gap-1"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                            Fechar
+                          </Button>
+                        </div>
+                      </div>
+                    </TabsContent>
+                  </Tabs>
                 </div>
               );
             }

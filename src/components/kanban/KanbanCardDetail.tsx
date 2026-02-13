@@ -120,9 +120,8 @@ export function KanbanCardDetail({
   useEffect(() => {
     if (open && caseData) {
       setResponsavel(caseData.responsavel || "");
-      setSelectedDeptId(
-        typeof caseData.department_id === "number" ? caseData.department_id : null,
-      );
+      const deptId = Number(caseData.department_id);
+      setSelectedDeptId(deptId > 0 ? deptId : null);
       const currentValor = typeof caseData.valor === "number"
         ? caseData.valor
         : typeof caseData.valor === "string"

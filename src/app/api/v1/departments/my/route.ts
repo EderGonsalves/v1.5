@@ -35,8 +35,9 @@ export async function GET(request: NextRequest) {
     const users = await fetchInstitutionUsers(auth.institutionId);
 
     const currentUser = users.find((u) => {
-      if (email && u.email === email) return true;
-      if (legacyId && u.email === legacyId) return true;
+      const uEmail = u.email.toLowerCase();
+      if (email && uEmail === email.toLowerCase()) return true;
+      if (legacyId && uEmail === legacyId.toLowerCase()) return true;
       if (legacyId && String(u.id) === legacyId) return true;
       return false;
     });

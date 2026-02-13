@@ -17,6 +17,14 @@ export const SYSTEM_FEATURES: SystemFeature[] = [
   { key: "suporte", path: "/suporte", label: "Suporte" },
 ];
 
-export const ALWAYS_ALLOWED_PATHS = ["/", "/configuracoes/permissoes"];
+export const ALWAYS_ALLOWED_PATHS = ["/", "/configuracoes/permissoes", "/minha-conta"];
 
 export const ALL_FEATURE_PATHS = SYSTEM_FEATURES.map((f) => f.path);
+
+// Features que por padrão ficam ocultas para usuários comuns (requerem habilitação explícita pelo admin)
+export const ADMIN_DEFAULT_FEATURES = ["agenda", "estatisticas", "configuracoes", "conexoes", "follow-up"];
+
+// Ações que podem ser habilitadas por usuário pelo admin (não são páginas)
+export const USER_ACTION_FEATURES: SystemFeature[] = [
+  { key: "criar_caso", path: "", label: "Criar Caso" },
+];
