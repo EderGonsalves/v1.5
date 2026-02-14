@@ -37,5 +37,60 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build]
     steps:
-      - name: Trigger Portainer Webhook
-        run: curl -X POST "${{ secrets.PORTAINER_WEBHOOK }}" --fail --silent --max-time 30
+      - name: Wait for Docker Hub propagation
+        run: sleep 10
+
+      - name: Pull image and redeploy stack
+        run: |
+          echo "=== Step 1: Authenticate with Portainer ==="
+          TOKEN=$(curl -s -X POST "${{ secrets.PORTAINER_URL }}/api/auth" \
+            -H "Content-Type: application/json" \
+            -d '{"username":"${{ secrets.PORTAINER_USER }}","password":"${{ secrets.PORTAINER_PASSWORD }}"}' \
+            | jq -r .jwt)
+
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+            echo "Failed to authenticate with Portainer"
+            exit 1
+          fi
+          echo "Authenticated successfully"
+
+          echo "=== Step 2: Get stack info ==="
+          STACK_INFO=$(curl -s -H "Authorization: Bearer $TOKEN" \
+            "${{ secrets.PORTAINER_URL }}/api/stacks" \
+            | jq '.[] | select(.Name=="${{ secrets.PORTAINER_STACK_NAME }}")')
+
+          STACK_ID=$(echo "$STACK_INFO" | jq -r '.Id')
+          ENDPOINT_ID=$(echo "$STACK_INFO" | jq -r '.EndpointId')
+
+          if [ -z "$STACK_ID" ] || [ "$STACK_ID" = "null" ]; then
+            echo "Stack '${{ secrets.PORTAINER_STACK_NAME }}' not found"
+            echo "Available stacks:"
+            curl -s -H "Authorization: Bearer $TOKEN" \
+              "${{ secrets.PORTAINER_URL }}/api/stacks" | jq '.[].Name'
+            exit 1
+          fi
+          echo "Stack ID: $STACK_ID, Endpoint ID: $ENDPOINT_ID"
+
+          echo "=== Step 3: Get current stack file ==="
+          STACK_FILE=$(curl -s -H "Authorization: Bearer $TOKEN" \
+            "${{ secrets.PORTAINER_URL }}/api/stacks/$STACK_ID/file" \
+            | jq -r '.StackFileContent')
+
+          echo "=== Step 4: Redeploy stack (pullImage=true) ==="
+          HTTP_CODE=$(curl -s -o /tmp/deploy_response.txt -w "%{http_code}" \
+            -X PUT "${{ secrets.PORTAINER_URL }}/api/stacks/$STACK_ID?endpointId=$ENDPOINT_ID" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+              --arg stackFileContent "$STACK_FILE" \
+              '{stackFileContent: $stackFileContent, pullImage: true}')")
+
+          echo "HTTP Status: $HTTP_CODE"
+          cat /tmp/deploy_response.txt || true
+          echo ""
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "Deploy failed with status $HTTP_CODE"
+            exit 1
+          fi
+          echo "Stack redeployed successfully with fresh image pull"
