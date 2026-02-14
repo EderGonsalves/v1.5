@@ -1,6 +1,18 @@
 /**
- * Codilo API Service — OAuth2 + Lawsuit Monitoring
+ * Codilo API Service — OAuth2 + Lawsuit Monitoring + Capturaweb Queries
  * Server-only: uses CODILO_CLIENT_ID / CODILO_CLIENT_SECRET
+ *
+ * API docs: https://docs.codilo.com.br/
+ *
+ * Two APIs:
+ * - Push API (api.push.codilo.com.br) — continuous daily monitoring
+ * - Capture API (api.capturaweb.com.br) — one-time queries (autorequest)
+ *
+ * Autorequest flow:
+ * 1. POST /autorequest → spawns sub-requests per court
+ * 2. Each sub-request sends callback: { action, requestId, status }
+ * 3. On status "success" → GET /request/{requestId} to fetch full data
+ * 4. Response: { data: [{ cover, properties, people, steps }] }
  */
 
 // ---------------------------------------------------------------------------
@@ -23,7 +35,6 @@ let _cachedToken: string | null = null;
 let _tokenExpiresAt = 0;
 
 async function getAccessToken(): Promise<string> {
-  // Return cached if still valid (with 5-minute margin)
   if (_cachedToken && Date.now() < _tokenExpiresAt - 5 * 60 * 1000) {
     return _cachedToken;
   }
@@ -60,37 +71,63 @@ async function getAccessToken(): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// Types
+// Types — Codilo API responses
 // ---------------------------------------------------------------------------
 
 export type CodiloMonitoringResponse = {
   id: string;
   cnj: string;
   created_at: string;
-  courts?: Array<{
-    court: string;
-    status: string;
-  }>;
+  courts?: Array<{ court: string; status: string }>;
 };
 
 export type CodiloQueryResponse = {
-  requestId: string;
-  status: string;
-  // Raw response for debugging field names
+  autorequestId: string;
+  subRequestIds: string[];
   _raw?: Record<string, unknown>;
 };
 
-export type CodiloRequestResult = {
-  requestId: string;
-  status: string;
-  results?: Array<{
+/** GET /request/{id} response */
+export type CodiloRequestData = {
+  success: boolean;
+  type?: string;
+  requested?: {
+    id: string;
+    status: string;
+    platform: string;
     court: string;
-    data: unknown;
+    respondedAt: string;
+  };
+  info?: {
+    platform: string;
+    court: string;
+  };
+  data?: CodiloLawsuit[];
+};
+
+export type CodiloLawsuit = {
+  cover?: Record<string, string>;
+  properties?: Record<string, unknown>;
+  people?: Array<{
+    name?: string;
+    nome?: string;
+    pole?: string;
+    polo?: string;
+    type?: string;
+    tipo?: string;
+    oab?: string;
+    [key: string]: unknown;
+  }>;
+  steps?: Array<{
+    date?: string;
+    description?: string;
+    descricao?: string;
+    [key: string]: unknown;
   }>;
 };
 
 // ---------------------------------------------------------------------------
-// Start monitoring (diário)
+// Start monitoring (daily — Push API)
 // ---------------------------------------------------------------------------
 
 export async function startLawsuitMonitoring(
@@ -131,7 +168,7 @@ export async function startLawsuitMonitoring(
 }
 
 // ---------------------------------------------------------------------------
-// Query once (consulta avulsa)
+// Query once (autorequest — Capture API)
 // ---------------------------------------------------------------------------
 
 export async function queryLawsuitOnce(
@@ -165,71 +202,55 @@ export async function queryLawsuitOnce(
   }
 
   const raw = (await response.json()) as Record<string, unknown>;
-  console.log("[codilo] autorequest response:", JSON.stringify(raw));
+  console.log("[codilo] autorequest response:", JSON.stringify(raw).slice(0, 2000));
 
-  // Codilo may return requestId in different field names
-  const requestId = String(
-    raw.requestId ?? raw.request_id ?? raw.id ?? raw.requestid ?? "",
-  );
+  // Response: { success, data: { id, key, value, requests: [{ id, status, ... }], createdAt } }
+  const respData = raw.data as Record<string, unknown> | undefined;
+  const autorequestId = String(respData?.id ?? raw.id ?? "");
+  const requests = (respData?.requests ?? []) as Array<Record<string, unknown>>;
+  const subRequestIds = requests.map((r) => String(r.id ?? "")).filter(Boolean);
 
-  return {
-    requestId,
-    status: String(raw.status ?? "pending"),
-    _raw: raw,
-  };
+  console.log("[codilo] autorequest created:", { autorequestId, subRequests: subRequestIds.length });
+
+  return { autorequestId, subRequestIds, _raw: raw };
 }
 
 // ---------------------------------------------------------------------------
-// Get request result
+// Get individual request result — GET /request/{requestId}
 // ---------------------------------------------------------------------------
 
 export async function getRequestResult(
   requestId: string,
-): Promise<CodiloRequestResult> {
+): Promise<CodiloRequestData> {
   const token = await getAccessToken();
 
-  // Try multiple endpoint patterns
-  const urls = [
-    `${CAPTURE_API_URL}/request/${requestId}`,
-    `${CAPTURE_API_URL}/autorequest/${requestId}`,
-    `${CAPTURE_API_URL}/request/status/${requestId}`,
-  ];
+  const url = `${CAPTURE_API_URL}/request/${requestId}`;
+  console.log("[codilo] Fetching request result:", url);
 
-  let lastError = "";
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
 
-  for (const url of urls) {
-    try {
-      const response = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (response.status === 404) {
-        // This endpoint doesn't exist, try next
-        continue;
-      }
-
-      if (!response.ok) {
-        const text = await response.text().catch(() => "");
-        lastError = `Codilo resultado falhou (${response.status}): ${text}`;
-        console.warn(`[codilo] ${url} → ${response.status}:`, text);
-        continue;
-      }
-
-      const raw = (await response.json()) as Record<string, unknown>;
-      console.log(`[codilo] getRequestResult (${url}) response:`, JSON.stringify(raw));
-
-      return {
-        requestId,
-        status: String(raw.status ?? raw.state ?? "pending"),
-        results: raw.results as CodiloRequestResult["results"],
-      };
-    } catch (err) {
-      console.warn(`[codilo] ${url} error:`, err);
-      lastError = err instanceof Error ? err.message : String(err);
-    }
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    console.error(`[codilo] GET /request/${requestId} → ${response.status}:`, text);
+    throw new Error(`Codilo resultado falhou (${response.status}): ${text}`);
   }
 
-  throw new Error(lastError || "Não foi possível obter resultado da Codilo");
+  const result = (await response.json()) as CodiloRequestData;
+  console.log(
+    "[codilo] Request result:",
+    JSON.stringify({
+      success: result.success,
+      type: result.type,
+      status: result.requested?.status,
+      court: result.info?.court,
+      dataCount: result.data?.length ?? 0,
+      stepsCount: result.data?.[0]?.steps?.length ?? 0,
+    }),
+  );
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -248,8 +269,6 @@ export function validateCodiloCallback(
     console.warn("[codilo] Webhook secret mismatch:", { received: webhookSecret?.slice(0, 8) + "..." });
     return false;
   }
-  // Accept callbacks from both Push API (CodiloCallback) and Capture API (capturaweb)
-  // Only reject if User-Agent is clearly from a browser (extra security layer)
   if (userAgent) {
     console.log("[codilo] Callback User-Agent:", userAgent);
   }

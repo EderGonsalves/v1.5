@@ -49,10 +49,15 @@ export async function POST(request: NextRequest) {
     console.log("[lawsuit/query] Consulta enviada para Codilo:", {
       cnj: tracking.cnj,
       caseId: tracking.case_id,
-      codiloResponse: result._raw,
+      autorequestId: result.autorequestId,
+      subRequests: result.subRequestIds.length,
     });
 
-    return NextResponse.json({ sent: true });
+    return NextResponse.json({
+      sent: true,
+      autorequestId: result.autorequestId,
+      subRequests: result.subRequestIds.length,
+    });
   } catch (err) {
     console.error("[lawsuit/query] Erro:", err);
     return NextResponse.json(
