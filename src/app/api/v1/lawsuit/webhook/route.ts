@@ -24,11 +24,16 @@ export async function POST(request: NextRequest) {
     request.nextUrl.searchParams.get("secret");
   const userAgent = request.headers.get("user-agent");
 
+  console.log("[lawsuit/webhook] Incoming callback:", {
+    hasSecret: !!webhookSecret,
+    secretPrefix: webhookSecret?.slice(0, 10),
+    userAgent,
+    caseIdRaw: request.headers.get("x-case-id") || request.nextUrl.searchParams.get("caseId"),
+    url: request.url,
+  });
+
   if (!validateCodiloCallback(webhookSecret, userAgent)) {
-    console.warn("[lawsuit/webhook] Invalid callback:", {
-      hasSecret: !!webhookSecret,
-      userAgent,
-    });
+    console.warn("[lawsuit/webhook] Invalid callback — rejected");
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -45,7 +50,7 @@ export async function POST(request: NextRequest) {
   try {
     // 3. Parse body
     const body = await request.json();
-    console.log("[lawsuit/webhook] Received callback for case", caseId);
+    console.log("[lawsuit/webhook] Received callback for case", caseId, "body:", JSON.stringify(body).slice(0, 2000));
 
     // 4. Find active tracking for this case
     const trackings = await getTrackingByCaseId(caseId);

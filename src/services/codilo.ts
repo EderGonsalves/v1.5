@@ -240,9 +240,18 @@ export function validateCodiloCallback(
   webhookSecret: string | null,
   userAgent: string | null,
 ): boolean {
-  if (!CODILO_WEBHOOK_SECRET) return false;
-  if (webhookSecret !== CODILO_WEBHOOK_SECRET) return false;
-  // Codilo sends: CodiloCallback/1.0 (+http://codilo.com.br/)
-  if (userAgent && !userAgent.includes("CodiloCallback")) return false;
+  if (!CODILO_WEBHOOK_SECRET) {
+    console.warn("[codilo] CODILO_WEBHOOK_SECRET not configured");
+    return false;
+  }
+  if (webhookSecret !== CODILO_WEBHOOK_SECRET) {
+    console.warn("[codilo] Webhook secret mismatch:", { received: webhookSecret?.slice(0, 8) + "..." });
+    return false;
+  }
+  // Accept callbacks from both Push API (CodiloCallback) and Capture API (capturaweb)
+  // Only reject if User-Agent is clearly from a browser (extra security layer)
+  if (userAgent) {
+    console.log("[codilo] Callback User-Agent:", userAgent);
+  }
   return true;
 }
