@@ -107,6 +107,35 @@ export const getPhoneDepartmentMap = async (
   return map;
 };
 
+/**
+ * Retorna o WABA Business Account ID da instituição.
+ * Procura primeiro o campo `waba_business_account_id` na config (224).
+ * NOTA: `waba_phone_id` é o Phone Number ID (para enviar mensagens),
+ * NÃO o WABA Business Account ID (necessário para gerenciar templates).
+ */
+export const getInstitutionWabaPhoneId = async (
+  institutionId?: number,
+): Promise<string | null> => {
+  try {
+    const configs = await getBaserowConfigs(institutionId);
+    if (!configs.length) return null;
+
+    for (const config of configs) {
+      const record = config as Record<string, unknown>;
+      // Prioriza waba_business_account_id (WABA Business Account ID — para templates)
+      const businessAccountId = record["waba_business_account_id"];
+      if (businessAccountId !== undefined && businessAccountId !== null) {
+        const normalized = String(businessAccountId).trim();
+        if (normalized) return normalized;
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error("[waba] Falha ao buscar WABA Business Account ID:", error);
+    return null;
+  }
+};
+
 export const getInstitutionWabaPhoneNumber = async (
   institutionId?: number,
 ): Promise<string | null> => {

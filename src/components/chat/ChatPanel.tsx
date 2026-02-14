@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState, useEffect } from "react";
-import { ArrowLeft, Loader2, MoreVertical, Phone, RefreshCw, User, UserRoundCog } from "lucide-react";
+import { ArrowLeft, Loader2, MessageSquarePlus, MoreVertical, Phone, RefreshCw, User, UserRoundCog } from "lucide-react";
 
 import { Switch } from "@/components/ui/switch";
 import { ChatComposer } from "@/components/chat/ChatComposer";
@@ -25,6 +25,8 @@ type ChatPanelProps = {
   activeWabaNumber?: string | null;
   /** Lista de números WABA disponíveis */
   wabaNumbers?: WabaNumber[];
+  /** Callback para abrir dialog de nova conversa */
+  onNewConversation?: () => void;
 };
 
 const formatWabaPhoneForDisplay = (phone: string): string => {
@@ -74,6 +76,7 @@ export const ChatPanel = ({
   onBack,
   activeWabaNumber,
   wabaNumbers = [],
+  onNewConversation,
 }: ChatPanelProps) => {
   const hasMultipleWaba = wabaNumbers.length > 1;
 
@@ -287,6 +290,16 @@ export const ChatPanel = ({
               <RefreshCw className="h-5 w-5" />
             )}
           </button>
+          {onNewConversation && (
+            <button
+              type="button"
+              onClick={onNewConversation}
+              className="p-2 hover:bg-[#D4E0EB] dark:hover:bg-[#263850] rounded-full transition-colors"
+              title="Nova conversa"
+            >
+              <MessageSquarePlus className="h-5 w-5" />
+            </button>
+          )}
           <div className="relative" ref={transferRef}>
             <button
               type="button"

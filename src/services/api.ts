@@ -594,28 +594,28 @@ async function _handleProxyResponse<T>(resp: Response): Promise<{ data: T; statu
   return { data: body as T, status: resp.status };
 }
 
-async function baserowGet<T = unknown>(url: string, timeout = 30000): Promise<{ data: T; status: number }> {
+export async function baserowGet<T = unknown>(url: string, timeout = 30000): Promise<{ data: T; status: number }> {
   if (_isServer) {
     return axios.get<T>(url, { headers: _baserowHeaders(), timeout });
   }
   return _handleProxyResponse<T>(await _proxyFetch(url, "GET"));
 }
 
-async function baserowPost<T = unknown>(url: string, body: unknown, timeout = 30000): Promise<{ data: T; status: number }> {
+export async function baserowPost<T = unknown>(url: string, body: unknown, timeout = 30000): Promise<{ data: T; status: number }> {
   if (_isServer) {
     return axios.post<T>(url, body, { headers: _baserowHeaders(), timeout });
   }
   return _handleProxyResponse<T>(await _proxyFetch(url, "POST", body));
 }
 
-async function baserowPatch<T = unknown>(url: string, body: unknown, timeout = 30000): Promise<{ data: T; status: number }> {
+export async function baserowPatch<T = unknown>(url: string, body: unknown, timeout = 30000): Promise<{ data: T; status: number }> {
   if (_isServer) {
     return axios.patch<T>(url, body, { headers: _baserowHeaders(), timeout });
   }
   return _handleProxyResponse<T>(await _proxyFetch(url, "PATCH", body));
 }
 
-async function baserowDelete(url: string, timeout = 30000): Promise<void> {
+export async function baserowDelete(url: string, timeout = 30000): Promise<void> {
   if (_isServer) {
     await axios.delete(url, { headers: _baserowHeaders(), timeout });
     return;
@@ -901,6 +901,12 @@ export type BaserowCaseRow = {
   case_source?: string;
   created_by_user_id?: number | null;
   created_by_user_name?: string | null;
+  // Lawsuit tracking fields
+  cnj_number?: string | null;
+  lawsuit_tracking_active?: string | null;
+  lawsuit_summary?: string | null;
+  lawsuit_last_update?: string | null;
+  notas_caso?: string | null;
   [key: string]: unknown;
 };
 

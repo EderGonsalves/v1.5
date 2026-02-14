@@ -25,6 +25,7 @@ import {
   CheckCircle,
   Check,
   X,
+  Scale,
 } from "lucide-react";
 import Link from "next/link";
 import type { BaserowCaseRow, ClientRow } from "@/services/api";
@@ -37,6 +38,7 @@ import { useDepartments } from "@/hooks/use-departments";
 import { fetchDepartmentUsersClient } from "@/services/departments-client";
 import { notifyTransferWebhook } from "@/services/transfer-notify";
 import type { UserPublicRow } from "@/services/permissions";
+import { LawsuitTab } from "@/components/lawsuit/LawsuitTab";
 
 type KanbanCardDetailProps = {
   caseData: BaserowCaseRow | null;
@@ -330,7 +332,7 @@ export function KanbanCardDetail({
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
           <Tabs defaultValue="caso" className="h-full">
-            <TabsList className="grid w-full grid-cols-4 mb-6">
+            <TabsList className="grid w-full grid-cols-5 mb-6">
               <TabsTrigger value="caso" className="gap-2">
                 <Briefcase className="h-4 w-4" />
                 Caso
@@ -338,6 +340,10 @@ export function KanbanCardDetail({
               <TabsTrigger value="cliente" className="gap-2">
                 <UserCircle className="h-4 w-4" />
                 Dados do Cliente
+              </TabsTrigger>
+              <TabsTrigger value="processo" className="gap-2">
+                <Scale className="h-4 w-4" />
+                Processo
               </TabsTrigger>
               <TabsTrigger value="conversa" className="gap-2">
                 <MessageSquareText className="h-4 w-4" />
@@ -750,6 +756,22 @@ export function KanbanCardDetail({
                   </div>
                 </>
               )}
+            </TabsContent>
+
+            {/* Aba Processo */}
+            <TabsContent value="processo" className="mt-0">
+              <LawsuitTab
+                caseId={caseData.id}
+                institutionId={
+                  caseData.InstitutionID ||
+                  (typeof caseData["body.auth.institutionId"] === "number"
+                    ? caseData["body.auth.institutionId"]
+                    : Number(caseData["body.auth.institutionId"]) || 0)
+                }
+                initialCnj={caseData.cnj_number || undefined}
+                initialNotes={caseData.notas_caso || ""}
+                onNotesChange={(notes) => onCaseUpdate?.(caseData.id, { notas_caso: notes })}
+              />
             </TabsContent>
 
             {/* Aba Conversa */}

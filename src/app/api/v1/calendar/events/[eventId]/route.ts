@@ -1,9 +1,8 @@
 import type { ZodIssue } from "zod";
 import { NextRequest, NextResponse } from "next/server";
 
-import { getRequestAuth } from "@/lib/auth/session";
 import { eventBelongsToInstitution } from "@/lib/calendar/event-helpers";
-import { resolveInstitutionId } from "@/lib/calendar/request";
+import { getCalendarAuth, resolveInstitutionId } from "@/lib/calendar/request";
 import { calendarEventUpdateSchema, type CalendarEventUpdateInput } from "@/lib/calendar/schemas";
 import {
   deleteCalendarEvent,
@@ -106,7 +105,7 @@ export async function GET(
   { params }: RouteParams,
 ) {
   try {
-    const auth = getRequestAuth(request);
+    const auth = getCalendarAuth(request);
     if (!auth) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
     }
@@ -148,7 +147,7 @@ export async function PUT(
   { params }: RouteParams,
 ) {
   try {
-    const auth = getRequestAuth(request);
+    const auth = getCalendarAuth(request);
     if (!auth) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
     }
@@ -214,7 +213,7 @@ export async function DELETE(
   { params }: RouteParams,
 ) {
   try {
-    const auth = getRequestAuth(request);
+    const auth = getCalendarAuth(request);
     if (!auth) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
     }

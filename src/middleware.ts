@@ -21,6 +21,7 @@ const CSRF_EXEMPT_PATHS = new Set([
   "/api/v1/calendar/availability",
   "/api/health",
   "/api/follow-up/check",
+  "/api/v1/lawsuit/webhook",
 ]);
 
 const STATE_CHANGING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);

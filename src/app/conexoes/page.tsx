@@ -29,6 +29,7 @@ import {
 import { Bell, Pencil, Plus, Trash2, Webhook, Loader2, ChevronDown } from "lucide-react";
 import { useDepartments } from "@/hooks/use-departments";
 import { useMyDepartments } from "@/hooks/use-my-departments";
+import { TemplateList } from "@/components/waba/TemplateList";
 
 // WhatsApp OAuth configuration - usando variáveis de ambiente
 const WHATSAPP_OAUTH_BASE_URL = "https://www.facebook.com/v22.0/dialog/oauth";
@@ -559,6 +560,11 @@ export default function ConexoesPage() {
             Ao clicar em &quot;Conectar&quot;, uma janela popup será aberta para autorização
             do Meta/Facebook. Após autorizar, a janela será fechada automaticamente.
           </div>
+        </div>
+
+        {/* Templates WhatsApp */}
+        <div>
+          <TemplateList />
         </div>
 
         {/* Webhooks / Alertas */}

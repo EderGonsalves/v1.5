@@ -1,8 +1,9 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, MessageCircle } from "lucide-react";
+import { NewConversationDialog } from "@/components/waba/NewConversationDialog";
 
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import { useConversations, type Conversation } from "@/hooks/use-conversations";
@@ -44,6 +45,8 @@ function ChatContent() {
     isLoading: isDeptLoading,
   } = useMyDepartments();
   const isFullAccessAdmin = isMyGlobalAdmin || isMyOfficeAdmin;
+
+  const [showNewConversation, setShowNewConversation] = useState(false);
 
   const selectedCaseId = searchParams.get("case");
   const selectedId = selectedCaseId ? Number(selectedCaseId) : null;
@@ -115,6 +118,16 @@ function ChatContent() {
     router.push("/chat");
   }, [router]);
 
+  const handleNewConversationStarted = useCallback(
+    (caseId: number) => {
+      refresh();
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("case", String(caseId));
+      router.push(`/chat?${params.toString()}`);
+    },
+    [refresh, router, searchParams],
+  );
+
   // Redirect to login if not authenticated (only after hydration)
   useEffect(() => {
     if (isHydrated && !data.auth) {
@@ -166,6 +179,7 @@ function ChatContent() {
             onBack={handleBack}
             activeWabaNumber={activeWabaNumber}
             wabaNumbers={wabaNumbers}
+            onNewConversation={() => setShowNewConversation(true)}
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground bg-muted/30">
@@ -186,6 +200,14 @@ function ChatContent() {
           {error}
         </div>
       )}
+
+      {/* Nova Conversa Dialog */}
+      <NewConversationDialog
+        open={showNewConversation}
+        onOpenChange={setShowNewConversation}
+        wabaPhoneNumber={activeWabaNumber ?? ""}
+        onConversationStarted={handleNewConversationStarted}
+      />
     </div>
   );
 }

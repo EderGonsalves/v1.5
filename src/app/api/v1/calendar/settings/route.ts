@@ -4,7 +4,7 @@ import {
   upsertCalendarSettings,
   type CalendarSettingsRow,
 } from "@/services/calendar-settings";
-import { getRequestAuth } from "@/lib/auth/session";
+import { getCalendarAuth } from "@/lib/calendar/request";
 
 // ---------------------------------------------------------------------------
 // Normalize Baserow values (strings → proper types)
@@ -47,7 +47,7 @@ const normalizeSettings = (row: CalendarSettingsRow) => ({
 // ---------------------------------------------------------------------------
 
 export async function GET(request: NextRequest) {
-  const auth = getRequestAuth(request);
+  const auth = getCalendarAuth(request);
   if (!auth) {
     return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   }
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  const auth = getRequestAuth(request);
+  const auth = getCalendarAuth(request);
   if (!auth) {
     return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   }

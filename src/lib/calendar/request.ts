@@ -1,6 +1,10 @@
 import { NextRequest } from "next/server";
 
 import { getRequestAuth } from "@/lib/auth/session";
+import type { AuthInfo } from "@/lib/validations";
+
+const CALENDAR_API_KEY = process.env.CALENDAR_API_KEY;
+const SYSADMIN_INSTITUTION_ID = 4;
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -39,6 +43,24 @@ const extractFromBody = (body?: UnknownRecord | null): number | null => {
   const auth = body.auth;
   if (auth && typeof auth === "object" && auth !== null) {
     return toNumber((auth as UnknownRecord).institutionId);
+  }
+
+  return null;
+};
+
+/**
+ * Authenticates calendar requests via cookie OR Bearer API key (for N8N / server-to-server).
+ * When authenticated via API key, returns a SysAdmin-level auth object.
+ */
+export const getCalendarAuth = (request: NextRequest): AuthInfo | null => {
+  // 1. Cookie auth (browser / logged-in user)
+  const cookieAuth = getRequestAuth(request);
+  if (cookieAuth) return cookieAuth;
+
+  // 2. Bearer token (server-to-server / N8N)
+  const bearer = request.headers.get("authorization")?.replace("Bearer ", "");
+  if (CALENDAR_API_KEY && bearer && bearer === CALENDAR_API_KEY) {
+    return { institutionId: SYSADMIN_INSTITUTION_ID };
   }
 
   return null;

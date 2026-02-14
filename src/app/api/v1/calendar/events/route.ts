@@ -1,8 +1,7 @@
 import type { ZodIssue } from "zod";
 import { NextRequest, NextResponse } from "next/server";
 
-import { getRequestAuth } from "@/lib/auth/session";
-import { resolveInstitutionId } from "@/lib/calendar/request";
+import { getCalendarAuth, resolveInstitutionId } from "@/lib/calendar/request";
 import { calendarEventInputSchema } from "@/lib/calendar/schemas";
 import {
   createCalendarEvent,
@@ -48,7 +47,7 @@ const normalizeDateParam = (
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = getRequestAuth(request);
+    const auth = getCalendarAuth(request);
     if (!auth) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
     }
@@ -110,7 +109,7 @@ const formatValidationError = (issues: ZodIssue[]) => {
 
 export async function POST(request: NextRequest) {
   try {
-    const auth = getRequestAuth(request);
+    const auth = getCalendarAuth(request);
     if (!auth) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
     }

@@ -3,7 +3,7 @@
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
-import { Phone, Calendar, User, GripVertical } from "lucide-react";
+import { Phone, Calendar, User, GripVertical, Scale } from "lucide-react";
 import type { BaserowCaseRow } from "@/services/api";
 import { getCaseStage, stageLabels, stageColors } from "@/lib/case-stats";
 
@@ -113,6 +113,11 @@ export function KanbanCard({
             {isPerdido && (
               <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200">
                 Perdido
+              </span>
+            )}
+            {caseData.lawsuit_tracking_active === "true" && (
+              <span className="px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-200" title="Processo monitorado">
+                <Scale className="h-3 w-3 inline-block" />
               </span>
             )}
           </div>
