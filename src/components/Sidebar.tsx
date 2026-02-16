@@ -133,7 +133,7 @@ export function Sidebar() {
       </div>
 
       {/* Middle: Nav items */}
-      <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-1">
+      <nav className="flex-1 overflow-y-auto scrollbar-hide py-3 px-2 space-y-1">
         {navItems.map((item) => {
           const active = isActive(item.href);
           return (

@@ -190,8 +190,9 @@ export async function sendPushToSubscriptions(
       sent++;
     } catch (err: unknown) {
       const statusCode = (err as { statusCode?: number }).statusCode;
-      if (statusCode === 410 || statusCode === 404) {
-        // Subscription expired, remove it
+      // Remove invalid subscriptions: expired (410), not found (404),
+      // unauthorized (401/403 = created with different VAPID key)
+      if (statusCode === 410 || statusCode === 404 || statusCode === 401 || statusCode === 403) {
         try {
           const deleteUrl = `${BASEROW_API}/database/rows/table/${SUBSCRIPTIONS_TABLE}/${sub.id}/`;
           await baserowDelete(deleteUrl);
@@ -201,7 +202,7 @@ export async function sendPushToSubscriptions(
       }
       failed++;
       const message = err instanceof Error ? err.message : String(err);
-      errors.push(`${sub.endpoint.slice(0, 60)}... → ${message}`);
+      errors.push(`${sub.endpoint.slice(0, 60)}... → [${statusCode || "?"}] ${message}`);
     }
   });
 
