@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { usePwaInstall } from "@/hooks/use-pwa-install";
 import { usePushSubscription } from "@/hooks/use-push-subscription";
 import { PwaInstallPrompt } from "./PwaInstallPrompt";
@@ -22,20 +22,9 @@ export function PwaModals() {
   const { isInstallable, isInstalled, promptInstall } = usePwaInstall();
   const { isSupported, isSubscribed, isLoading, permission, subscribe } = usePushSubscription();
   const [phase, setPhase] = useState<ModalPhase>("idle");
-  const autoSubscribeDone = useRef(false);
 
-  // Auto-subscribe silently if permission already granted (no modal)
-  // Wait for isLoading=false to avoid race condition
-  useEffect(() => {
-    if (isLoading || !isSupported || autoSubscribeDone.current) return;
-    if (permission === "granted" && !isSubscribed) {
-      autoSubscribeDone.current = true;
-      subscribe().catch(() => {});
-    }
-  }, [isLoading, isSupported, isSubscribed, permission, subscribe]);
-
-  // Orchestrate modals: install first, then notification, never both
-  // Wait for isLoading=false to know the real subscription state
+  // Orchestrate modals: install first, then notification, never both.
+  // No auto-subscribe — subscription only happens when user clicks "Ativar".
   useEffect(() => {
     if (phase !== "idle" || isLoading) return;
 
@@ -46,7 +35,7 @@ export function PwaModals() {
         return;
       }
 
-      // 2. Then notification prompt (only if permission never asked)
+      // 2. Then notification prompt (only if permission never asked AND not subscribed)
       if (isSupported && permission === "default" && !isSubscribed && !isDismissed(NOTIF_DISMISS_KEY)) {
         setPhase("notification");
       }
@@ -58,7 +47,6 @@ export function PwaModals() {
   const handleInstallDone = useCallback(() => {
     localStorage.setItem(INSTALL_DISMISS_KEY, String(Date.now()));
     setPhase("idle");
-    // After install modal closes, notification modal may appear after delay
   }, []);
 
   const handleNotificationDone = useCallback(() => {

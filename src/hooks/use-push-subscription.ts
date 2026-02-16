@@ -15,17 +15,7 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 }
 
 /**
- * Legacy GCM endpoints (fcm/send/) don't support VAPID auth.
- * VAPID subscriptions use the /wp/ path.
- */
-function isLegacyEndpoint(endpoint: string): boolean {
-  return endpoint.includes("/fcm/send/");
-}
-
-/**
  * VAPID public key — safe to hardcode (it's public by definition).
- * Env var is preferred but fallback ensures it works even if build-time
- * inlining fails (e.g. Docker cache serving stale layer).
  */
 const VAPID_PUBLIC_KEY =
   process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ||
@@ -37,6 +27,7 @@ export function usePushSubscription() {
   const [isLoading, setIsLoading] = useState(true);
   const [permission, setPermission] = useState<NotificationPermission>("default");
 
+  // On mount: only CHECK existing subscription. No auto-actions.
   useEffect(() => {
     const supported =
       "serviceWorker" in navigator &&
@@ -52,45 +43,13 @@ export function usePushSubscription() {
 
     setPermission(Notification.permission);
 
-    // Check existing subscription; if legacy, remove and re-subscribe with VAPID
     navigator.serviceWorker.ready.then(async (reg) => {
       try {
         const existing = await reg.pushManager.getSubscription();
-
-        if (existing && isLegacyEndpoint(existing.endpoint)) {
-          console.warn("[Push] Legacy GCM subscription detected, re-subscribing with VAPID");
-          try {
-            await unsubscribePush(existing.endpoint).catch(() => {});
-            await existing.unsubscribe();
-          } catch {
-            // ignore
-          }
-
-          // Auto re-subscribe if permission already granted
-          if (Notification.permission === "granted" && VAPID_PUBLIC_KEY) {
-            try {
-              const newSub = await reg.pushManager.subscribe({
-                userVisibleOnly: true,
-                applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY).buffer as ArrayBuffer,
-              });
-              const json = newSub.toJSON();
-              console.info("[Push] New VAPID endpoint:", json.endpoint);
-              await subscribePush({
-                endpoint: json.endpoint!,
-                keys: { p256dh: json.keys!.p256dh!, auth: json.keys!.auth! },
-              });
-              setIsSubscribed(true);
-              console.info("[Push] Re-subscribed with VAPID successfully");
-            } catch (err) {
-              console.error("[Push] Re-subscribe failed:", err);
-            }
-          }
-        } else if (existing) {
-          // Valid VAPID subscription already exists
-          console.info("[Push] Existing VAPID subscription found:", existing.endpoint.slice(0, 80));
+        if (existing) {
+          console.info("[Push] Existing subscription found:", existing.endpoint.slice(0, 80));
           setIsSubscribed(true);
         } else {
-          // No subscription at all
           console.info("[Push] No existing subscription");
           setIsSubscribed(false);
         }
@@ -100,6 +59,8 @@ export function usePushSubscription() {
     });
   }, []);
 
+  // subscribe() — called ONLY when user clicks "Ativar" in the modal.
+  // Creates subscription once and saves to server.
   const subscribe = useCallback(async (): Promise<boolean> => {
     if (!isSupported) return false;
 
@@ -115,28 +76,28 @@ export function usePushSubscription() {
 
     const reg = await navigator.serviceWorker.ready;
 
-    // Remove any existing legacy subscription first
+    // If already subscribed in the browser, just confirm state
     const existing = await reg.pushManager.getSubscription();
     if (existing) {
-      if (isLegacyEndpoint(existing.endpoint)) {
-        console.warn("[Push] Removing legacy subscription before VAPID subscribe");
-        await unsubscribePush(existing.endpoint).catch(() => {});
-        await existing.unsubscribe();
-      } else {
-        // Already subscribed with VAPID — no server call needed
-        console.info("[Push] Already subscribed with VAPID, skipping");
-        setIsSubscribed(true);
-        return true;
-      }
+      console.info("[Push] Already subscribed, confirming with server");
+      // Ensure server has this subscription
+      const json = existing.toJSON();
+      await subscribePush({
+        endpoint: json.endpoint!,
+        keys: { p256dh: json.keys!.p256dh!, auth: json.keys!.auth! },
+      }).catch(() => {});
+      setIsSubscribed(true);
+      return true;
     }
 
+    // Create new subscription with VAPID key
     const sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY).buffer as ArrayBuffer,
     });
 
     const json = sub.toJSON();
-    console.info("[Push] Created VAPID subscription:", json.endpoint);
+    console.info("[Push] Created new VAPID subscription:", json.endpoint);
     await subscribePush({
       endpoint: json.endpoint!,
       keys: {
@@ -149,6 +110,7 @@ export function usePushSubscription() {
     return true;
   }, [isSupported]);
 
+  // unsubscribe() — called ONLY when user explicitly requests it
   const unsubscribe = useCallback(async (): Promise<boolean> => {
     if (!isSupported) return false;
 

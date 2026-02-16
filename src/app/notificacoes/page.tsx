@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Bell, Loader2, RefreshCw, Send, Trash2 } from "lucide-react";
+import { Bell, Loader2, RefreshCw, Send, Trash2, Users } from "lucide-react";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { sendPushNotification, fetchPushHistory } from "@/services/push-client";
+import { fetchPushHistory } from "@/services/push-client";
 
 type NotificationRecord = {
   id: number;
@@ -17,6 +17,38 @@ type NotificationRecord = {
   sent_at: string;
   recipients_count: number;
   status: string;
+};
+
+type SubscriptionInfo = {
+  id: number;
+  user_email: string;
+  user_name: string;
+  legacy_user_id: string;
+  institution_id: number;
+  endpoint_type: "LEGACY" | "VAPID";
+  endpoint_preview: string;
+  created_at: string;
+};
+
+type SubsResponse = {
+  total: number;
+  legacy: number;
+  vapid: number;
+  subscriptions: SubscriptionInfo[];
+};
+
+type SendDiagnostic = {
+  total_subscriptions: number;
+  legacy_filtered: number;
+  vapid_attempted: number;
+  endpoints: { id: number; type: string; endpoint: string; user: string }[];
+  errors: string[];
+};
+
+type SendResponse = {
+  sent: number;
+  failed: number;
+  diagnostic: SendDiagnostic;
 };
 
 export default function NotificacoesPage() {
@@ -32,6 +64,13 @@ export default function NotificacoesPage() {
     type: "success" | "error";
     message: string;
   } | null>(null);
+  const [lastDiagnostic, setLastDiagnostic] = useState<SendDiagnostic | null>(
+    null,
+  );
+
+  // Subscriptions state
+  const [subs, setSubs] = useState<SubsResponse | null>(null);
+  const [loadingSubs, setLoadingSubs] = useState(false);
 
   // Cleanup state
   const [cleaningUp, setCleaningUp] = useState(false);
@@ -53,11 +92,27 @@ export default function NotificacoesPage() {
     }
   }, []);
 
+  const loadSubs = useCallback(async () => {
+    setLoadingSubs(true);
+    try {
+      const res = await fetch("/api/v1/push/subscriptions");
+      if (res.ok) {
+        const data: SubsResponse = await res.json();
+        setSubs(data);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoadingSubs(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (institutionId === 4) {
       loadHistory();
+      loadSubs();
     }
-  }, [institutionId, loadHistory]);
+  }, [institutionId, loadHistory, loadSubs]);
 
   if (institutionId !== 4) {
     return (
@@ -80,22 +135,37 @@ export default function NotificacoesPage() {
 
     setSending(true);
     setFeedback(null);
+    setLastDiagnostic(null);
 
     try {
-      const result = await sendPushNotification({
-        title: title.trim(),
-        body: body.trim(),
-        url: url.trim() || "/casos",
-        institution_id: 0, // all institutions
+      const res = await fetch("/api/v1/push/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: title.trim(),
+          body: body.trim(),
+          url: url.trim() || "/casos",
+          institution_id: 0,
+        }),
       });
+      const result: SendResponse = await res.json();
+
+      if (!res.ok) {
+        throw new Error(
+          (result as unknown as { error?: string }).error || `Erro ${res.status}`,
+        );
+      }
+
+      setLastDiagnostic(result.diagnostic);
       setFeedback({
-        type: "success",
-        message: `Enviado para ${result.sent} dispositivo(s)${result.failed > 0 ? `, ${result.failed} falha(s)` : ""}.`,
+        type: result.sent > 0 ? "success" : "error",
+        message: `Enviado: ${result.sent} | Falhas: ${result.failed} | Total: ${result.diagnostic.total_subscriptions} (${result.diagnostic.vapid_attempted} VAPID, ${result.diagnostic.legacy_filtered} legacy)`,
       });
       setTitle("");
       setBody("");
       setUrl("/casos");
       loadHistory();
+      loadSubs();
     } catch (err) {
       setFeedback({
         type: "error",
@@ -114,6 +184,7 @@ export default function NotificacoesPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Erro");
       setCleanupResult(data.message);
+      loadSubs();
     } catch (err) {
       setCleanupResult(
         err instanceof Error ? err.message : "Erro ao limpar",
@@ -174,6 +245,82 @@ export default function NotificacoesPage() {
           </p>
         </div>
 
+        {/* Subscriptions Diagnostic */}
+        <div className="rounded-lg border bg-card p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Dispositivos inscritos
+            </h2>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={loadSubs}
+              disabled={loadingSubs}
+            >
+              <RefreshCw
+                className={`h-4 w-4 ${loadingSubs ? "animate-spin" : ""}`}
+              />
+            </Button>
+          </div>
+
+          {subs ? (
+            <>
+              <div className="flex gap-4 text-sm">
+                <span>
+                  Total: <strong>{subs.total}</strong>
+                </span>
+                <span className="text-green-600">
+                  VAPID: <strong>{subs.vapid}</strong>
+                </span>
+                <span className="text-red-600">
+                  Legacy: <strong>{subs.legacy}</strong>
+                </span>
+              </div>
+              {subs.subscriptions.length > 0 && (
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {subs.subscriptions.map((s) => (
+                    <div
+                      key={s.id}
+                      className="text-xs border rounded p-2 space-y-1"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                            s.endpoint_type === "VAPID"
+                              ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                              : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
+                          }`}
+                        >
+                          {s.endpoint_type}
+                        </span>
+                        <span className="font-medium">
+                          {s.user_name || s.user_email || s.legacy_user_id || "—"}
+                        </span>
+                        <span className="text-muted-foreground">
+                          inst. {s.institution_id}
+                        </span>
+                      </div>
+                      <p className="text-muted-foreground font-mono break-all">
+                        {s.endpoint_preview}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : loadingSubs ? (
+            <div className="text-center py-4">
+              <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Nenhum dispositivo inscrito.
+            </p>
+          )}
+        </div>
+
         {/* Send Form */}
         <div className="rounded-lg border bg-card p-4 space-y-4">
           <h2 className="text-sm font-semibold">Enviar notificação</h2>
@@ -221,6 +368,36 @@ export default function NotificacoesPage() {
             >
               {feedback.message}
             </p>
+          )}
+
+          {lastDiagnostic && (
+            <div className="rounded border bg-muted/50 p-3 space-y-2">
+              <p className="text-xs font-semibold">Diagnóstico do envio:</p>
+              {lastDiagnostic.endpoints.map((ep) => (
+                <div key={ep.id} className="text-xs font-mono">
+                  <span
+                    className={
+                      ep.type === "VAPID" ? "text-green-600" : "text-red-600"
+                    }
+                  >
+                    [{ep.type}]
+                  </span>{" "}
+                  {ep.user} → {ep.endpoint}
+                </div>
+              ))}
+              {lastDiagnostic.errors.length > 0 && (
+                <div className="mt-2">
+                  <p className="text-xs font-semibold text-destructive">
+                    Erros:
+                  </p>
+                  {lastDiagnostic.errors.map((err, i) => (
+                    <p key={i} className="text-xs font-mono text-destructive">
+                      {err}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
 
           <Button

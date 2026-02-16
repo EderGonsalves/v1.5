@@ -230,31 +230,14 @@ export async function sendPushToSubscriptions(
   subscriptions: PushSubscriptionRecord[],
   payload: { title: string; body: string; url?: string; icon?: string; tag?: string },
 ): Promise<SendResult> {
-  // Pre-filter: skip legacy endpoints entirely (they always fail with 401)
-  const validSubs = subscriptions.filter((sub) => {
-    if (isLegacyEndpoint(sub.endpoint)) {
-      console.warn(`[Push] Skipping legacy endpoint: ${sub.endpoint.slice(0, 60)}... (row ${sub.id})`);
-      return false;
-    }
-    return true;
-  });
-
-  // Clean up legacy endpoints from database in background
-  const legacySubs = subscriptions.filter((sub) => isLegacyEndpoint(sub.endpoint));
-  if (legacySubs.length > 0) {
-    console.info(`[Push] Cleaning up ${legacySubs.length} legacy subscription(s)`);
-    for (const sub of legacySubs) {
-      const deleteUrl = `${BASEROW_API}/database/rows/table/${SUBSCRIPTIONS_TABLE}/${sub.id}/`;
-      baserowDelete(deleteUrl).catch(() => {});
-    }
-  }
-
   const jsonPayload = JSON.stringify(payload);
   let sent = 0;
   let failed = 0;
   const errors: string[] = [];
 
-  const tasks = validSubs.map(async (sub) => {
+  // Send to ALL subscriptions — never auto-delete.
+  // Cleanup is manual via /api/v1/push/cleanup only.
+  const tasks = subscriptions.map(async (sub) => {
     try {
       await webpush.sendNotification(
         {
@@ -266,18 +249,6 @@ export async function sendPushToSubscriptions(
       sent++;
     } catch (err: unknown) {
       const statusCode = (err as { statusCode?: number }).statusCode;
-      // Remove permanently invalid subscriptions
-      if (statusCode === 410 || statusCode === 404) {
-        try {
-          const deleteUrl = `${BASEROW_API}/database/rows/table/${SUBSCRIPTIONS_TABLE}/${sub.id}/`;
-          await baserowDelete(deleteUrl);
-          console.info(`[Push] Removed dead subscription row ${sub.id} (${statusCode})`);
-        } catch {
-          // ignore cleanup errors
-        }
-      }
-      // 401/403 on VAPID endpoints = key mismatch, log but don't auto-delete
-      // (might be transient or fixable by re-subscribing)
       failed++;
       const message = err instanceof Error ? err.message : String(err);
       errors.push(`row:${sub.id} ${sub.endpoint.slice(0, 60)}... → [${statusCode || "?"}] ${message}`);

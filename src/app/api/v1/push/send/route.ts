@@ -41,6 +41,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Diagnostic: count endpoint types before sending
+  const legacyCount = subscriptions.filter((s) =>
+    s.endpoint.includes("/fcm/send/"),
+  ).length;
+  const vapidCount = subscriptions.length - legacyCount;
+
   // Send push
   const result = await sendPushToSubscriptions(subscriptions, {
     title,
@@ -51,7 +57,7 @@ export async function POST(request: NextRequest) {
 
   // Determine status
   let status: string;
-  if (result.failed === 0) status = "sent";
+  if (result.failed === 0 && result.sent > 0) status = "sent";
   else if (result.sent === 0) status = "failed";
   else status = "partial_failure";
 
@@ -69,5 +75,20 @@ export async function POST(request: NextRequest) {
     error_log: result.errors.length > 0 ? result.errors.join("\n") : "",
   });
 
-  return NextResponse.json({ sent: result.sent, failed: result.failed });
+  return NextResponse.json({
+    sent: result.sent,
+    failed: result.failed,
+    diagnostic: {
+      total_subscriptions: subscriptions.length,
+      legacy_filtered: legacyCount,
+      vapid_attempted: vapidCount,
+      endpoints: subscriptions.map((s) => ({
+        id: s.id,
+        type: s.endpoint.includes("/fcm/send/") ? "LEGACY" : "VAPID",
+        endpoint: s.endpoint.slice(0, 100),
+        user: s.user_email || s.legacy_user_id,
+      })),
+      errors: result.errors,
+    },
+  });
 }
