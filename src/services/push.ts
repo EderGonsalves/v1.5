@@ -68,6 +68,13 @@ type BaserowList<T> = {
   results: T[];
 };
 
+/**
+ * Legacy GCM endpoints don't support VAPID — they always fail with 401.
+ */
+function isLegacyEndpoint(endpoint: string): boolean {
+  return endpoint.includes("/fcm/send/");
+}
+
 // ---------------------------------------------------------------------------
 // Subscriptions
 // ---------------------------------------------------------------------------
@@ -84,8 +91,31 @@ export async function saveSubscription(sub: {
 }): Promise<PushSubscriptionRecord> {
   const now = new Date().toISOString();
 
-  // Delete ALL existing subscriptions for this user (by legacy_user_id or email)
-  // This ensures only one subscription per user — no duplicates
+  // 1. Check if the EXACT same endpoint already exists — if so, just update it
+  const endpointSearchUrl = `${subscriptionsUrl}&filter__endpoint__equal=${encodeURIComponent(sub.endpoint)}&size=1`;
+  try {
+    const { data: existing } = await baserowGet<BaserowList<PushSubscriptionRecord>>(endpointSearchUrl);
+    if (existing.results.length > 0) {
+      const row = existing.results[0];
+      const patchUrl = `${BASEROW_API}/database/rows/table/${SUBSCRIPTIONS_TABLE}/${row.id}/?user_field_names=true`;
+      const { data: updated } = await baserowPatch<PushSubscriptionRecord>(patchUrl, {
+        p256dh: sub.p256dh,
+        auth: sub.auth,
+        user_email: sub.user_email,
+        user_name: sub.user_name,
+        legacy_user_id: sub.legacy_user_id,
+        institution_id: sub.institution_id,
+        user_agent: sub.user_agent,
+        updated_at: now,
+      });
+      console.info(`[Push] Updated existing subscription row ${row.id}`);
+      return updated;
+    }
+  } catch {
+    // If search fails, fall through to create
+  }
+
+  // 2. New endpoint — clean up OLD subscriptions for this user (legacy or stale)
   const identifier = sub.legacy_user_id || sub.user_email;
   if (identifier) {
     const filterField = sub.legacy_user_id ? "legacy_user_id" : "user_email";
@@ -93,15 +123,17 @@ export async function saveSubscription(sub: {
     try {
       const { data: oldSubs } = await baserowGet<BaserowList<PushSubscriptionRecord>>(cleanupUrl);
       for (const old of oldSubs.results) {
+        // Only delete old entries (the new endpoint is different from all of these)
         const deleteUrl = `${BASEROW_API}/database/rows/table/${SUBSCRIPTIONS_TABLE}/${old.id}/`;
         await baserowDelete(deleteUrl).catch(() => {});
+        console.info(`[Push] Deleted old subscription row ${old.id} (endpoint: ${old.endpoint.slice(0, 60)}...)`);
       }
     } catch {
       // ignore cleanup errors
     }
   }
 
-  // Create new subscription
+  // 3. Create new subscription
   const { data: created } = await baserowPost<PushSubscriptionRecord>(subscriptionsUrl, {
     endpoint: sub.endpoint,
     p256dh: sub.p256dh,
@@ -114,6 +146,7 @@ export async function saveSubscription(sub: {
     created_at: now,
     updated_at: now,
   });
+  console.info(`[Push] Created new subscription row ${created.id} (endpoint: ${sub.endpoint.slice(0, 60)}...)`);
   return created;
 }
 
@@ -158,6 +191,32 @@ export async function getAllSubscriptions(): Promise<PushSubscriptionRecord[]> {
 }
 
 // ---------------------------------------------------------------------------
+// Cleanup legacy subscriptions
+// ---------------------------------------------------------------------------
+
+export async function cleanupLegacySubscriptions(): Promise<{ deleted: number; kept: number }> {
+  const allSubs = await getAllSubscriptions();
+  let deleted = 0;
+  let kept = 0;
+
+  for (const sub of allSubs) {
+    if (isLegacyEndpoint(sub.endpoint)) {
+      try {
+        const deleteUrl = `${BASEROW_API}/database/rows/table/${SUBSCRIPTIONS_TABLE}/${sub.id}/`;
+        await baserowDelete(deleteUrl);
+        deleted++;
+      } catch {
+        // ignore
+      }
+    } else {
+      kept++;
+    }
+  }
+
+  return { deleted, kept };
+}
+
+// ---------------------------------------------------------------------------
 // Send push
 // ---------------------------------------------------------------------------
 
@@ -171,12 +230,31 @@ export async function sendPushToSubscriptions(
   subscriptions: PushSubscriptionRecord[],
   payload: { title: string; body: string; url?: string; icon?: string; tag?: string },
 ): Promise<SendResult> {
+  // Pre-filter: skip legacy endpoints entirely (they always fail with 401)
+  const validSubs = subscriptions.filter((sub) => {
+    if (isLegacyEndpoint(sub.endpoint)) {
+      console.warn(`[Push] Skipping legacy endpoint: ${sub.endpoint.slice(0, 60)}... (row ${sub.id})`);
+      return false;
+    }
+    return true;
+  });
+
+  // Clean up legacy endpoints from database in background
+  const legacySubs = subscriptions.filter((sub) => isLegacyEndpoint(sub.endpoint));
+  if (legacySubs.length > 0) {
+    console.info(`[Push] Cleaning up ${legacySubs.length} legacy subscription(s)`);
+    for (const sub of legacySubs) {
+      const deleteUrl = `${BASEROW_API}/database/rows/table/${SUBSCRIPTIONS_TABLE}/${sub.id}/`;
+      baserowDelete(deleteUrl).catch(() => {});
+    }
+  }
+
   const jsonPayload = JSON.stringify(payload);
   let sent = 0;
   let failed = 0;
   const errors: string[] = [];
 
-  const tasks = subscriptions.map(async (sub) => {
+  const tasks = validSubs.map(async (sub) => {
     try {
       await webpush.sendNotification(
         {
@@ -188,19 +266,21 @@ export async function sendPushToSubscriptions(
       sent++;
     } catch (err: unknown) {
       const statusCode = (err as { statusCode?: number }).statusCode;
-      // Remove invalid subscriptions: expired (410), not found (404),
-      // unauthorized (401/403 = created with different VAPID key)
-      if (statusCode === 410 || statusCode === 404 || statusCode === 401 || statusCode === 403) {
+      // Remove permanently invalid subscriptions
+      if (statusCode === 410 || statusCode === 404) {
         try {
           const deleteUrl = `${BASEROW_API}/database/rows/table/${SUBSCRIPTIONS_TABLE}/${sub.id}/`;
           await baserowDelete(deleteUrl);
+          console.info(`[Push] Removed dead subscription row ${sub.id} (${statusCode})`);
         } catch {
           // ignore cleanup errors
         }
       }
+      // 401/403 on VAPID endpoints = key mismatch, log but don't auto-delete
+      // (might be transient or fixable by re-subscribing)
       failed++;
       const message = err instanceof Error ? err.message : String(err);
-      errors.push(`${sub.endpoint.slice(0, 60)}... → [${statusCode || "?"}] ${message}`);
+      errors.push(`row:${sub.id} ${sub.endpoint.slice(0, 60)}... → [${statusCode || "?"}] ${message}`);
     }
   });
 

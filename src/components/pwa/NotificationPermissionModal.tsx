@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { Bell, MessageCircle, CalendarDays } from "lucide-react";
 import {
   Dialog,
@@ -10,50 +9,25 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { usePushSubscription } from "@/hooks/use-push-subscription";
 
-const DISMISS_KEY = "notification_perm_dismissed";
-const COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+type NotificationPermissionModalProps = {
+  open: boolean;
+  onDone: () => void;
+  onSubscribe: () => Promise<boolean>;
+};
 
-export function NotificationPermissionModal() {
-  const { isSupported, isSubscribed, permission, subscribe } =
-    usePushSubscription();
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    if (!isSupported) return;
-
-    // If already granted but not subscribed, auto-subscribe silently
-    if (permission === "granted" && !isSubscribed) {
-      subscribe().catch(() => {});
-      return;
-    }
-
-    // Only show modal if permission is "default" (never asked)
-    if (permission !== "default") return;
-
-    const dismissed = localStorage.getItem(DISMISS_KEY);
-    if (dismissed) {
-      const ts = Number(dismissed);
-      if (Date.now() - ts < COOLDOWN_MS) return;
-    }
-
-    const timer = setTimeout(() => setOpen(true), 6000);
-    return () => clearTimeout(timer);
-  }, [isSupported, isSubscribed, permission, subscribe]);
-
+export function NotificationPermissionModal({
+  open,
+  onDone,
+  onSubscribe,
+}: NotificationPermissionModalProps) {
   const handleActivate = async () => {
-    await subscribe();
-    setOpen(false);
-  };
-
-  const handleDismiss = () => {
-    localStorage.setItem(DISMISS_KEY, String(Date.now()));
-    setOpen(false);
+    await onSubscribe();
+    onDone();
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && handleDismiss()}>
+    <Dialog open={open} onOpenChange={(v) => !v && onDone()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Ativar notificações</DialogTitle>
@@ -76,7 +50,7 @@ export function NotificationPermissionModal() {
           </div>
         </div>
         <div className="flex gap-2 justify-end">
-          <Button variant="outline" onClick={handleDismiss}>
+          <Button variant="outline" onClick={onDone}>
             Depois
           </Button>
           <Button onClick={handleActivate}>

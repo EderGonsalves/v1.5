@@ -34,6 +34,7 @@ const VAPID_PUBLIC_KEY =
 export function usePushSubscription() {
   const [isSupported, setIsSupported] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [permission, setPermission] = useState<NotificationPermission>("default");
 
   useEffect(() => {
@@ -44,33 +45,36 @@ export function usePushSubscription() {
 
     setIsSupported(supported);
 
-    if (!supported) return;
+    if (!supported) {
+      setIsLoading(false);
+      return;
+    }
 
     setPermission(Notification.permission);
 
     // Check existing subscription; if legacy, remove and re-subscribe with VAPID
     navigator.serviceWorker.ready.then(async (reg) => {
-      const existing = await reg.pushManager.getSubscription();
+      try {
+        const existing = await reg.pushManager.getSubscription();
 
-      if (existing && isLegacyEndpoint(existing.endpoint)) {
-        console.warn("[Push] Legacy GCM subscription detected, re-subscribing with VAPID");
-        try {
-          await unsubscribePush(existing.endpoint).catch(() => {});
-          await existing.unsubscribe();
-        } catch {
-          // ignore
-        }
-        setIsSubscribed(false);
+        if (existing && isLegacyEndpoint(existing.endpoint)) {
+          console.warn("[Push] Legacy GCM subscription detected, re-subscribing with VAPID");
+          try {
+            await unsubscribePush(existing.endpoint).catch(() => {});
+            await existing.unsubscribe();
+          } catch {
+            // ignore
+          }
 
-        // Auto re-subscribe if permission already granted
-        if (Notification.permission === "granted") {
-          if (VAPID_PUBLIC_KEY) {
+          // Auto re-subscribe if permission already granted
+          if (Notification.permission === "granted" && VAPID_PUBLIC_KEY) {
             try {
               const newSub = await reg.pushManager.subscribe({
                 userVisibleOnly: true,
                 applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY).buffer as ArrayBuffer,
               });
               const json = newSub.toJSON();
+              console.info("[Push] New VAPID endpoint:", json.endpoint);
               await subscribePush({
                 endpoint: json.endpoint!,
                 keys: { p256dh: json.keys!.p256dh!, auth: json.keys!.auth! },
@@ -81,11 +85,18 @@ export function usePushSubscription() {
               console.error("[Push] Re-subscribe failed:", err);
             }
           }
+        } else if (existing) {
+          // Valid VAPID subscription already exists
+          console.info("[Push] Existing VAPID subscription found:", existing.endpoint.slice(0, 80));
+          setIsSubscribed(true);
+        } else {
+          // No subscription at all
+          console.info("[Push] No existing subscription");
+          setIsSubscribed(false);
         }
-        return;
+      } finally {
+        setIsLoading(false);
       }
-
-      setIsSubscribed(!!existing);
     });
   }, []);
 
@@ -108,10 +119,12 @@ export function usePushSubscription() {
     const existing = await reg.pushManager.getSubscription();
     if (existing) {
       if (isLegacyEndpoint(existing.endpoint)) {
+        console.warn("[Push] Removing legacy subscription before VAPID subscribe");
         await unsubscribePush(existing.endpoint).catch(() => {});
         await existing.unsubscribe();
       } else {
-        // Already subscribed with VAPID
+        // Already subscribed with VAPID — no server call needed
+        console.info("[Push] Already subscribed with VAPID, skipping");
         setIsSubscribed(true);
         return true;
       }
@@ -123,6 +136,7 @@ export function usePushSubscription() {
     });
 
     const json = sub.toJSON();
+    console.info("[Push] Created VAPID subscription:", json.endpoint);
     await subscribePush({
       endpoint: json.endpoint!,
       keys: {
@@ -152,5 +166,5 @@ export function usePushSubscription() {
     return true;
   }, [isSupported]);
 
-  return { isSupported, isSubscribed, permission, subscribe, unsubscribe };
+  return { isSupported, isSubscribed, isLoading, permission, subscribe, unsubscribe };
 }

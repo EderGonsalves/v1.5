@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Bell, Loader2, RefreshCw, Send } from "lucide-react";
+import { Bell, Loader2, RefreshCw, Send, Trash2 } from "lucide-react";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +32,10 @@ export default function NotificacoesPage() {
     type: "success" | "error";
     message: string;
   } | null>(null);
+
+  // Cleanup state
+  const [cleaningUp, setCleaningUp] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState<string | null>(null);
 
   // History state
   const [history, setHistory] = useState<NotificationRecord[]>([]);
@@ -99,6 +103,23 @@ export default function NotificacoesPage() {
       });
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleCleanup = async () => {
+    setCleaningUp(true);
+    setCleanupResult(null);
+    try {
+      const res = await fetch("/api/v1/push/cleanup", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro");
+      setCleanupResult(data.message);
+    } catch (err) {
+      setCleanupResult(
+        err instanceof Error ? err.message : "Erro ao limpar",
+      );
+    } finally {
+      setCleaningUp(false);
     }
   };
 
@@ -212,6 +233,31 @@ export default function NotificacoesPage() {
               <Send className="h-4 w-4 mr-2" />
             )}
             Enviar
+          </Button>
+        </div>
+
+        {/* Cleanup Legacy */}
+        <div className="rounded-lg border bg-card p-4 space-y-3">
+          <h2 className="text-sm font-semibold">Manutenção</h2>
+          <p className="text-xs text-muted-foreground">
+            Remove subscriptions com endpoints legacy (GCM) que não suportam
+            VAPID e sempre falham com erro 401 ao enviar.
+          </p>
+          {cleanupResult && (
+            <p className="text-sm text-muted-foreground">{cleanupResult}</p>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleCleanup}
+            disabled={cleaningUp}
+          >
+            {cleaningUp ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Trash2 className="h-4 w-4 mr-2" />
+            )}
+            Limpar subscriptions legacy
           </Button>
         </div>
 

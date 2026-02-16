@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { Download, Smartphone, Bell, WifiOff } from "lucide-react";
 import {
   Dialog,
@@ -10,40 +9,21 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { usePwaInstall } from "@/hooks/use-pwa-install";
 
-const DISMISS_KEY = "pwa_install_dismissed";
-const COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+type PwaInstallPromptProps = {
+  open: boolean;
+  onDone: () => void;
+  onInstall: () => Promise<boolean>;
+};
 
-export function PwaInstallPrompt() {
-  const { isInstallable, isInstalled, promptInstall } = usePwaInstall();
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    if (!isInstallable || isInstalled) return;
-
-    const dismissed = localStorage.getItem(DISMISS_KEY);
-    if (dismissed) {
-      const ts = Number(dismissed);
-      if (Date.now() - ts < COOLDOWN_MS) return;
-    }
-
-    const timer = setTimeout(() => setOpen(true), 3000);
-    return () => clearTimeout(timer);
-  }, [isInstallable, isInstalled]);
-
+export function PwaInstallPrompt({ open, onDone, onInstall }: PwaInstallPromptProps) {
   const handleInstall = async () => {
-    await promptInstall();
-    setOpen(false);
-  };
-
-  const handleDismiss = () => {
-    localStorage.setItem(DISMISS_KEY, String(Date.now()));
-    setOpen(false);
+    await onInstall();
+    onDone();
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && handleDismiss()}>
+    <Dialog open={open} onOpenChange={(v) => !v && onDone()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Instalar Briefing Jurídico</DialogTitle>
@@ -66,7 +46,7 @@ export function PwaInstallPrompt() {
           </div>
         </div>
         <div className="flex gap-2 justify-end">
-          <Button variant="outline" onClick={handleDismiss}>
+          <Button variant="outline" onClick={onDone}>
             Agora não
           </Button>
           <Button onClick={handleInstall}>

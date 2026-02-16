@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-const CACHE_NAME = "bj-offline-v1";
+const CACHE_NAME = "bj-offline-v2";
 const OFFLINE_URL = "/offline";
 
 // ---- Install: pre-cache offline page ----
