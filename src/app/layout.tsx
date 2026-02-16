@@ -1,8 +1,9 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { OnboardingProvider } from "@/components/onboarding/onboarding-context";
 import { SidebarProvider } from "@/components/sidebar/sidebar-context";
 import { AppShell } from "@/components/AppShell";
+import { ServiceWorkerRegister } from "@/components/pwa/ServiceWorkerRegister";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -16,13 +17,23 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Onboarding de Atendimento",
-  description: "Configuração guiada para agentes e fluxos de atendimento.",
+  title: "Briefing Jurídico",
+  description: "Gestão de atendimento jurídico e comunicação via WhatsApp.",
+  manifest: "/manifest.webmanifest",
   icons: {
     icon: "/icon.png",
     shortcut: "/icon.png",
-    apple: "/icon.png",
+    apple: "/icons/icon-192x192.png",
   },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Briefing Jurídico",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#1B263B",
 };
 
 export default function RootLayout({
@@ -35,6 +46,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}
       >
+        <ServiceWorkerRegister />
         <OnboardingProvider>
           <SidebarProvider>
             <AppShell>{children}</AppShell>

@@ -10,6 +10,7 @@ import { useSidebar } from "@/components/sidebar/sidebar-context";
 import { cn } from "@/lib/utils";
 import { ALWAYS_ALLOWED_PATHS } from "@/lib/feature-registry";
 import { usePermissionsStatus } from "@/hooks/use-permissions-status";
+import { PwaModals } from "@/components/pwa/PwaModals";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { data } = useOnboarding();
@@ -80,6 +81,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         )}
       >
         <Header />
+        <PwaModals />
         <main className="flex-1">{children}</main>
       </div>
     </div>

@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   Users,
   Building2,
+  Bell,
   CircleHelp,
 } from "lucide-react";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
@@ -43,6 +44,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/follow-up", label: "Follow-up", icon: Repeat2 },
   { href: "/usuarios", label: "Usuários", icon: Users, requiresAdmin: true },
   { href: "/departamentos", label: "Departamentos", icon: Building2, requiresAdmin: true },
+  { href: "/notificacoes", label: "Notificações", icon: Bell, requiresSysAdmin: true },
 ];
 
 export function Sidebar() {

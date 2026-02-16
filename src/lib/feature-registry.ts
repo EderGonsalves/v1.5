@@ -15,6 +15,7 @@ export const SYSTEM_FEATURES: SystemFeature[] = [
   { key: "usuarios", path: "/usuarios", label: "Usuários" },
   { key: "departamentos", path: "/departamentos", label: "Departamentos" },
   { key: "suporte", path: "/suporte", label: "Suporte" },
+  { key: "notificacoes", path: "/notificacoes", label: "Notificações" },
 ];
 
 export const ALWAYS_ALLOWED_PATHS = ["/", "/configuracoes/permissoes", "/minha-conta"];

@@ -138,6 +138,8 @@ export const OnboardingProvider = ({ children }: { children: ReactNode }) => {
       try {
         sessionStorage.removeItem("onboarding_cases_cache");
         sessionStorage.removeItem("onboarding_stats_cache");
+        localStorage.removeItem("pwa_install_dismissed");
+        localStorage.removeItem("notification_perm_dismissed");
       } catch {
         // Ignorar erros de storage
       }
