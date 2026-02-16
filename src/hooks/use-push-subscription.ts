@@ -22,6 +22,15 @@ function isLegacyEndpoint(endpoint: string): boolean {
   return endpoint.includes("/fcm/send/");
 }
 
+/**
+ * VAPID public key — safe to hardcode (it's public by definition).
+ * Env var is preferred but fallback ensures it works even if build-time
+ * inlining fails (e.g. Docker cache serving stale layer).
+ */
+const VAPID_PUBLIC_KEY =
+  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ||
+  "BH1YQiNZCrXNA0TmA1HT1woAKtAGpi5XkPinUd59VAH1Fp5_DIdpZV6p_nwAmzNzgz8oaYQhxxMB6cwhmLLdl0c";
+
 export function usePushSubscription() {
   const [isSupported, setIsSupported] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
@@ -55,12 +64,11 @@ export function usePushSubscription() {
 
         // Auto re-subscribe if permission already granted
         if (Notification.permission === "granted") {
-          const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-          if (vapidKey) {
+          if (VAPID_PUBLIC_KEY) {
             try {
               const newSub = await reg.pushManager.subscribe({
                 userVisibleOnly: true,
-                applicationServerKey: urlBase64ToUint8Array(vapidKey).buffer as ArrayBuffer,
+                applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY).buffer as ArrayBuffer,
               });
               const json = newSub.toJSON();
               await subscribePush({
@@ -89,8 +97,7 @@ export function usePushSubscription() {
 
     if (perm !== "granted") return false;
 
-    const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-    if (!vapidKey) {
+    if (!VAPID_PUBLIC_KEY) {
       console.error("[Push] VAPID public key not configured");
       return false;
     }
@@ -112,7 +119,7 @@ export function usePushSubscription() {
 
     const sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(vapidKey).buffer as ArrayBuffer,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY).buffer as ArrayBuffer,
     });
 
     const json = sub.toJSON();
