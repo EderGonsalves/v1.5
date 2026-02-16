@@ -440,6 +440,9 @@ export const ChatPanel = ({
           disabled={isUpdatingPause || !caseSummary}
           wabaPhoneNumber={effectiveWabaNumber}
           isWindowClosed={windowInfo.isExpired}
+          caseId={caseRowId}
+          customerPhone={caseSummary?.customerPhone ?? conversation.customerPhone}
+          onTemplateSent={() => refresh()}
         />
       </div>
       </div>{/* end main chat column */}

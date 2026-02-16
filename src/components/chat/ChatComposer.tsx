@@ -2,13 +2,14 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Ghost, Loader2, Mic, Paperclip, Send, Trash2, X } from "lucide-react";
+import { FileText, Ghost, Loader2, Mic, Paperclip, Send, Trash2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useAudioRecorder } from "@/hooks/use-audio-recorder";
 import { cn } from "@/lib/utils";
 import type { SendCaseMessagePayload } from "@/lib/chat/types";
+import { TemplateSendDialog } from "@/components/waba/TemplateSendDialog";
 
 type PendingAttachment = {
   id: string;
@@ -24,6 +25,10 @@ type ChatComposerProps = {
   isWindowClosed?: boolean;
   /** Número WABA para enviar a mensagem (quando há múltiplos números) */
   wabaPhoneNumber?: string | null;
+  /** Para envio de templates ao contato existente */
+  caseId?: number;
+  customerPhone?: string;
+  onTemplateSent?: () => void;
 };
 
 const MAX_ATTACHMENTS = 5;
@@ -61,10 +66,14 @@ export const ChatComposer = ({
   disabled,
   isWindowClosed,
   wabaPhoneNumber,
+  caseId,
+  customerPhone,
+  onTemplateSent,
 }: ChatComposerProps) => {
   const [message, setMessage] = useState("");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [isGhostMode, setIsGhostMode] = useState(false);
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const attachmentsRef = useRef<PendingAttachment[]>([]);
   const {
@@ -305,6 +314,20 @@ export const ChatComposer = ({
             <Ghost className="h-5 w-5" />
           </Button>
 
+          {caseId && customerPhone && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
+              onClick={() => setTemplateDialogOpen(true)}
+              disabled={disabled || isSending}
+              title="Enviar template WhatsApp"
+            >
+              <FileText className="h-5 w-5" />
+            </Button>
+          )}
+
           <Textarea
             value={message}
             onChange={(event) => setMessage(event.target.value)}
@@ -351,6 +374,18 @@ export const ChatComposer = ({
           <span className="h-2 w-2 rounded-full bg-destructive animate-pulse" />
           <span className="text-xs font-medium">Gravando...</span>
         </div>
+      )}
+
+      {/* Template Send Dialog */}
+      {caseId && customerPhone && (
+        <TemplateSendDialog
+          open={templateDialogOpen}
+          onOpenChange={setTemplateDialogOpen}
+          caseId={caseId}
+          to={customerPhone}
+          wabaPhoneNumber={wabaPhoneNumber ?? ""}
+          onSent={onTemplateSent}
+        />
       )}
     </div>
   );
