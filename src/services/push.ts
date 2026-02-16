@@ -18,13 +18,15 @@ const NOTIFICATIONS_TABLE =
 const subscriptionsUrl = `${BASEROW_API}/database/rows/table/${SUBSCRIPTIONS_TABLE}/?user_field_names=true`;
 const notificationsUrl = `${BASEROW_API}/database/rows/table/${NOTIFICATIONS_TABLE}/?user_field_names=true`;
 
-const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "";
-const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY || "";
+const vapidPublicKey =
+  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ||
+  "BH1YQiNZCrXNA0TmA1HT1woAKtAGpi5XkPinUd59VAH1Fp5_DIdpZV6p_nwAmzNzgz8oaYQhxxMB6cwhmLLdl0c";
+const vapidPrivateKey =
+  process.env.VAPID_PRIVATE_KEY ||
+  "9KN6f2dJU0uXXYbZPqzrsuMbKFvkKK9BFJYDxWgCIeE";
 const vapidSubject = process.env.VAPID_SUBJECT || "mailto:suporte@riasistemas.com.br";
 
-if (vapidPublicKey && vapidPrivateKey) {
-  webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
-}
+webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
 
 // ---------------------------------------------------------------------------
 // Types
@@ -82,28 +84,24 @@ export async function saveSubscription(sub: {
 }): Promise<PushSubscriptionRecord> {
   const now = new Date().toISOString();
 
-  // Check if endpoint already exists
-  const searchUrl = `${subscriptionsUrl}&filter__endpoint__equal=${encodeURIComponent(sub.endpoint)}&size=1`;
-  const { data: existing } = await baserowGet<BaserowList<PushSubscriptionRecord>>(searchUrl);
-
-  if (existing.results.length > 0) {
-    // Update existing
-    const row = existing.results[0];
-    const updateUrl = `${BASEROW_API}/database/rows/table/${SUBSCRIPTIONS_TABLE}/${row.id}/?user_field_names=true`;
-    const { data: updated } = await baserowPatch<PushSubscriptionRecord>(updateUrl, {
-      p256dh: sub.p256dh,
-      auth: sub.auth,
-      user_email: sub.user_email,
-      user_name: sub.user_name,
-      legacy_user_id: sub.legacy_user_id,
-      institution_id: sub.institution_id,
-      user_agent: sub.user_agent,
-      updated_at: now,
-    });
-    return updated;
+  // Delete ALL existing subscriptions for this user (by legacy_user_id or email)
+  // This ensures only one subscription per user — no duplicates
+  const identifier = sub.legacy_user_id || sub.user_email;
+  if (identifier) {
+    const filterField = sub.legacy_user_id ? "legacy_user_id" : "user_email";
+    const cleanupUrl = `${subscriptionsUrl}&filter__${filterField}__equal=${encodeURIComponent(identifier)}&size=200`;
+    try {
+      const { data: oldSubs } = await baserowGet<BaserowList<PushSubscriptionRecord>>(cleanupUrl);
+      for (const old of oldSubs.results) {
+        const deleteUrl = `${BASEROW_API}/database/rows/table/${SUBSCRIPTIONS_TABLE}/${old.id}/`;
+        await baserowDelete(deleteUrl).catch(() => {});
+      }
+    } catch {
+      // ignore cleanup errors
+    }
   }
 
-  // Create new
+  // Create new subscription
   const { data: created } = await baserowPost<PushSubscriptionRecord>(subscriptionsUrl, {
     endpoint: sub.endpoint,
     p256dh: sub.p256dh,
