@@ -35,8 +35,8 @@ export function PwaModals() {
         return;
       }
 
-      // 2. Then notification prompt (only if permission never asked AND not subscribed)
-      if (isSupported && permission === "default" && !isSubscribed && !isDismissed(NOTIF_DISMISS_KEY)) {
+      // 2. Then notification prompt (if not subscribed and permission not denied)
+      if (isSupported && permission !== "denied" && !isSubscribed && !isDismissed(NOTIF_DISMISS_KEY)) {
         setPhase("notification");
       }
     }, 4000);
