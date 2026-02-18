@@ -319,9 +319,10 @@ export default function UsuariosPage() {
       setQueueStats(null);
       return;
     }
+    const editingUser = users.find((u) => u.id === editingId);
     let active = true;
     setLoadingQueueStats(true);
-    fetchQueueStatsClient(editingId)
+    fetchQueueStatsClient(editingId, editingUser?.institutionId)
       .then((stats) => {
         if (active) setQueueStats(stats);
       })
@@ -333,15 +334,16 @@ export default function UsuariosPage() {
         if (active) setLoadingQueueStats(false);
       });
     return () => { active = false; };
-  }, [editingId]);
+  }, [editingId, users]);
 
   const handleToggleReceivesCases = useCallback(
     async (userId: number, checked: boolean) => {
       setUpdatingReceivesCases(true);
       try {
         await updateUser(userId, { receivesCases: checked });
-        // Reload queue stats
-        fetchQueueStatsClient(userId)
+        // Reload queue stats with the correct institutionId
+        const targetUser = users.find((u) => u.id === userId);
+        fetchQueueStatsClient(userId, targetUser?.institutionId)
           .then(setQueueStats)
           .catch(() => {});
       } catch (err) {
@@ -350,7 +352,7 @@ export default function UsuariosPage() {
         setUpdatingReceivesCases(false);
       }
     },
-    [updateUser],
+    [updateUser, users],
   );
 
   // Load institutions list for sysAdmin

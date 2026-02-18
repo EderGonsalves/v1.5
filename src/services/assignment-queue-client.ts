@@ -23,9 +23,12 @@ const handleResponse = async <T>(response: Response): Promise<T> => {
 
 export const fetchQueueStatsClient = async (
   userId: number,
+  institutionId?: number,
 ): Promise<QueueStats> => {
+  const params = new URLSearchParams({ userId: String(userId) });
+  if (institutionId) params.set("institutionId", String(institutionId));
   return handleResponse<QueueStats>(
-    await fetch(`/api/v1/assignment-queue/stats?userId=${userId}`, {
+    await fetch(`/api/v1/assignment-queue/stats?${params.toString()}`, {
       method: "GET",
       headers: { "Content-Type": "application/json" },
     }),

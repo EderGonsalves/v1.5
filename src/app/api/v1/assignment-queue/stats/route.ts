@@ -20,7 +20,12 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const institutionId = auth.institutionId;
+    // Use explicit institutionId param when provided (SysAdmin viewing another institution)
+    const paramInstId = Number(url.searchParams.get("institutionId"));
+    const institutionId =
+      Number.isFinite(paramInstId) && paramInstId > 0
+        ? paramInstId
+        : auth.institutionId;
 
     // Get eligible user IDs for position calculation
     const users = await fetchInstitutionUsers(institutionId);
