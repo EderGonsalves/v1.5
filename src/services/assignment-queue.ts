@@ -224,7 +224,7 @@ export const fetchUserQueueStats = async (
   const userRec = queueMap.get(userId);
 
   return {
-    position: position || eligibleUserIds.length,
+    position: position > 0 ? position : 0,
     totalAssigned: Number(userRec?.assignment_count) || 0,
     lastAssignedAt: userRec?.last_assigned_at || null,
     totalEligible: eligibleUserIds.length,

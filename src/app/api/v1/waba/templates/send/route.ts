@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestAuth } from "@/lib/auth/session";
 import { sendTemplateSchema } from "@/lib/waba/schemas";
-import { getBaserowConfigs } from "@/services/api";
+import { getBaserowConfigs, updateBaserowCase } from "@/services/api";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -128,6 +128,15 @@ export async function POST(request: NextRequest) {
       }
     } finally {
       clearTimeout(timeout);
+    }
+
+    // Auto-pause AI for this case so the human agent handles the conversation
+    if (caseId) {
+      try {
+        await updateBaserowCase(Number(caseId), { IApause: "SIM" });
+      } catch (pauseErr) {
+        console.error("[template/send] Erro ao pausar IA do caso:", pauseErr);
+      }
     }
 
     return NextResponse.json({ sent: true });

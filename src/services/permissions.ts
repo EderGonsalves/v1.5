@@ -1069,7 +1069,7 @@ const toUserPublic = (row: BaserowUserRow): UserPublicRow => {
     oab: (row.OAB ?? "").trim(),
     isActive: isActiveValue(row.is_active),
     isOfficeAdmin: row.is_office_admin === true,
-    receivesCases: String(row.receives_cases) !== "false",
+    receivesCases: row.receives_cases === true || String(row.receives_cases) === "true",
     institutionId: Number.isFinite(instId) && instId > 0 ? instId : undefined,
   };
 };
@@ -1154,6 +1154,7 @@ export const createInstitutionUser = async (
     password: data.password,
     is_active: true,
     is_office_admin: data.isOfficeAdmin === true,
+    receives_cases: false,
     created_at: now,
     updated_at: now,
   };
