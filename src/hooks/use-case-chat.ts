@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
   CaseMessage,
@@ -45,12 +45,13 @@ const DEFAULT_META: ChatMeta = {
   sessionDeadline: null,
 };
 
-const parsePollInterval = (): number => {
-  const raw = process.env.NEXT_PUBLIC_CHAT_POLL_INTERVAL_MS;
-  if (!raw) return 10000;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed >= 5000 ? parsed : 10000;
-};
+// ---------------------------------------------------------------------------
+// Adaptive polling intervals (ms)
+// ---------------------------------------------------------------------------
+const POLL_ACTIVE = 3_000;   // Conversa ativa (interação recente)
+const POLL_IDLE   = 15_000;  // Sem interação há 30 s
+const POLL_BG     = 60_000;  // Aba em background
+const IDLE_THRESHOLD_MS = 30_000; // Tempo sem interação para considerar idle
 
 // Cache de mensagens por caseId
 type CachedChat = {
@@ -105,8 +106,16 @@ export const useCaseChat = (
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const pollInterval = useMemo(parsePollInterval, []);
   const isSendingRef = useRef(false);
+
+  // Adaptive polling state
+  const etagRef = useRef<string | null>(null);
+  const lastInteractionRef = useRef(Date.now());
+
+  /** Marca interação do usuário — mantém polling em ritmo rápido */
+  const markActive = useCallback(() => {
+    lastInteractionRef.current = Date.now();
+  }, []);
 
   const updateMeta = useCallback((updater: (prev: ChatMeta) => ChatMeta) => {
     setMeta((prev) => updater(prev ?? DEFAULT_META));
@@ -122,9 +131,21 @@ export const useCaseChat = (
       setError(null);
 
       try {
+        const headers: HeadersInit = {};
+        // Enviar ETag para conditional request (304 Not Modified)
+        if (options?.silent && etagRef.current) {
+          headers["If-None-Match"] = etagRef.current;
+        }
+
         const response = await fetch(`/api/cases/${caseRowId}/messages`, {
           cache: "no-store",
+          headers,
         });
+
+        // 304 — nada mudou, skip
+        if (response.status === 304) {
+          return;
+        }
 
         if (!response.ok) {
           let errorMessage = `Erro ${response.status} ao carregar mensagens`;
@@ -138,6 +159,12 @@ export const useCaseChat = (
             // Ignora erros ao parsear — usa mensagem padrão
           }
           throw new Error(errorMessage);
+        }
+
+        // Guardar ETag da resposta
+        const serverETag = response.headers.get("etag");
+        if (serverETag) {
+          etagRef.current = serverETag;
         }
 
         const data = (await response.json()) as ChatFetchResponse;
@@ -167,6 +194,10 @@ export const useCaseChat = (
   );
 
   useEffect(() => {
+    // Reset ETag e interação ao trocar de caso
+    etagRef.current = null;
+    lastInteractionRef.current = Date.now();
+
     // Verificar cache primeiro
     const cached = getChatCache(caseRowId);
     if (cached) {
@@ -181,15 +212,46 @@ export const useCaseChat = (
     }
   }, [caseRowId, fetchMessages]);
 
+  // ---------------------------------------------------------------------------
+  // Adaptive polling: 3s ativo, 15s idle, 60s background
+  // ---------------------------------------------------------------------------
   useEffect(() => {
-    if (!pollInterval) return undefined;
-    const intervalId = window.setInterval(() => {
-      fetchMessages({ silent: true }).catch(() => null);
-    }, pollInterval);
-    return () => {
-      window.clearInterval(intervalId);
+    let timerId: ReturnType<typeof setTimeout>;
+    let unmounted = false;
+
+    const getInterval = (): number => {
+      if (typeof document !== "undefined" && document.hidden) return POLL_BG;
+      if (Date.now() - lastInteractionRef.current > IDLE_THRESHOLD_MS) return POLL_IDLE;
+      return POLL_ACTIVE;
     };
-  }, [fetchMessages, pollInterval]);
+
+    const tick = () => {
+      if (unmounted) return;
+      fetchMessages({ silent: true }).catch(() => null);
+      timerId = setTimeout(tick, getInterval());
+    };
+
+    // Iniciar primeiro tick
+    timerId = setTimeout(tick, getInterval());
+
+    // Reagendar imediatamente quando a aba volta ao foco
+    const onVisibility = () => {
+      if (!document.hidden) {
+        clearTimeout(timerId);
+        // Fetch imediato ao retornar para o foco
+        fetchMessages({ silent: true }).catch(() => null);
+        timerId = setTimeout(tick, getInterval());
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      unmounted = true;
+      clearTimeout(timerId);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [fetchMessages]);
 
   const sendMessage = useCallback(
     async (payload: SendCaseMessagePayload) => {
@@ -204,6 +266,7 @@ export const useCaseChat = (
       isSendingRef.current = true;
       setIsSending(true);
       setError(null);
+      markActive();
 
       try {
         const formData = new FormData();
@@ -271,7 +334,7 @@ export const useCaseChat = (
         setIsSending(false);
       }
     },
-    [caseRowId, updateMeta],
+    [caseRowId, updateMeta, markActive],
   );
 
   const setPausedState = useCallback((paused: boolean) => {
@@ -289,5 +352,7 @@ export const useCaseChat = (
     refresh: () => fetchMessages({ silent: true }),
     sendMessage,
     setPausedState,
+    /** Chamar em eventos de interação (scroll, digitação) para manter polling rápido */
+    markActive,
   };
 };

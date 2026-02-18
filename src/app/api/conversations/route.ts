@@ -28,6 +28,12 @@ type CacheEntry = {
 const conversationsCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutos
 
+/** ETag leve: count + primeiro ID (mais recente) */
+const computeConversationsETag = (conversations: ConversationItem[]): string => {
+  const first = conversations[0];
+  return `"conv-${conversations.length}-${first?.id ?? 0}"`;
+};
+
 const verifyAuth = (
   request: NextRequest,
   institutionId: string,
@@ -105,14 +111,23 @@ export async function GET(request: NextRequest) {
 
     // Verificar cache em memória
     const cacheKey = `conv_${institutionId}`;
+    const clientETag = request.headers.get("if-none-match");
+
     if (!forceRefresh) {
       const cached = conversationsCache.get(cacheKey);
       if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-        return NextResponse.json({
-          conversations: cached.conversations,
-          total: cached.conversations.length,
-          cached: true,
-        });
+        const etag = computeConversationsETag(cached.conversations);
+        if (clientETag && clientETag === etag) {
+          return new NextResponse(null, { status: 304, headers: { ETag: etag } });
+        }
+        return NextResponse.json(
+          {
+            conversations: cached.conversations,
+            total: cached.conversations.length,
+            cached: true,
+          },
+          { headers: { ETag: etag } },
+        );
       }
     }
 
@@ -134,11 +149,19 @@ export async function GET(request: NextRequest) {
       timestamp: Date.now(),
     });
 
-    return NextResponse.json({
-      conversations,
-      total: conversations.length,
-      cached: false,
-    });
+    const etag = computeConversationsETag(conversations);
+    if (clientETag && clientETag === etag) {
+      return new NextResponse(null, { status: 304, headers: { ETag: etag } });
+    }
+
+    return NextResponse.json(
+      {
+        conversations,
+        total: conversations.length,
+        cached: false,
+      },
+      { headers: { ETag: etag } },
+    );
   } catch (error) {
     console.error("[conversations] Erro:", error);
     return NextResponse.json(

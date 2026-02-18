@@ -31,6 +31,14 @@ const CHAT_WEBHOOK_TOKEN = process.env.CHAT_WEBHOOK_TOKEN ?? "";
 const CHAT_WEBHOOK_TIMEOUT =
   Number(process.env.CHAT_WEBHOOK_TIMEOUT_MS ?? 20000) || 20000;
 
+/**
+ * Gera um ETag leve a partir de count + timestamp da última mensagem.
+ * Suficiente para detectar mensagens novas sem hash caro.
+ */
+const computeMessagesETag = (count: number, lastMessageAt: string | null): string => {
+  return `"msgs-${count}-${lastMessageAt ?? "0"}"`;
+};
+
 const formatDateTimeBR = (date: Date): string => {
   const day = String(date.getDate()).padStart(2, "0");
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -389,25 +397,35 @@ export async function GET(
       ? messages[messages.length - 1].createdAt
       : null;
 
-    return NextResponse.json({
-      case: {
-        id: caseRow.id,
-        caseIdentifier: identifiers[0] ?? rowId,
-        customerName: caseRow.CustumerName ?? "Cliente",
-        customerPhone: caseRow.CustumerPhone ?? "",
-        paused: isCasePaused(caseRow),
-        bjCaseId: caseRow.BJCaseId ?? null,
-        wabaPhoneNumber: conversationWabaNumber,
+    // ETag: permite 304 Not Modified quando nada mudou
+    const etag = computeMessagesETag(messages.length, lastMessageAt);
+    const clientETag = request.headers.get("if-none-match");
+    if (clientETag && clientETag === etag) {
+      return new NextResponse(null, { status: 304, headers: { ETag: etag } });
+    }
+
+    return NextResponse.json(
+      {
+        case: {
+          id: caseRow.id,
+          caseIdentifier: identifiers[0] ?? rowId,
+          customerName: caseRow.CustumerName ?? "Cliente",
+          customerPhone: caseRow.CustumerPhone ?? "",
+          paused: isCasePaused(caseRow),
+          bjCaseId: caseRow.BJCaseId ?? null,
+          wabaPhoneNumber: conversationWabaNumber,
+        },
+        messages,
+        meta: {
+          total: messages.length,
+          lastClientMessageAt,
+          lastMessageAt,
+          sessionDeadline,
+          legacyFallbackUsed,
+        },
       },
-      messages,
-      meta: {
-        total: messages.length,
-        lastClientMessageAt,
-        lastMessageAt,
-        sessionDeadline,
-        legacyFallbackUsed,
-      },
-    });
+      { headers: { ETag: etag } },
+    );
   } catch (error) {
     console.error("[chat] Falha ao listar mensagens do caso:", error);
     return NextResponse.json(

@@ -33,6 +33,10 @@ const MEMORY_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
 const PAGE_SIZE = 200;
 const INITIAL_MAX_PAGES = 3;
 
+// Adaptive polling para lista de conversas (mais lento que chat)
+const CONV_POLL_ACTIVE = 30_000;  // 30 s quando aba ativa
+const CONV_POLL_BG     = 120_000; // 2 min quando aba background
+
 // Cache em memória (persiste entre navegações SPA — module-level)
 type ConversationsMemoryCache = {
   institutionId: number;
@@ -277,6 +281,44 @@ export const useConversations = (institutionId: number | undefined) => {
       };
     }
   }, [conversations, institutionId]);
+
+  // ---------------------------------------------------------------------------
+  // Adaptive polling: 30s aba ativa, 120s background
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!institutionId) return undefined;
+    let timerId: ReturnType<typeof setTimeout>;
+    let unmounted = false;
+
+    const getInterval = (): number => {
+      return typeof document !== "undefined" && document.hidden
+        ? CONV_POLL_BG
+        : CONV_POLL_ACTIVE;
+    };
+
+    const tick = () => {
+      if (unmounted) return;
+      fetchConversations({ silent: true }).catch(() => null);
+      timerId = setTimeout(tick, getInterval());
+    };
+
+    timerId = setTimeout(tick, getInterval());
+
+    const onVisibility = () => {
+      if (!document.hidden && !unmounted) {
+        clearTimeout(timerId);
+        fetchConversations({ silent: true }).catch(() => null);
+        timerId = setTimeout(tick, getInterval());
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      unmounted = true;
+      clearTimeout(timerId);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [institutionId, fetchConversations]);
 
   const refresh = useCallback(() => {
     // Refresh manual limpa cache de memória para forçar reload

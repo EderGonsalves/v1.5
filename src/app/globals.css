@@ -188,7 +188,7 @@
     [class*="text-xs"],
     [class*="text-base"],
     .text-muted-foreground
-  ):not(button):not([role="button"]):not([data-slot="button"]):not(.chat-bubble-agent *):not([data-sidebar] *) {
+  ):not(button):not([role="button"]):not([data-slot="button"]):not([data-slot="button"] *):not(.chat-bubble-agent *):not([data-sidebar] *) {
     color: #4A4A4A;
   }
 
@@ -205,8 +205,15 @@
     [class*="text-xs"],
     [class*="text-base"],
     .text-muted-foreground
-  ):not(button):not([role="button"]):not([data-slot="button"]):not(.chat-bubble-agent *):not([data-sidebar] *) {
+  ):not(button):not([role="button"]):not([data-slot="button"]):not([data-slot="button"] *):not(.chat-bubble-agent *):not([data-sidebar] *) {
     color: #7E99B5;
+  }
+
+  /* Texto dentro de botões herda cor do botão (evita override das regras globais) */
+  .dark [data-slot="button"] span,
+  .dark [data-slot="button"] p,
+  .dark [data-slot="button"] label {
+    color: inherit !important;
   }
 
   /* Texto branco para balao de mensagem do agente */

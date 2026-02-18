@@ -97,6 +97,7 @@ export const ChatPanel = ({
     refresh,
     sendMessage,
     setPausedState,
+    markActive,
   } = useCaseChat(caseRowId, { initialCase });
 
   // Número WABA efetivo: prioriza o número da conversa (das mensagens), depois o selecionado
@@ -411,7 +412,8 @@ export const ChatPanel = ({
       )}
 
       {/* Chat Area */}
-      <div className="flex-1 min-h-0 overflow-hidden bg-muted/40">
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+      <div className="flex-1 min-h-0 overflow-hidden bg-muted/40" onScroll={markActive} onMouseDown={markActive}>
         <ChatMessageList
           messages={messages}
           isLoading={isLoading}
@@ -420,7 +422,8 @@ export const ChatPanel = ({
       </div>
 
       {/* Composer */}
-      <div className="bg-card px-4 py-2 border-t">
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+      <div className="bg-card px-4 py-2 border-t" onKeyDown={markActive} onFocus={markActive}>
         <ChatComposer
           onSend={sendMessage}
           isSending={isSending}
