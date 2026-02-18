@@ -127,8 +127,17 @@ export const useCaseChat = (
         });
 
         if (!response.ok) {
-          const errorText = await response.text().catch(() => "Erro ao carregar mensagens");
-          throw new Error(errorText || "Erro ao buscar mensagens do caso");
+          let errorMessage = `Erro ${response.status} ao carregar mensagens`;
+          try {
+            const contentType = response.headers.get("content-type") ?? "";
+            if (contentType.includes("application/json")) {
+              const errorBody = await response.json();
+              errorMessage = errorBody?.error ?? errorBody?.message ?? errorMessage;
+            }
+          } catch {
+            // Ignora erros ao parsear — usa mensagem padrão
+          }
+          throw new Error(errorMessage);
         }
 
         const data = (await response.json()) as ChatFetchResponse;

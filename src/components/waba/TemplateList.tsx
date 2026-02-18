@@ -280,7 +280,7 @@ export const TemplateList = () => {
             className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
               filter === opt.value
                 ? "bg-primary text-primary-foreground"
-                : "bg-[#D4E0EB] text-[#1B263B] dark:bg-[#263850] dark:text-[#D4E0EB] hover:bg-[#c5d4e2] dark:hover:bg-[#354F6D]"
+                : "bg-secondary text-secondary-foreground hover:bg-secondary/80 dark:hover:bg-secondary/80"
             }`}
           >
             {opt.label}

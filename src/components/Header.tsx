@@ -247,7 +247,7 @@ export const Header = () => {
           {/* AI Connection Toggle */}
           <div className="flex flex-col gap-1">
             <div
-              className="flex items-center gap-1.5 sm:gap-2 rounded-full border border-border/60 bg-muted/40 px-2 sm:px-3 py-1 text-sm font-medium"
+              className="flex items-center gap-1.5 sm:gap-2 rounded-full border border-border/60 bg-card px-2 sm:px-3 py-1 text-sm font-medium"
               title={
                 phoneNumber
                   ? `Estado do agente para ${phoneNumber}`

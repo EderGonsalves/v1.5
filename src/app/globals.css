@@ -112,15 +112,15 @@
   --card-foreground: #D4E0EB;
   --popover: #1B263B;
   --popover-foreground: #D4E0EB;
-  /* Primary: Navy-300 para contraste no dark */
+  /* Primary: Navy-300 com texto branco para contraste legível */
   --primary: #7E99B5;
-  --primary-foreground: #0D1B2A;
+  --primary-foreground: #FFFFFF;
   /* Secondary */
   --secondary: #263850;
   --secondary-foreground: #D4E0EB;
   /* Muted */
   --muted: #263850;
-  --muted-foreground: #7E99B5;
+  --muted-foreground: #94ADCA;
   /* Accent */
   --accent: #354F6D;
   --accent-foreground: #D4E0EB;

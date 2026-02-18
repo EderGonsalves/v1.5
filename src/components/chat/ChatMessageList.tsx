@@ -129,7 +129,7 @@ const ImageModal = ({ attachment, onClose }: ImageModalProps) => {
         <Button
           variant="secondary"
           size="icon"
-          className="h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 text-white"
+          className="h-10 w-10 rounded-full bg-white/20 hover:bg-white/40 text-white"
           onClick={handleDownload}
           title="Baixar imagem"
         >
@@ -138,7 +138,7 @@ const ImageModal = ({ attachment, onClose }: ImageModalProps) => {
         <Button
           variant="secondary"
           size="icon"
-          className="h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 text-white"
+          className="h-10 w-10 rounded-full bg-white/20 hover:bg-white/40 text-white"
           onClick={onClose}
           title="Fechar"
         >
@@ -221,32 +221,32 @@ const DocumentAttachment = ({ attachment, isClient }: DocumentAttachmentProps) =
         "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm w-full transition-colors",
         isClient
           ? "bg-muted/50 hover:bg-muted"
-          : "bg-white/10 hover:bg-white/20"
+          : "bg-primary-foreground/10 hover:bg-primary-foreground/20"
       )}
     >
       <div className={cn(
         "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
-        isClient ? "bg-primary/10 text-primary" : "bg-white/20 text-white"
+        isClient ? "bg-primary/10 text-primary" : "bg-primary-foreground/20 text-primary-foreground"
       )}>
         <FileText className="h-5 w-5" />
       </div>
       <div className="min-w-0 flex-1 text-left">
         <p className={cn(
           "truncate font-medium text-[13px]",
-          isClient ? "text-foreground" : "text-white"
+          isClient ? "text-foreground" : "text-primary-foreground"
         )}>
           {attachment.name}
         </p>
         <p className={cn(
           "text-[11px]",
-          isClient ? "text-muted-foreground" : "text-white/70"
+          isClient ? "text-muted-foreground" : "text-primary-foreground/70"
         )}>
           {fileSize ? `${fileSize} • ` : ""}Clique para baixar
         </p>
       </div>
       <Download className={cn(
         "h-4 w-4 shrink-0",
-        isClient ? "text-muted-foreground" : "text-white/70"
+        isClient ? "text-muted-foreground" : "text-primary-foreground/70"
       )} />
     </button>
   );
@@ -446,7 +446,7 @@ export const ChatMessageList = ({
                 )}>
                   <span className={cn(
                     "text-[10px] font-semibold",
-                    isClient ? "text-muted-foreground" : "text-white/80"
+                    isClient ? "text-muted-foreground" : "text-primary-foreground/80"
                   )}>
                     {senderLabel}
                   </span>
@@ -466,8 +466,10 @@ export const ChatMessageList = ({
 
                 {message.content ? (
                   <p
-                    className="text-[14.2px] leading-[19px] whitespace-pre-wrap break-words pr-14"
-                    style={{ color: isClient ? undefined : '#ffffff' }}
+                    className={cn(
+                      "text-[14.2px] leading-[19px] whitespace-pre-wrap break-words pr-14",
+                      isClient ? "text-card-foreground" : "text-primary-foreground"
+                    )}
                   >
                     {message.content}
                   </p>
@@ -480,12 +482,12 @@ export const ChatMessageList = ({
                 )}>
                   <span className={cn(
                     "text-[11px]",
-                    isClient ? "text-muted-foreground" : "text-white/70"
+                    isClient ? "text-muted-foreground" : "text-primary-foreground/70"
                   )}>
                     {formatTime(message.createdAt)}
                   </span>
                   {!isClient && (
-                    <CheckCheck className="h-4 w-4 text-white/70" />
+                    <CheckCheck className="h-4 w-4 text-primary-foreground/70" />
                   )}
                 </div>
                 <div className="clear-both" />
