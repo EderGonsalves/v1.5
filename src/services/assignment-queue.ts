@@ -17,6 +17,12 @@ const TABLE_ID =
     process.env.BASEROW_ASSIGNMENT_QUEUE_TABLE_ID ?? DEFAULT_TABLE_ID,
   ) || DEFAULT_TABLE_ID;
 
+const CASES_TABLE_ID =
+  Number(
+    process.env.NEXT_PUBLIC_BASEROW_CASES_TABLE_ID ||
+      process.env.BASEROW_CASES_TABLE_ID,
+  ) || 225;
+
 const ensureEnv = () => {
   if (!BASEROW_API_URL || !BASEROW_API_KEY) {
     throw new Error("Baserow env vars not configured");
@@ -186,12 +192,31 @@ export const pickNextUser = (
 // Stats
 // ---------------------------------------------------------------------------
 
+/** Count actual cases currently assigned to a user in the cases table */
+const countUserCases = async (
+  userId: number,
+  institutionId: number,
+): Promise<number> => {
+  const params = new URLSearchParams({
+    user_field_names: "true",
+    size: "1",
+    filter__assigned_to_user_id__equal: String(userId),
+    filter__InstitutionID__equal: String(institutionId),
+  });
+  const url = `/database/rows/table/${CASES_TABLE_ID}/?${params.toString()}`;
+  const response = await client().get<{ count?: number }>(url);
+  return response.data.count ?? 0;
+};
+
 export const fetchUserQueueStats = async (
   userId: number,
   institutionId: number,
   eligibleUserIds: number[],
 ): Promise<QueueStats> => {
-  const records = await fetchQueueRecords(institutionId);
+  const [records, assignedCount] = await Promise.all([
+    fetchQueueRecords(institutionId),
+    countUserCases(userId, institutionId),
+  ]);
 
   const queueMap = new Map<number, QueueRecord>();
   for (const rec of records) {
@@ -225,7 +250,7 @@ export const fetchUserQueueStats = async (
 
   return {
     position: position > 0 ? position : 0,
-    totalAssigned: Number(userRec?.assignment_count) || 0,
+    totalAssigned: assignedCount,
     lastAssignedAt: userRec?.last_assigned_at || null,
     totalEligible: eligibleUserIds.length,
   };
