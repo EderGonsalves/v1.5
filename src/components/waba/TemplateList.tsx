@@ -219,10 +219,10 @@ export const TemplateList = () => {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[#7E99B5] dark:border-border/60">
-        <div>
+      <div className="flex items-center justify-between gap-2 px-3 sm:px-4 py-3 border-b border-[#7E99B5] dark:border-border/60">
+        <div className="min-w-0">
           <h2 className="text-sm font-semibold flex items-center gap-2">
-            <FileText className="h-4 w-4" />
+            <FileText className="h-4 w-4 shrink-0" />
             Templates WhatsApp
           </h2>
           <p className="text-xs text-muted-foreground">
@@ -232,20 +232,23 @@ export const TemplateList = () => {
         <Button
           onClick={() => setIsFormOpen(true)}
           size="sm"
+          className="shrink-0"
           disabled={isSysAdmin && !selectedInstitutionId}
         >
-          <Plus className="mr-2 h-4 w-4" />
-          Novo Template
+          <Plus className="h-4 w-4 sm:mr-2" />
+          <span className="hidden sm:inline">Novo Template</span>
         </Button>
       </div>
 
       {/* SysAdmin institution selector */}
       {isSysAdmin && (
-        <div className="flex items-center gap-2 px-4 py-2 border-b border-[#7E99B5] dark:border-border/60 bg-muted/30">
-          <Building2 className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-          <span className="text-xs text-muted-foreground flex-shrink-0">
-            Escritório:
-          </span>
+        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2 px-3 sm:px-4 py-2 border-b border-[#7E99B5] dark:border-border/60 bg-muted/30">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+            <span className="text-xs text-muted-foreground">
+              Escritório:
+            </span>
+          </div>
           {loadingInstitutions ? (
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
           ) : (
@@ -255,7 +258,7 @@ export const TemplateList = () => {
                 const val = Number(e.target.value);
                 setSelectedInstitutionId(val || undefined);
               }}
-              className="flex h-8 flex-1 rounded-md border border-input bg-background px-2 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="h-8 w-full sm:flex-1 rounded-md border border-input bg-background px-2 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring min-w-0"
             >
               <option value="">Selecione um escritório</option>
               {institutions.map((inst) => (
@@ -269,7 +272,7 @@ export const TemplateList = () => {
       )}
 
       {/* Filter tabs */}
-      <div className="flex items-center gap-1 px-4 py-2 border-b border-[#7E99B5] dark:border-border/60 overflow-x-auto">
+      <div className="flex items-center gap-1 px-3 sm:px-4 py-2 border-b border-[#7E99B5] dark:border-border/60 overflow-x-auto scrollbar-hide">
         {FILTER_OPTIONS.map((opt) => (
           <button
             key={opt.value}

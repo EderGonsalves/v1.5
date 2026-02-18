@@ -10,6 +10,7 @@ import {
   Moon,
   UserCircle,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
@@ -213,7 +214,7 @@ export const Header = () => {
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border/40 bg-[#D4E0EB] dark:bg-background/95 backdrop-blur dark:supports-[backdrop-filter]:bg-background/60">
-      <div className="flex h-16 items-center justify-between px-4">
+      <div className="flex h-14 lg:h-16 items-center justify-between px-3 lg:px-4">
         {/* Left: Hamburger (mobile) + Logo */}
         <div className="flex items-center gap-3">
           <Button
@@ -242,11 +243,11 @@ export const Header = () => {
         </div>
 
         {/* Right: AI toggle + Dark mode */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-3">
           {/* AI Connection Toggle */}
           <div className="flex flex-col gap-1">
             <div
-              className="flex items-center gap-2 rounded-full border border-border/60 bg-muted/40 px-3 py-1 text-sm font-medium"
+              className="flex items-center gap-1.5 sm:gap-2 rounded-full border border-border/60 bg-muted/40 px-2 sm:px-3 py-1 text-sm font-medium"
               title={
                 phoneNumber
                   ? `Estado do agente para ${phoneNumber}`
@@ -271,8 +272,11 @@ export const Header = () => {
                 }
               >
                 <span className="hidden sm:inline">{connectionLabel}</span>
-                <span className="sm:hidden">
-                  {isAgentConnected ? "On" : "Off"}
+                <span className="sm:hidden inline-flex items-center">
+                  <span className={cn(
+                    "h-2 w-2 rounded-full inline-block",
+                    isAgentConnected ? "bg-emerald-500" : "bg-gray-400"
+                  )} />
                 </span>
               </span>
               {isProcessingState ? (

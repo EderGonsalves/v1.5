@@ -103,7 +103,7 @@ export function Sidebar() {
   const sidebarContent = (mobile: boolean) => (
     <>
       {/* Top: toggle or close */}
-      <div className="flex items-center h-16 px-3 border-b border-sidebar-border shrink-0">
+      <div className="flex items-center h-14 lg:h-16 px-3 border-b border-sidebar-border shrink-0">
         {mobile ? (
           <button
             onClick={closeMobile}

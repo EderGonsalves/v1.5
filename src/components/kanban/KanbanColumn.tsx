@@ -145,7 +145,7 @@ export function KanbanColumn({
       ref={setNodeRef}
       style={style}
       className={cn(
-        "flex flex-col w-[calc((100vw-6rem)/5)] min-w-[150px] max-w-[280px] rounded-lg border dark:border-[#354F6D] border-t-4 transition-colors",
+        "flex flex-col w-[78vw] sm:w-[55vw] lg:w-[calc((100vw-6rem)/5)] min-w-[150px] lg:max-w-[280px] rounded-lg border dark:border-[#354F6D] border-t-4 transition-colors snap-start",
         columnColor,
         isOver && "ring-2 ring-primary ring-offset-2",
         isDragging && "opacity-50 shadow-2xl",

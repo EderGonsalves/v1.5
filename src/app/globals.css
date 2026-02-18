@@ -277,3 +277,10 @@
 .sidebar-transition {
   transition: width 200ms ease-in-out, transform 200ms ease-in-out, margin-left 200ms ease-in-out;
 }
+
+/* Safe area support for notched devices (iPhone X+) */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}

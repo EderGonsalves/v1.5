@@ -145,7 +145,7 @@ function ChatContent() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-64px)] bg-background">
+    <div className="flex h-[calc(100dvh-56px)] lg:h-[calc(100dvh-64px)] bg-background">
       {/* Lista de conversas - desktop sempre visível, mobile condicional */}
       <aside
         className={`
@@ -214,7 +214,7 @@ function ChatContent() {
 
 function ChatLoading() {
   return (
-    <div className="flex h-[calc(100vh-64px)] items-center justify-center bg-background">
+    <div className="flex h-[calc(100dvh-56px)] lg:h-[calc(100dvh-64px)] items-center justify-center bg-background">
       <div className="flex flex-col items-center gap-3 text-muted-foreground">
         <Loader2 className="h-8 w-8 animate-spin" />
         <span className="text-sm">Carregando...</span>

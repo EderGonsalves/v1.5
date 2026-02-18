@@ -23,7 +23,7 @@ import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import { useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/ui/loading-screen";
 import { Input } from "@/components/ui/input";
-import { MessageSquareText, RefreshCw, List, Kanban, Loader2, Plus } from "lucide-react";
+import { MessageSquareText, RefreshCw, List, Kanban, Loader2, Plus, SlidersHorizontal } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
@@ -169,6 +169,7 @@ export default function CasosPage() {
   const [endDate, setEndDate] = useState("");
   const [adminInstitutions, setAdminInstitutions] = useState<InstitutionOption[]>([]);
   const [activeView, setActiveView] = useState<"lista" | "kanban">("lista");
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [filterDepartment, setFilterDepartment] = useState<string>("all");
   const {
     userDepartmentIds: myDeptIds,
@@ -800,12 +801,12 @@ export default function CasosPage() {
   }
 
   return (
-    <main className="min-h-screen bg-background py-4">
-      <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4">
-        {/* Header compacto com título e estatísticas alinhados */}
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2">
-            {/* View Tabs */}
+    <main className="min-h-screen bg-background py-2 sm:py-4">
+      <div className="mx-auto flex max-w-7xl flex-col gap-3 sm:gap-4 px-3 sm:px-4">
+        {/* Header: tabs + stats */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
+          {/* View Tabs + Novo Caso */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <div className="flex items-center gap-1">
               <Button
                 variant={activeView === "lista" ? "default" : "ghost"}
@@ -836,28 +837,28 @@ export default function CasosPage() {
                 }}
               >
                 <Plus className="h-3.5 w-3.5" />
-                Novo Caso
+                <span className="hidden sm:inline">Novo Caso</span>
               </Button>
             )}
           </div>
 
-          {/* Estatísticas compactas inline - mesma linha do título */}
-          <div className="flex flex-wrap items-center gap-3 ml-auto">
-              <div className="flex items-center gap-2 rounded-lg border bg-card px-3 py-1.5">
+          {/* Estatísticas compactas - desktop only inline */}
+          <div className="hidden sm:flex items-center gap-3 sm:ml-auto overflow-x-auto scrollbar-hide">
+              <div className="flex items-center gap-2 rounded-md border bg-card px-3 py-1.5 shrink-0">
                 <span className="text-xs text-muted-foreground">Total:</span>
                 <span className="text-sm font-bold text-primary">
                   {statsLoading && caseStats.totalCases === 0 ? "..." : (caseStats.totalCases || totalCasesCount || "...")}
                 </span>
               </div>
               {stageOrder.map((stage) => (
-                <div key={stage} className="flex items-center gap-2 rounded-lg border bg-card px-3 py-1.5">
+                <div key={stage} className="flex items-center gap-2 rounded-md border bg-card px-3 py-1.5 shrink-0">
                   <span className="text-xs text-muted-foreground">{stageLabels[stage]}:</span>
                   <span className={cn("text-sm font-semibold", stageColors[stage].replace("bg-", "text-").replace("-100", "-700").replace("-900", "-300"))}>
                     {statsLoading && caseStats.stageCounts[stage] === 0 ? "..." : caseStats.stageCounts[stage]}
                   </span>
                 </div>
               ))}
-              <div className="flex items-center gap-2 rounded-lg border border-dashed bg-card px-3 py-1.5">
+              <div className="flex items-center gap-2 rounded-md border border-dashed bg-card px-3 py-1.5 shrink-0">
                 <span className="text-xs text-muted-foreground">IA Pausada:</span>
                 <span className="text-sm font-semibold text-red-600 dark:text-red-400">
                   {statsLoading && caseStats.pausedCases === 0 ? "..." : caseStats.pausedCases}
@@ -866,7 +867,7 @@ export default function CasosPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 gap-1.5"
+                className="h-8 gap-1.5 shrink-0"
                 onClick={() => refreshStats()}
                 disabled={statsRefreshing}
                 title={statsLastUpdated ? `Atualizado: ${statsLastUpdated.toLocaleTimeString("pt-BR")}` : "Atualizar estatísticas"}
@@ -877,47 +878,90 @@ export default function CasosPage() {
                   <RefreshCw className="h-3.5 w-3.5" />
                 )}
                 {statsLastUpdated && (
-                  <span className="text-xs text-muted-foreground hidden sm:inline">
+                  <span className="text-xs text-muted-foreground">
                     {statsLastUpdated.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                   </span>
                 )}
               </Button>
-              <Button asChild variant="ghost" size="sm" className="h-8">
+              <Button asChild variant="ghost" size="sm" className="h-8 shrink-0">
                 <Link href="/estatisticas">Ver mais</Link>
               </Button>
-            {/* Só mostra erro se não tiver fallback local */}
             {statsError && cases.length === 0 && (
-              <span className="text-xs text-red-500 bg-red-50 px-2 py-1 rounded" title={statsError}>
+              <span className="text-xs text-red-500 bg-red-50 px-2 py-1 rounded shrink-0" title={statsError}>
                 {statsError}
               </span>
             )}
           </div>
         </div>
 
-        {/* Filtros - visíveis em ambas as views */}
-        <div className="space-y-4 pb-4">
-          <div className="flex items-center justify-end">
-            <Button variant="outline" size="sm" onClick={() => loadCases()}>
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-          </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-7">
-            <div className="col-span-2 sm:col-span-1 lg:col-span-2 flex flex-col gap-1">
-              <label
-                htmlFor="cases-search"
-                className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+        {/* Filtros + Stats mobile na mesma linha */}
+        <div className="space-y-3 pb-3 sm:space-y-4 sm:pb-4">
+          <div className="flex items-center gap-2 justify-between sm:justify-end">
+            {/* Stats card mobile - mesma linha do filtros */}
+            <div className="flex items-center gap-1.5 sm:hidden">
+              <div className="flex items-center gap-1.5 rounded-md border bg-card px-2 py-1 shrink-0">
+                <span className="text-[11px] text-muted-foreground">Total:</span>
+                <span className="text-xs font-bold text-primary">
+                  {statsLoading && caseStats.totalCases === 0 ? "..." : (caseStats.totalCases || totalCasesCount || "...")}
+                </span>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0 shrink-0"
+                onClick={() => refreshStats()}
+                disabled={statsRefreshing}
+                title="Atualizar estatísticas"
               >
-                Buscar casos
-              </label>
-              <Input
-                id="cases-search"
-                type="search"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Nome, ID, BJCaseId ou telefone"
-                className="w-full"
-              />
+                {statsRefreshing ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+              </Button>
+              <Button asChild variant="ghost" size="sm" className="h-7 px-1.5 shrink-0">
+                <Link href="/estatisticas">
+                  <span className="text-[11px]">Ver mais</span>
+                </Link>
+              </Button>
             </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="sm:hidden gap-1.5"
+                onClick={() => setFiltersExpanded((v) => !v)}
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                Filtros
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => loadCases()}>
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+          {/* Busca sempre visível */}
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor="cases-search"
+              className="text-xs font-semibold uppercase tracking-wide text-muted-foreground sr-only sm:not-sr-only"
+            >
+              Buscar casos
+            </label>
+            <Input
+              id="cases-search"
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Buscar por nome, ID ou telefone..."
+              className="w-full"
+            />
+          </div>
+          {/* Filtros extras - colapsáveis no mobile */}
+          <div className={cn(
+            "grid gap-3 grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-7",
+            filtersExpanded ? "grid" : "hidden sm:grid"
+          )}>
             <div className="flex flex-col gap-1">
               <label
                 htmlFor="stage-filter"
@@ -1055,42 +1099,45 @@ export default function CasosPage() {
                       <div
                         key={caseRow.id}
                         onClick={() => handleCaseClick(caseRow)}
-                        className="cursor-pointer border-b border-[#7E99B5] dark:border-border/60 px-4 py-3 transition-colors hover:bg-accent/50"
+                        className="cursor-pointer border-b border-[#7E99B5] dark:border-border/60 px-3 sm:px-4 py-2.5 sm:py-3 transition-colors hover:bg-accent/50 active:bg-accent/70"
                       >
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <h3 className="text-sm font-semibold truncate max-w-[200px]">
-                            {caseRow.CustumerName || "Sem nome"}
-                          </h3>
-                          {stage && (
-                            <span
-                              className={cn(
-                                "rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap",
-                                stageColors[stage],
-                              )}
-                            >
-                              {stageLabels[stage]}
-                            </span>
-                          )}
-                          {caseRow.Data && (
-                            <span className="text-xs text-muted-foreground whitespace-nowrap">
-                              {caseRow.Data}
-                            </span>
-                          )}
-                          <div className="ml-auto flex items-center gap-3">
+                        {/* Mobile: 2 linhas, Desktop: 1 linha */}
+                        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3 sm:flex-wrap">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <h3 className="text-sm font-semibold truncate max-w-[55vw] sm:max-w-[200px]">
+                              {caseRow.CustumerName || "Sem nome"}
+                            </h3>
+                            {stage && (
+                              <span
+                                className={cn(
+                                  "rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap shrink-0",
+                                  stageColors[stage],
+                                )}
+                              >
+                                {stageLabels[stage]}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 sm:ml-auto">
+                            {caseRow.Data && (
+                              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                {caseRow.Data}
+                              </span>
+                            )}
                             <Link
                               href={`/chat?case=${caseRow.id}`}
-                              className="inline-flex items-center gap-1 rounded-full border border-blue-500/30 bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 dark:border-blue-500/40 dark:bg-blue-900/30 dark:text-blue-200 whitespace-nowrap"
+                              className="inline-flex items-center gap-1 rounded-full border border-blue-500/30 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 transition hover:bg-blue-100 dark:border-blue-500/40 dark:bg-blue-900/30 dark:text-blue-200 whitespace-nowrap"
                               onClick={(event) => event.stopPropagation()}
                             >
                               <MessageSquareText className="h-3 w-3" />
                               Chat
                             </Link>
                             <div
-                              className="flex items-center gap-1.5"
+                              className="flex items-center gap-1 ml-auto sm:ml-0"
                               onClick={(event) => event.stopPropagation()}
                               onPointerDown={(event) => event.stopPropagation()}
                             >
-                              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground hidden sm:inline">
                                 Pausar IA
                               </span>
                               <Switch

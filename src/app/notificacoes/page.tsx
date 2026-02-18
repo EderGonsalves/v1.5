@@ -117,7 +117,7 @@ export default function NotificacoesPage() {
   if (institutionId !== 4) {
     return (
       <main className="min-h-screen bg-background py-4">
-        <div className="mx-auto max-w-5xl px-4">
+        <div className="mx-auto max-w-5xl px-3 sm:px-4">
           <div className="text-center py-16">
             <Bell className="mx-auto h-12 w-12 text-muted-foreground/50" />
             <h2 className="mt-4 text-sm font-semibold">Acesso restrito</h2>
@@ -218,7 +218,7 @@ export default function NotificacoesPage() {
     };
     return (
       <span
-        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${colors[status] || "bg-muted text-muted-foreground"}`}
+        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${colors[status] || "bg-muted text-muted-foreground"}`}
       >
         {status === "sent"
           ? "Enviado"
@@ -232,101 +232,109 @@ export default function NotificacoesPage() {
   };
 
   return (
-    <main className="min-h-screen bg-background py-4">
-      <div className="mx-auto max-w-5xl px-4 space-y-6">
+    <main className="min-h-screen bg-background py-2 sm:py-4">
+      <div className="mx-auto flex max-w-5xl flex-col gap-0 px-3 sm:px-4">
         {/* Header */}
-        <div className="border-b border-[#7E99B5] dark:border-border/60 pb-4">
-          <h1 className="text-lg font-semibold flex items-center gap-2">
-            <Bell className="h-5 w-5" />
-            Notificações Push
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Envie notificações para todos os dispositivos inscritos.
-          </p>
+        <div className="flex items-center justify-between px-0 py-3 border-b border-[#7E99B5] dark:border-border/60">
+          <div>
+            <h2 className="text-sm font-semibold flex items-center gap-2">
+              <Bell className="h-4 w-4" />
+              Notificações Push
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Envie notificações para todos os dispositivos inscritos
+            </p>
+          </div>
         </div>
 
-        {/* Subscriptions Diagnostic */}
-        <div className="rounded-lg border bg-card p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              Dispositivos inscritos
-            </h2>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={loadSubs}
-              disabled={loadingSubs}
-            >
-              <RefreshCw
-                className={`h-4 w-4 ${loadingSubs ? "animate-spin" : ""}`}
-              />
-            </Button>
-          </div>
+        {/* Dispositivos inscritos */}
+        <div className="flex items-center justify-between px-0 py-3 border-b border-[#7E99B5] dark:border-border/60">
+          <h2 className="text-sm font-semibold flex items-center gap-2">
+            <Users className="h-4 w-4" />
+            Dispositivos inscritos
+          </h2>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={loadSubs}
+            disabled={loadingSubs}
+          >
+            <RefreshCw
+              className={`h-4 w-4 ${loadingSubs ? "animate-spin" : ""}`}
+            />
+          </Button>
+        </div>
 
-          {subs ? (
-            <>
-              <div className="flex gap-4 text-sm">
-                <span>
-                  Total: <strong>{subs.total}</strong>
-                </span>
-                <span className="text-green-600">
-                  VAPID: <strong>{subs.vapid}</strong>
-                </span>
-                <span className="text-red-600">
-                  Legacy: <strong>{subs.legacy}</strong>
-                </span>
-              </div>
-              {subs.subscriptions.length > 0 && (
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {subs.subscriptions.map((s) => (
-                    <div
-                      key={s.id}
-                      className="text-xs border rounded p-2 space-y-1"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                            s.endpoint_type === "VAPID"
-                              ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
-                              : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
-                          }`}
-                        >
-                          {s.endpoint_type}
-                        </span>
-                        <span className="font-medium">
-                          {s.user_name || s.user_email || s.legacy_user_id || "—"}
-                        </span>
-                        <span className="text-muted-foreground">
-                          inst. {s.institution_id}
-                        </span>
-                      </div>
-                      <p className="text-muted-foreground font-mono break-all">
-                        {s.endpoint_preview}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          ) : loadingSubs ? (
-            <div className="text-center py-4">
-              <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+        {subs ? (
+          <div className="py-3 space-y-3 border-b border-[#7E99B5] dark:border-border/60">
+            <div className="flex flex-wrap gap-3 sm:gap-4 text-sm">
+              <span>
+                Total: <strong>{subs.total}</strong>
+              </span>
+              <span className="text-green-600 dark:text-green-400">
+                VAPID: <strong>{subs.vapid}</strong>
+              </span>
+              <span className="text-red-600 dark:text-red-400">
+                Legacy: <strong>{subs.legacy}</strong>
+              </span>
             </div>
-          ) : (
+            {subs.subscriptions.length > 0 && (
+              <div className="space-y-2 max-h-48 overflow-y-auto scrollbar-hide">
+                {subs.subscriptions.map((s) => (
+                  <div
+                    key={s.id}
+                    className="text-xs border border-border/60 rounded-md p-2 space-y-1"
+                  >
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${
+                          s.endpoint_type === "VAPID"
+                            ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                            : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
+                        }`}
+                      >
+                        {s.endpoint_type}
+                      </span>
+                      <span className="font-medium truncate">
+                        {s.user_name || s.user_email || s.legacy_user_id || "—"}
+                      </span>
+                      <span className="text-muted-foreground shrink-0">
+                        inst. {s.institution_id}
+                      </span>
+                    </div>
+                    <p className="text-muted-foreground font-mono break-all text-[10px]">
+                      {s.endpoint_preview}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : loadingSubs ? (
+          <div className="text-center py-6 border-b border-[#7E99B5] dark:border-border/60">
+            <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+          </div>
+        ) : (
+          <div className="py-4 border-b border-[#7E99B5] dark:border-border/60">
             <p className="text-xs text-muted-foreground">
               Nenhum dispositivo inscrito.
             </p>
-          )}
+          </div>
+        )}
+
+        {/* Enviar notificação */}
+        <div className="flex items-center justify-between px-0 py-3 border-b border-[#7E99B5] dark:border-border/60">
+          <h2 className="text-sm font-semibold flex items-center gap-2">
+            <Send className="h-4 w-4" />
+            Enviar notificação
+          </h2>
         </div>
 
-        {/* Send Form */}
-        <div className="rounded-lg border bg-card p-4 space-y-4">
-          <h2 className="text-sm font-semibold">Enviar notificação</h2>
+        <div className="py-3 space-y-3 border-b border-[#7E99B5] dark:border-border/60">
           <div className="space-y-3">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Título
               </label>
               <Input
@@ -337,8 +345,8 @@ export default function NotificacoesPage() {
                 disabled={sending}
               />
             </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Mensagem
               </label>
               <Textarea
@@ -349,9 +357,9 @@ export default function NotificacoesPage() {
                 disabled={sending}
               />
             </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">
-                URL de destino (opcional)
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                URL de destino
               </label>
               <Input
                 value={url}
@@ -364,34 +372,36 @@ export default function NotificacoesPage() {
 
           {feedback && (
             <p
-              className={`text-sm ${feedback.type === "success" ? "text-green-600" : "text-destructive"}`}
+              className={`text-sm ${feedback.type === "success" ? "text-green-600 dark:text-green-400" : "text-destructive"}`}
             >
               {feedback.message}
             </p>
           )}
 
           {lastDiagnostic && (
-            <div className="rounded border bg-muted/50 p-3 space-y-2">
+            <div className="rounded-md border border-border/60 bg-muted/30 p-3 space-y-2">
               <p className="text-xs font-semibold">Diagnóstico do envio:</p>
-              {lastDiagnostic.endpoints.map((ep) => (
-                <div key={ep.id} className="text-xs font-mono">
-                  <span
-                    className={
-                      ep.type === "VAPID" ? "text-green-600" : "text-red-600"
-                    }
-                  >
-                    [{ep.type}]
-                  </span>{" "}
-                  {ep.user} → {ep.endpoint}
-                </div>
-              ))}
+              <div className="max-h-32 overflow-y-auto scrollbar-hide space-y-1">
+                {lastDiagnostic.endpoints.map((ep) => (
+                  <div key={ep.id} className="text-xs font-mono break-all">
+                    <span
+                      className={
+                        ep.type === "VAPID" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+                      }
+                    >
+                      [{ep.type}]
+                    </span>{" "}
+                    {ep.user} → {ep.endpoint}
+                  </div>
+                ))}
+              </div>
               {lastDiagnostic.errors.length > 0 && (
                 <div className="mt-2">
                   <p className="text-xs font-semibold text-destructive">
                     Erros:
                   </p>
                   {lastDiagnostic.errors.map((err, i) => (
-                    <p key={i} className="text-xs font-mono text-destructive">
+                    <p key={i} className="text-xs font-mono text-destructive break-all">
                       {err}
                     </p>
                   ))}
@@ -403,6 +413,7 @@ export default function NotificacoesPage() {
           <Button
             onClick={handleSend}
             disabled={sending || !title.trim() || !body.trim()}
+            size="sm"
           >
             {sending ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -413,9 +424,15 @@ export default function NotificacoesPage() {
           </Button>
         </div>
 
-        {/* Cleanup Legacy */}
-        <div className="rounded-lg border bg-card p-4 space-y-3">
-          <h2 className="text-sm font-semibold">Manutenção</h2>
+        {/* Manutenção */}
+        <div className="flex items-center justify-between px-0 py-3 border-b border-[#7E99B5] dark:border-border/60">
+          <h2 className="text-sm font-semibold flex items-center gap-2">
+            <Trash2 className="h-4 w-4" />
+            Manutenção
+          </h2>
+        </div>
+
+        <div className="py-3 space-y-3 border-b border-[#7E99B5] dark:border-border/60">
           <p className="text-xs text-muted-foreground">
             Remove subscriptions com endpoints legacy (GCM) que não suportam
             VAPID e sempre falham com erro 401 ao enviar.
@@ -438,55 +455,53 @@ export default function NotificacoesPage() {
           </Button>
         </div>
 
-        {/* History */}
-        <div className="rounded-lg border bg-card p-4 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Histórico</h2>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={loadHistory}
-              disabled={loadingHistory}
-            >
-              <RefreshCw
-                className={`h-4 w-4 ${loadingHistory ? "animate-spin" : ""}`}
-              />
-            </Button>
-          </div>
-
-          {loadingHistory && history.length === 0 ? (
-            <div className="text-center py-8 text-sm text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin mx-auto mb-2" />
-              Carregando...
-            </div>
-          ) : history.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-4">
-              Nenhuma notificação enviada ainda.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {history.map((n) => (
-                <div
-                  key={n.id}
-                  className="flex items-start justify-between gap-4 border-b pb-3 last:border-0 last:pb-0"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate">{n.title}</p>
-                    <p className="text-xs text-muted-foreground line-clamp-1">
-                      {n.body}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {n.sent_by_name || "—"} · {formatDate(n.sent_at)} ·{" "}
-                      {n.recipients_count} dest.
-                    </p>
-                  </div>
-                  {statusBadge(n.status)}
-                </div>
-              ))}
-            </div>
-          )}
+        {/* Histórico */}
+        <div className="flex items-center justify-between px-0 py-3 border-b border-[#7E99B5] dark:border-border/60">
+          <h2 className="text-sm font-semibold">Histórico</h2>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={loadHistory}
+            disabled={loadingHistory}
+          >
+            <RefreshCw
+              className={`h-4 w-4 ${loadingHistory ? "animate-spin" : ""}`}
+            />
+          </Button>
         </div>
+
+        {loadingHistory && history.length === 0 ? (
+          <div className="text-center py-8 text-sm text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin mx-auto mb-2" />
+            Carregando...
+          </div>
+        ) : history.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-6">
+            Nenhuma notificação enviada ainda.
+          </p>
+        ) : (
+          <div>
+            {history.map((n) => (
+              <div
+                key={n.id}
+                className="flex items-start justify-between gap-3 border-b border-[#7E99B5] dark:border-border/60 py-2.5 sm:py-3"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium truncate">{n.title}</p>
+                  <p className="text-xs text-muted-foreground line-clamp-1">
+                    {n.body}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {n.sent_by_name || "—"} · {formatDate(n.sent_at)} ·{" "}
+                    {n.recipients_count} dest.
+                  </p>
+                </div>
+                {statusBadge(n.status)}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </main>
   );

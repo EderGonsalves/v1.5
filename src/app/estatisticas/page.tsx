@@ -277,10 +277,10 @@ export default function EstatisticasPage() {
   }
 
   return (
-    <main className="min-h-screen bg-background py-4">
-      <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4">
+    <main className="min-h-screen bg-background py-2 sm:py-4">
+      <div className="mx-auto flex max-w-6xl flex-col gap-3 sm:gap-4 px-3 sm:px-4">
         {/* Header */}
-        <div className="flex flex-col gap-2 px-4 py-3 border-b border-[#7E99B5] dark:border-border/60 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2 px-3 sm:px-4 py-2 sm:py-3 border-b border-[#7E99B5] dark:border-border/60 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-sm font-semibold flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
@@ -341,73 +341,73 @@ export default function EstatisticasPage() {
         )}
 
         {/* KPIs */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {/* Total */}
-          <div className="rounded-md border border-border/60 bg-muted/30 px-4 py-3">
+          <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 sm:px-4 sm:py-3">
             <p className="text-xs text-muted-foreground">Casos totais</p>
-            <p className="text-2xl font-bold text-foreground">{stats.totalCases}</p>
+            <p className="text-lg sm:text-2xl font-bold text-foreground">{stats.totalCases}</p>
           </div>
           {/* Últimos 7 dias */}
-          <div className="rounded-md border border-border/60 bg-muted/30 px-4 py-3">
+          <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 sm:px-4 sm:py-3">
             <p className="text-xs text-muted-foreground flex items-center gap-1">
               <CalendarDays className="h-3 w-3" />
-              Últimos 7 dias
+              <span className="hidden sm:inline">Últimos</span> 7 dias
             </p>
-            <p className="text-2xl font-bold text-foreground">{stats.casesLast7Days}</p>
+            <p className="text-lg sm:text-2xl font-bold text-foreground">{stats.casesLast7Days}</p>
           </div>
           {/* Últimos 30 dias */}
-          <div className="rounded-md border border-border/60 bg-muted/30 px-4 py-3">
+          <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 sm:px-4 sm:py-3">
             <p className="text-xs text-muted-foreground flex items-center gap-1">
               <CalendarDays className="h-3 w-3" />
-              Últimos 30 dias
+              <span className="hidden sm:inline">Últimos</span> 30 dias
             </p>
-            <p className="text-2xl font-bold text-foreground">{stats.casesLast30Days}</p>
+            <p className="text-lg sm:text-2xl font-bold text-foreground">{stats.casesLast30Days}</p>
           </div>
           {/* Etapas */}
           {stageOrder.map((stage) => (
-            <div key={stage} className="rounded-md border border-border/60 bg-muted/30 px-4 py-3">
+            <div key={stage} className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 sm:px-4 sm:py-3">
               <p className="text-xs text-muted-foreground">{stageLabels[stage]}</p>
-              <p className="text-2xl font-semibold text-foreground">{stats.stageCounts[stage]}</p>
+              <p className="text-lg sm:text-2xl font-semibold text-foreground">{stats.stageCounts[stage]}</p>
               <p className="text-[10px] text-muted-foreground">{stats.stagePercentages[stage]}%</p>
             </div>
           ))}
         </div>
 
         {/* Distribuição por etapa */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[#7E99B5] dark:border-border/60">
+        <div className="flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between px-3 sm:px-4 py-2 sm:py-3 border-b border-[#7E99B5] dark:border-border/60">
           <span className="text-sm font-semibold">Distribuição por etapa</span>
           <span className="text-xs text-muted-foreground">
             Percentual de casos em cada etapa do fluxo
           </span>
         </div>
-        <div className="px-4">
+        <div className="px-3 sm:px-4">
           <StageDistributionChart stats={stats} />
         </div>
 
         {/* IA pausada + Volume */}
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-3 sm:gap-4 lg:grid-cols-2">
           {/* IA pausada */}
           <div>
-            <div className="flex items-center justify-between px-4 py-3 border-b border-[#7E99B5] dark:border-border/60">
+            <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-3 border-b border-[#7E99B5] dark:border-border/60">
               <span className="text-sm font-semibold">IA pausada</span>
               <span className="text-xs text-muted-foreground">
                 {stats.pausedCases} de {stats.totalCases}
               </span>
             </div>
-            <div className="px-4 py-4">
+            <div className="px-3 sm:px-4 py-3 sm:py-4">
               <PausedCasesDonut stats={stats} />
             </div>
           </div>
 
           {/* Volume por etapa */}
           <div>
-            <div className="flex items-center justify-between px-4 py-3 border-b border-[#7E99B5] dark:border-border/60">
+            <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-3 border-b border-[#7E99B5] dark:border-border/60">
               <span className="text-sm font-semibold">Volume por etapa</span>
               <span className="text-xs text-muted-foreground">
                 Comparativo visual
               </span>
             </div>
-            <div className="px-4 py-4">
+            <div className="px-3 sm:px-4 py-3 sm:py-4">
               <StageVolumeBars stats={stats} />
             </div>
           </div>

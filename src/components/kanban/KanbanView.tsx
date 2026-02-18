@@ -649,15 +649,15 @@ export function KanbanView({
       )}
 
       {/* Header Controls */}
-      <div className="flex items-center justify-between gap-4 mb-4">
+      <div className="flex items-center justify-between gap-2 sm:gap-4 mb-3 sm:mb-4">
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
             size="sm"
             onClick={() => setIsColumnEditorOpen(true)}
           >
-            <Settings2 className="h-4 w-4 mr-2" />
-            Editar Colunas
+            <Settings2 className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Editar Colunas</span>
           </Button>
           <Button variant="outline" size="sm" onClick={handleRefresh}>
             <RefreshCw className="h-4 w-4" />
@@ -667,14 +667,14 @@ export function KanbanView({
 
       {/* Kanban Board with Slider Navigation */}
       <div className="flex-1 relative">
-        {/* Left Navigation Button */}
+        {/* Left Navigation Button - hidden on mobile (swipe instead) */}
         <button
           onMouseDown={() => canScrollLeft && startScrolling("left")}
           onMouseUp={stopScrolling}
           onMouseLeave={stopScrolling}
           onTouchStart={() => canScrollLeft && startScrolling("left")}
           onTouchEnd={stopScrolling}
-          className="absolute left-2 top-1/2 -translate-y-1/2 z-20 w-12 h-12 flex items-center justify-center rounded-full shadow-xl transition-all select-none"
+          className="hidden lg:flex absolute left-2 top-1/2 -translate-y-1/2 z-20 w-12 h-12 items-center justify-center rounded-full shadow-xl transition-all select-none"
           style={{
             backgroundColor: canScrollLeft ? "#113264" : "#d1d5db",
             color: "#ffffff",
@@ -687,14 +687,14 @@ export function KanbanView({
           <ChevronLeft className="h-7 w-7" />
         </button>
 
-        {/* Right Navigation Button */}
+        {/* Right Navigation Button - hidden on mobile (swipe instead) */}
         <button
           onMouseDown={() => canScrollRight && startScrolling("right")}
           onMouseUp={stopScrolling}
           onMouseLeave={stopScrolling}
           onTouchStart={() => canScrollRight && startScrolling("right")}
           onTouchEnd={stopScrolling}
-          className="absolute right-2 top-1/2 -translate-y-1/2 z-20 w-12 h-12 flex items-center justify-center rounded-full shadow-xl transition-all select-none"
+          className="hidden lg:flex absolute right-2 top-1/2 -translate-y-1/2 z-20 w-12 h-12 items-center justify-center rounded-full shadow-xl transition-all select-none"
           style={{
             backgroundColor: canScrollRight ? "#113264" : "#d1d5db",
             color: "#ffffff",
@@ -707,10 +707,10 @@ export function KanbanView({
           <ChevronRight className="h-7 w-7" />
         </button>
 
-        {/* Scrollable Container - hidden scrollbar */}
+        {/* Scrollable Container - snap scroll on mobile */}
         <div
           ref={scrollContainerRef}
-          className="overflow-x-auto overflow-y-hidden h-full px-6 scrollbar-hide"
+          className="overflow-x-auto overflow-y-hidden h-full px-2 lg:px-6 scrollbar-hide snap-x snap-mandatory lg:snap-none"
           style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
         >
           <DndContext
@@ -723,7 +723,7 @@ export function KanbanView({
               items={columns.map((c) => `column-${Number(c.id)}`)}
               strategy={horizontalListSortingStrategy}
             >
-              <div className="flex gap-4 h-full min-w-max pb-4">
+              <div className="flex gap-3 lg:gap-4 h-full min-w-max pb-4">
                 {columns.map((column) => (
                   <KanbanColumn
                     key={column.id}

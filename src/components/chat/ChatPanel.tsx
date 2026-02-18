@@ -233,13 +233,13 @@ export const ChatPanel = ({
       {/* Main chat column */}
       <div className={cn("flex flex-col bg-muted/30", showContactPanel ? "flex-1 min-w-0" : "w-full")}>
       {/* Header */}
-      <header className="flex items-center gap-3 bg-card border-b px-4 py-2 shadow-sm">
+      <header className="flex items-center gap-2 sm:gap-3 bg-card border-b px-3 lg:px-4 py-2 shadow-sm">
         {/* Back button - mobile only */}
         {onBack && (
           <button
             type="button"
             onClick={onBack}
-            className="flex items-center justify-center rounded-full p-2 text-muted-foreground hover:bg-muted transition-colors lg:hidden"
+            className="flex items-center justify-center rounded-full p-1.5 text-muted-foreground hover:bg-muted transition-colors lg:hidden"
           >
             <ArrowLeft className="h-5 w-5" />
           </button>
@@ -249,13 +249,13 @@ export const ChatPanel = ({
         <button
           type="button"
           onClick={() => setShowContactPanel(true)}
-          className="relative h-10 w-10 shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+          className="relative h-8 w-8 sm:h-10 sm:w-10 shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
         >
           <div className="flex h-full w-full items-center justify-center rounded-full bg-muted">
-            <User className="h-6 w-6 text-muted-foreground" />
+            <User className="h-5 w-5 sm:h-6 sm:w-6 text-muted-foreground" />
           </div>
           {windowInfo.label === "online" && (
-            <div className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-card bg-emerald-500" />
+            <div className="absolute bottom-0 right-0 h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-full border-2 border-card bg-emerald-500" />
           )}
         </button>
 
@@ -266,35 +266,35 @@ export const ChatPanel = ({
             tabIndex={0}
             onClick={() => setShowContactPanel(true)}
             onKeyDown={(e) => { if (e.key === "Enter") setShowContactPanel(true); }}
-            className="text-[17px] font-medium text-foreground truncate cursor-pointer hover:underline"
+            className="text-[15px] sm:text-[17px] font-medium text-foreground truncate cursor-pointer hover:underline"
           >
             {caseSummary?.customerName ?? conversation.customerName}
           </h1>
-          <p className="text-[13px] text-muted-foreground truncate">
+          <p className="text-[12px] sm:text-[13px] text-muted-foreground truncate">
             {windowInfo.lastClientAt ? windowInfo.label : "offline"}
           </p>
         </div>
 
         {/* Header Actions */}
-        <div className="flex items-center gap-2 text-[#1B263B] dark:text-[#D4E0EB]">
+        <div className="flex items-center gap-1 sm:gap-2 text-[#1B263B] dark:text-[#D4E0EB]">
           <button
             type="button"
             onClick={() => refresh()}
             disabled={isRefreshing}
-            className="p-2 hover:bg-[#D4E0EB] dark:hover:bg-[#263850] rounded-full transition-colors"
+            className="p-1.5 sm:p-2 hover:bg-[#D4E0EB] dark:hover:bg-[#263850] rounded-full transition-colors"
             title="Atualizar"
           >
             {isRefreshing ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
+              <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" />
             ) : (
-              <RefreshCw className="h-5 w-5" />
+              <RefreshCw className="h-4 w-4 sm:h-5 sm:w-5" />
             )}
           </button>
           {onNewConversation && (
             <button
               type="button"
               onClick={onNewConversation}
-              className="p-2 hover:bg-[#D4E0EB] dark:hover:bg-[#263850] rounded-full transition-colors"
+              className="hidden sm:flex p-2 hover:bg-[#D4E0EB] dark:hover:bg-[#263850] rounded-full transition-colors"
               title="Nova conversa"
             >
               <MessageSquarePlus className="h-5 w-5" />
@@ -352,36 +352,36 @@ export const ChatPanel = ({
       </header>
 
       {/* Status Bar */}
-      <div className="flex items-center justify-between bg-card border-b px-4 py-1.5 text-xs flex-wrap gap-2">
-        <div className="flex items-center gap-3">
-          <span className="text-muted-foreground">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between bg-card border-b px-3 lg:px-4 py-1.5 text-xs">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <span className="text-muted-foreground truncate">
             Tel: {caseSummary?.customerPhone ?? conversation.customerPhone}
           </span>
           {(caseSummary?.bjCaseId || conversation.bjCaseId) && (
             <>
-              <span className="text-muted-foreground">|</span>
+              <span className="text-muted-foreground hidden sm:inline">|</span>
               <a
                 href={`https://app.riasistemas.com.br/case/edit/${caseSummary?.bjCaseId ?? conversation.bjCaseId}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-primary hover:underline font-medium"
+                className="inline-flex items-center gap-1 text-primary hover:underline font-medium whitespace-nowrap"
               >
-                Abrir caso #{caseSummary?.bjCaseId ?? conversation.bjCaseId}
+                Caso #{caseSummary?.bjCaseId ?? conversation.bjCaseId}
               </a>
             </>
           )}
-          {/* Indicador do número WABA ativo - só aparece quando há múltiplos números */}
+          {/* Indicador do número WABA ativo - só desktop */}
           {hasMultipleWaba && activeWabaLabel && (
             <>
-              <span className="text-muted-foreground">|</span>
-              <span className="inline-flex items-center gap-1 text-primary font-medium">
+              <span className="text-muted-foreground hidden sm:inline">|</span>
+              <span className="hidden sm:inline-flex items-center gap-1 text-primary font-medium">
                 <Phone className="h-3 w-3" />
                 Enviando de: {activeWabaLabel}
               </span>
             </>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <span
             className={cn(
               "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium",
