@@ -3,7 +3,7 @@
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
-import { Phone, Calendar, User, GripVertical, Scale } from "lucide-react";
+import { Phone, Calendar, User, GripVertical, Scale, DollarSign } from "lucide-react";
 import type { BaserowCaseRow } from "@/services/api";
 import { getCaseStage, stageLabels, stageColors } from "@/lib/case-stats";
 
@@ -33,6 +33,12 @@ export function KanbanCard({
   const resultado = (caseData.resultado || "").toLowerCase();
   const isGanho = resultado === "ganho";
   const isPerdido = resultado === "perdido";
+
+  const rawValor = caseData.valor;
+  const parsedValor = rawValor != null && rawValor !== ""
+    ? (typeof rawValor === "string" ? parseFloat(rawValor) : rawValor)
+    : NaN;
+  const hasValor = !isNaN(parsedValor) && parsedValor > 0;
 
   return (
     <div
@@ -84,6 +90,16 @@ export function KanbanCard({
               <Calendar className="h-3 w-3 text-muted-foreground flex-shrink-0" />
               <span className="text-xs text-muted-foreground">
                 {caseData.Data}
+              </span>
+            </div>
+          )}
+
+          {/* Valor */}
+          {hasValor && (
+            <div className="flex items-center gap-2 mb-1">
+              <DollarSign className="h-3 w-3 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+              <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                {parsedValor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
               </span>
             </div>
           )}

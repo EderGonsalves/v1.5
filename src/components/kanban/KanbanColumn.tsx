@@ -56,16 +56,14 @@ export function KanbanColumn({
 
   const columnId = Number(column.id);
 
-  // Calculate total value of "ganho" cases in this column
-  const totalGanhoValue = useMemo(() => {
-    return cases
-      .filter((c) => (c.resultado || "").toLowerCase() === "ganho")
-      .reduce((sum, caseRow) => {
-        const valor = caseRow.valor;
-        if (valor === null || valor === undefined || valor === "") return sum;
-        const num = typeof valor === "string" ? parseFloat(valor) : valor;
-        return sum + (isNaN(num) ? 0 : num);
-      }, 0);
+  // Calculate total value of all cases with valor in this column
+  const totalValue = useMemo(() => {
+    return cases.reduce((sum, caseRow) => {
+      const valor = caseRow.valor;
+      if (valor === null || valor === undefined || valor === "") return sum;
+      const num = typeof valor === "string" ? parseFloat(valor) : valor;
+      return sum + (isNaN(num) ? 0 : num);
+    }, 0);
   }, [cases]);
 
   const formatCurrency = (value: number): string => {
@@ -199,10 +197,10 @@ export function KanbanColumn({
           </span>
         </div>
 
-        {/* Total value of won cases */}
-        {totalGanhoValue > 0 && (
-          <div className="mt-1.5 ml-7 text-xs font-medium text-green-600 dark:text-green-400">
-            Ganhos: {formatCurrency(totalGanhoValue)}
+        {/* Total value of cases in column */}
+        {totalValue > 0 && (
+          <div className="mt-1.5 ml-7 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+            Total: {formatCurrency(totalValue)}
           </div>
         )}
       </div>
