@@ -540,7 +540,16 @@ export default function CasosPage() {
   const INITIAL_MAX_PAGES = 3;
 
   const sortDesc = useCallback(
-    (arr: BaserowCaseRow[]) => [...arr].sort((a, b) => (b.id || 0) - (a.id || 0)),
+    (arr: BaserowCaseRow[]) => {
+      const seen = new Set<number>();
+      return arr
+        .filter((r) => {
+          if (seen.has(r.id)) return false;
+          seen.add(r.id);
+          return true;
+        })
+        .sort((a, b) => (b.id || 0) - (a.id || 0));
+    },
     [],
   );
 

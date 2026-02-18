@@ -1038,14 +1038,24 @@ export const getBaserowCases = async ({
       // maxPages = total API calls allowed (page 1 already used one)
       const pageBudget = maxPages && maxPages > 0 ? maxPages - 1 : totalPages - 1;
       const allResults: BaserowCaseRow[] = [];
+      const seenIds = new Set<number>();
       let pagesLoaded = 0;
+
+      const pushUnique = (rows: BaserowCaseRow[]) => {
+        for (const row of rows) {
+          if (!seenIds.has(row.id)) {
+            seenIds.add(row.id);
+            allResults.push(row);
+          }
+        }
+      };
 
       for (let p = totalPages; p >= 2 && pagesLoaded < pageBudget; p--) {
         const response = await baserowGet<BaserowListResponse<FollowUpHistoryRow>>(
           buildUrl(p),
         );
         const pageResults: BaserowCaseRow[] = response.data?.results || [];
-        allResults.push(...pageResults);
+        pushUnique(pageResults);
         pagesLoaded++;
 
         if (onPageLoaded) {
@@ -1055,7 +1065,7 @@ export const getBaserowCases = async ({
 
       // Append page 1 data only if we fetched ALL remaining pages (complete dataset)
       if (pagesLoaded >= totalPages - 1) {
-        allResults.push(...firstPageResults);
+        pushUnique(firstPageResults);
         if (onPageLoaded) {
           onPageLoaded([...allResults], totalCount);
         }

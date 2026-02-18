@@ -104,8 +104,17 @@ const normalizeRow = (row: BaserowCaseRow): Conversation => {
   };
 };
 
+const dedup = (arr: Conversation[]): Conversation[] => {
+  const seen = new Set<number>();
+  return arr.filter((c) => {
+    if (seen.has(c.id)) return false;
+    seen.add(c.id);
+    return true;
+  });
+};
+
 const sortDesc = (arr: Conversation[]) =>
-  [...arr].sort((a, b) => (b.id || 0) - (a.id || 0));
+  dedup([...arr]).sort((a, b) => (b.id || 0) - (a.id || 0));
 
 export const useConversations = (institutionId: number | undefined) => {
   const [conversations, setConversations] = useState<Conversation[]>([]);

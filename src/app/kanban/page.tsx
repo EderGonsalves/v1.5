@@ -306,7 +306,12 @@ export default function KanbanPage() {
         fetchAll: true,
         newestFirst: true,
         onPageLoaded: (partial) => {
-          setCases(partial);
+          const seen = new Set<number>();
+          setCases(partial.filter((r) => {
+            if (seen.has(r.id)) return false;
+            seen.add(r.id);
+            return true;
+          }));
         },
       });
     } catch (err) {
