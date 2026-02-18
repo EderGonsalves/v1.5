@@ -70,6 +70,8 @@ export const sendTemplateSchema = z.object({
     )
     .optional(),
   wabaPhoneNumber: z.string().min(1, "Número WABA obrigatório"),
+  /** Full resolved template text with variables substituted (for message logging) */
+  resolvedText: z.string().optional(),
 });
 
 export type SendTemplateInput = z.infer<typeof sendTemplateSchema>;

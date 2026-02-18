@@ -227,34 +227,37 @@ const guessKind = (
 };
 
 const parseBrazilianDate = (value: string): Date | null => {
-  // Format: DD/MM/YYYY HH:mm or DD/MM/YYYY, HH:mm
-  const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})[,\s]+(\d{2}):(\d{2})$/);
+  // Format: DD/MM/YYYY HH:mm or DD/MM/YYYY, HH:mm or DD/MM/YYYY HH:mm:ss
+  const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?$/);
   if (match) {
-    const [, day, month, year, hour, minute] = match;
+    const [, day, month, year, hour, minute, second] = match;
     return new Date(
       Number(year),
       Number(month) - 1,
       Number(day),
       Number(hour),
-      Number(minute)
+      Number(minute),
+      Number(second || 0),
     );
   }
   return null;
 };
 
 const normalizeDate = (value?: string | null): string => {
-  if (!value) {
+  if (!value || !value.trim()) {
     return new Date().toISOString();
   }
 
-  // Try Brazilian format first (DD/MM/YYYY HH:mm)
-  const brazilianDate = parseBrazilianDate(value.trim());
+  const trimmed = value.trim();
+
+  // Try Brazilian format first (DD/MM/YYYY HH:mm or DD/MM/YYYY HH:mm:ss)
+  const brazilianDate = parseBrazilianDate(trimmed);
   if (brazilianDate && !Number.isNaN(brazilianDate.getTime())) {
     return brazilianDate.toISOString();
   }
 
   // Fallback to standard parsing
-  const parsed = new Date(value);
+  const parsed = new Date(trimmed);
   if (Number.isNaN(parsed.getTime())) {
     return new Date().toISOString();
   }
@@ -360,7 +363,7 @@ const toCaseMessage = (
 
   const direction = sender === "cliente" ? "inbound" : "outbound";
   const kind = guessKind(attachments, row.Message ? "text" : undefined);
-  const createdAt = normalizeDate(row.DataHora ?? row.created_on);
+  const createdAt = normalizeDate(row.DataHora || row.created_on);
 
   const message: CaseMessage = {
     id: row.id,
@@ -512,8 +515,8 @@ export const fetchCaseMessagesFromBaserow = async (
   };
 
   unique.sort((a, b) => {
-    const dateA = parseDateForSort(a.DataHora ?? a.created_on);
-    const dateB = parseDateForSort(b.DataHora ?? b.created_on);
+    const dateA = parseDateForSort(a.DataHora || a.created_on);
+    const dateB = parseDateForSort(b.DataHora || b.created_on);
 
     // First sort by date
     if (dateA !== dateB) {

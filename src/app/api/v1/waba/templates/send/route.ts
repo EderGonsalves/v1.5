@@ -57,6 +57,7 @@ export async function POST(request: NextRequest) {
       templateLanguage,
       components,
       wabaPhoneNumber,
+      resolvedText,
     } = parsed.data;
 
     // Buscar o body.auth.institutionId real da config Baserow (tabela 224)
@@ -91,6 +92,7 @@ export async function POST(request: NextRequest) {
       template_components: components ?? [],
       meta_template: metaTemplate,
       first_body_text: firstBodyText,
+      resolved_template_text: resolvedText || firstBodyText,
       "body.auth.institutionId": baserowInstitutionId,
       caseId,
       DataHora: formatDateTimeBR(new Date()),

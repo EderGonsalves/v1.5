@@ -147,6 +147,22 @@ export const TemplateSendDialog = ({
       }
     }
 
+    // Build resolved template text for message logging
+    let resolvedText = "";
+    const bodyComp = selectedTemplate.components.find((c) => c.type === "BODY");
+    if (bodyComp?.text) {
+      resolvedText = bodyComp.text.replace(/\{\{(\d+)\}\}/g, (_, num) => {
+        return variableValues[num] || `{{${num}}}`;
+      });
+    }
+    const headerComp2 = selectedTemplate.components.find((c) => c.type === "HEADER");
+    if (headerComp2?.text) {
+      const headerText = headerComp2.text.replace(/\{\{(\d+)\}\}/g, (_, num) => {
+        return variableValues[num] || `{{${num}}}`;
+      });
+      resolvedText = resolvedText ? `${headerText}\n${resolvedText}` : headerText;
+    }
+
     setIsSending(true);
     try {
       const res = await fetch("/api/v1/waba/templates/send", {
@@ -159,6 +175,7 @@ export const TemplateSendDialog = ({
           templateLanguage: selectedTemplate.language,
           components: templateComponents.length > 0 ? templateComponents : undefined,
           wabaPhoneNumber,
+          resolvedText: resolvedText || selectedTemplate.name,
         }),
       });
 
