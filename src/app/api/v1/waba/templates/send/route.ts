@@ -64,6 +64,24 @@ export async function POST(request: NextRequest) {
     const configRow = configs[0] as Record<string, unknown> | undefined;
     const baserowInstitutionId = configRow?.["body.auth.institutionId"] ?? auth.institutionId;
 
+    // Build the Meta-ready template object so N8N can pass it through
+    const metaTemplate: Record<string, unknown> = {
+      name: templateName,
+      language: { code: templateLanguage },
+    };
+    if (components && components.length > 0) {
+      metaTemplate.components = components.map((c) => ({
+        type: c.type,
+        parameters: c.parameters,
+      }));
+    }
+
+    // Build the first body parameter text for Baserow message logging
+    const firstBodyText =
+      components
+        ?.find((c) => c.type === "body")
+        ?.parameters?.[0]?.text ?? templateName;
+
     // Build webhook payload matching N8N expected format
     const webhookPayload = {
       display_phone_number: wabaPhoneNumber,
@@ -71,6 +89,8 @@ export async function POST(request: NextRequest) {
       template_name: templateName,
       template_language: templateLanguage,
       template_components: components ?? [],
+      meta_template: metaTemplate,
+      first_body_text: firstBodyText,
       "body.auth.institutionId": baserowInstitutionId,
       caseId,
       DataHora: formatDateTimeBR(new Date()),
