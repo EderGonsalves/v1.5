@@ -297,32 +297,32 @@ export function KanbanCardDetail({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-h-[90vh] overflow-hidden flex flex-col p-0"
-        style={{ maxWidth: "1200px", width: "95vw" }}
+        className="max-h-[90dvh] sm:max-h-[90vh] overflow-hidden flex flex-col p-0 w-[calc(100%-1rem)] sm:w-[95vw]"
+        style={{ maxWidth: "1200px" }}
       >
         {/* Header */}
-        <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-4 border-b bg-muted/30">
-          <div className="flex items-center justify-between gap-4">
-            <DialogTitle className="text-xl font-bold">
+        <DialogHeader className="flex-shrink-0 px-3 sm:px-6 pt-4 sm:pt-6 pb-3 sm:pb-4 border-b bg-muted/30">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <DialogTitle className="text-base sm:text-xl font-bold truncate pr-6">
               {caseData.CustumerName || "Cliente sem nome"}
             </DialogTitle>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               {caseData.BJCaseId && (
-                <Button size="sm" variant="outline" asChild>
+                <Button size="sm" variant="outline" asChild className="h-8">
                   <a
                     href={`https://app.riasistemas.com.br/case/edit/${caseData.BJCaseId}`}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    <ExternalLink className="h-4 w-4 mr-1.5" />
-                    Editar no BJ
+                    <ExternalLink className="h-4 w-4 sm:mr-1.5" />
+                    <span className="hidden sm:inline">Editar no BJ</span>
                   </a>
                 </Button>
               )}
-              <Button size="sm" variant="outline" asChild>
+              <Button size="sm" variant="outline" asChild className="h-8">
                 <Link href={`/chat?case=${caseData.id}`}>
-                  <MessageSquareText className="h-4 w-4 mr-1.5" />
-                  Abrir Chat
+                  <MessageSquareText className="h-4 w-4 sm:mr-1.5" />
+                  <span className="hidden sm:inline">Abrir Chat</span>
                 </Link>
               </Button>
             </div>
@@ -330,35 +330,35 @@ export function KanbanCardDetail({
         </DialogHeader>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-3 sm:py-4">
           <Tabs defaultValue="caso" className="h-full">
-            <TabsList className="grid w-full grid-cols-5 mb-6">
-              <TabsTrigger value="caso" className="gap-2">
-                <Briefcase className="h-4 w-4" />
+            <TabsList className="flex w-full overflow-x-auto scrollbar-hide mb-4 sm:mb-6 sm:grid sm:grid-cols-5">
+              <TabsTrigger value="caso" className="gap-1.5 sm:gap-2 shrink-0 text-xs sm:text-sm px-2.5 sm:px-3">
+                <Briefcase className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 Caso
               </TabsTrigger>
-              <TabsTrigger value="cliente" className="gap-2">
-                <UserCircle className="h-4 w-4" />
-                Dados do Cliente
+              <TabsTrigger value="cliente" className="gap-1.5 sm:gap-2 shrink-0 text-xs sm:text-sm px-2.5 sm:px-3">
+                <UserCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <span className="hidden sm:inline">Dados do </span>Cliente
               </TabsTrigger>
-              <TabsTrigger value="processo" className="gap-2">
-                <Scale className="h-4 w-4" />
+              <TabsTrigger value="processo" className="gap-1.5 sm:gap-2 shrink-0 text-xs sm:text-sm px-2.5 sm:px-3">
+                <Scale className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 Processo
               </TabsTrigger>
-              <TabsTrigger value="conversa" className="gap-2">
-                <MessageSquareText className="h-4 w-4" />
+              <TabsTrigger value="conversa" className="gap-1.5 sm:gap-2 shrink-0 text-xs sm:text-sm px-2.5 sm:px-3">
+                <MessageSquareText className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 Conversa
               </TabsTrigger>
-              <TabsTrigger value="resumo" className="gap-2">
-                <FileText className="h-4 w-4" />
+              <TabsTrigger value="resumo" className="gap-1.5 sm:gap-2 shrink-0 text-xs sm:text-sm px-2.5 sm:px-3">
+                <FileText className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 Resumo
               </TabsTrigger>
             </TabsList>
 
             {/* Aba Caso */}
             <TabsContent value="caso" className="mt-0">
-              <div className="rounded-lg border bg-card p-5">
-                <div className="grid grid-cols-3 gap-4">
+              <div className="rounded-lg border bg-card p-3 sm:p-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground uppercase tracking-wide">
                       Departamento
@@ -463,7 +463,7 @@ export function KanbanCardDetail({
                       </span>
                     </div>
                   </div>
-                  <div className="col-span-2 space-y-1.5">
+                  <div className="sm:col-span-2 space-y-1.5">
                     <Label className="text-xs text-muted-foreground uppercase tracking-wide">
                       Resultado
                     </Label>
@@ -564,13 +564,13 @@ export function KanbanCardDetail({
               ) : (
                 <>
                   {/* Dados Pessoais */}
-                  <div className="rounded-lg border bg-card p-5">
-                    <div className="flex items-center gap-2 mb-4">
+                  <div className="rounded-lg border bg-card p-3 sm:p-5">
+                    <div className="flex items-center gap-2 mb-3 sm:mb-4">
                       <User className="h-5 w-5 text-primary" />
                       <h3 className="font-semibold text-base">Dados Pessoais</h3>
                     </div>
-                    <div className="grid grid-cols-4 gap-4">
-                      <div className="col-span-2 space-y-1.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                      <div className="sm:col-span-2 space-y-1.5">
                         <Label className="text-xs text-muted-foreground uppercase tracking-wide">
                           Nome Completo
                         </Label>
@@ -666,13 +666,13 @@ export function KanbanCardDetail({
                   </div>
 
                   {/* Endereço */}
-                  <div className="rounded-lg border bg-card p-5">
-                    <div className="flex items-center gap-2 mb-4">
+                  <div className="rounded-lg border bg-card p-3 sm:p-5">
+                    <div className="flex items-center gap-2 mb-3 sm:mb-4">
                       <MapPin className="h-5 w-5 text-primary" />
                       <h3 className="font-semibold text-base">Endereço</h3>
                     </div>
-                    <div className="grid grid-cols-4 gap-4">
-                      <div className="col-span-2 space-y-1.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                      <div className="sm:col-span-2 space-y-1.5">
                         <Label className="text-xs text-muted-foreground uppercase tracking-wide">
                           Rua / Logradouro
                         </Label>
@@ -708,7 +708,7 @@ export function KanbanCardDetail({
                           onChange={(e) => handleInputChange("endereco_bairro", e.target.value)}
                         />
                       </div>
-                      <div className="col-span-2 space-y-1.5">
+                      <div className="sm:col-span-2 space-y-1.5">
                         <Label className="text-xs text-muted-foreground uppercase tracking-wide">
                           Cidade
                         </Label>
@@ -776,20 +776,20 @@ export function KanbanCardDetail({
 
             {/* Aba Conversa */}
             <TabsContent value="conversa" className="mt-0">
-              <div className="rounded-lg border p-4 min-h-[400px] max-h-[500px] overflow-y-auto bg-zinc-50 dark:bg-zinc-950">
+              <div className="rounded-lg border p-3 sm:p-4 min-h-[250px] sm:min-h-[400px] max-h-[60dvh] sm:max-h-[500px] overflow-y-auto bg-zinc-50 dark:bg-zinc-950">
                 <ConversationView conversation={caseData.Conversa || ""} />
               </div>
             </TabsContent>
 
             {/* Aba Resumo */}
             <TabsContent value="resumo" className="mt-0">
-              <div className="rounded-lg border p-4 min-h-[400px] max-h-[500px] overflow-y-auto">
+              <div className="rounded-lg border p-3 sm:p-4 min-h-[250px] sm:min-h-[400px] max-h-[60dvh] sm:max-h-[500px] overflow-y-auto">
                 {caseData.Resumo ? (
                   <pre className="whitespace-pre-wrap text-sm font-mono leading-relaxed">
                     {caseData.Resumo}
                   </pre>
                 ) : (
-                  <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                  <div className="flex items-center justify-center h-[200px] sm:h-[300px] text-muted-foreground">
                     Nenhum resumo registrado.
                   </div>
                 )}
