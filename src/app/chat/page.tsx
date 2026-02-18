@@ -165,6 +165,7 @@ function ChatContent() {
           hasMoreFromServer={hasMoreFromServer}
           onLoadMore={loadMore}
           onRefresh={refresh}
+          onNewConversation={() => setShowNewConversation(true)}
           className="h-full"
         />
       </aside>
@@ -179,7 +180,6 @@ function ChatContent() {
             onBack={handleBack}
             activeWabaNumber={activeWabaNumber}
             wabaNumbers={wabaNumbers}
-            onNewConversation={() => setShowNewConversation(true)}
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground bg-muted/30">

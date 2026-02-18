@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, RefreshCw, Search, MessageCircle } from "lucide-react";
+import { Loader2, MessageSquarePlus, RefreshCw, Search, MessageCircle } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { Conversation } from "@/hooks/use-conversations";
@@ -17,6 +17,7 @@ type ConversationListProps = {
   hasMoreFromServer?: boolean;
   onLoadMore?: () => void;
   onRefresh: () => void;
+  onNewConversation?: () => void;
   className?: string;
 };
 
@@ -33,6 +34,7 @@ export const ConversationList = ({
   hasMoreFromServer = false,
   onLoadMore,
   onRefresh,
+  onNewConversation,
   className,
 }: ConversationListProps) => {
   const [search, setSearch] = useState("");
@@ -99,19 +101,31 @@ export const ConversationList = ({
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b">
         <h2 className="text-lg font-semibold text-foreground">Conversas</h2>
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={isRefreshing}
-          className="p-2 rounded-full hover:bg-[#D4E0EB] dark:hover:bg-[#263850] transition-colors text-[#1B263B] dark:text-[#D4E0EB]"
-          title="Atualizar lista"
-        >
-          {isRefreshing ? (
-            <Loader2 className="h-5 w-5 animate-spin" />
-          ) : (
-            <RefreshCw className="h-5 w-5" />
+        <div className="flex items-center gap-1 text-[#1B263B] dark:text-[#D4E0EB]">
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            className="p-2 rounded-full hover:bg-[#D4E0EB] dark:hover:bg-[#263850] transition-colors"
+            title="Atualizar lista"
+          >
+            {isRefreshing ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-5 w-5" />
+            )}
+          </button>
+          {onNewConversation && (
+            <button
+              type="button"
+              onClick={onNewConversation}
+              className="p-2 rounded-full hover:bg-[#D4E0EB] dark:hover:bg-[#263850] transition-colors"
+              title="Nova conversa"
+            >
+              <MessageSquarePlus className="h-5 w-5" />
+            </button>
           )}
-        </button>
+        </div>
       </div>
 
       {/* Search */}
