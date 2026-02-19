@@ -11,15 +11,18 @@ import {
   Check,
   Pencil,
   ExternalLink,
+  CheckCircle2,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   getBaserowCaseById,
+  getKanbanColumns,
   searchClientByPhone,
   updateBaserowCase,
   updateClient,
+  upsertCaseKanbanStatus,
   type BaserowCaseRow,
   type ClientRow,
 } from "@/services/api";
@@ -52,6 +55,9 @@ export function ContactPanel({
   const [nameValue, setNameValue] = useState(customerName);
   const [isSavingName, setIsSavingName] = useState(false);
   const [nameSaved, setNameSaved] = useState(false);
+
+  // Finish case
+  const [isFinishing, setIsFinishing] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -112,6 +118,39 @@ export function ContactPanel({
       setIsSavingName(false);
     }
   }, [nameValue, caseData, caseRowId, clientData?.id]);
+
+  const handleFinishCase = useCallback(async () => {
+    if (!caseData) return;
+
+    setIsFinishing(true);
+    try {
+      await updateBaserowCase(caseData.id, { resultado: "ganho" });
+
+      const columns = await getKanbanColumns(institutionId);
+      const ganhoColumn = columns.find(
+        (c) => c.name === "Concluidos Ganhos",
+      );
+
+      if (ganhoColumn) {
+        await upsertCaseKanbanStatus(
+          caseData.id,
+          institutionId,
+          ganhoColumn.id,
+          "chat",
+          "Caso finalizado pelo chat",
+        );
+      }
+
+      setCaseData((prev) =>
+        prev ? { ...prev, resultado: "ganho" } : prev,
+      );
+    } catch (err) {
+      console.error("Erro ao finalizar caso:", err);
+      alert("Erro ao finalizar o caso. Tente novamente.");
+    } finally {
+      setIsFinishing(false);
+    }
+  }, [caseData, institutionId]);
 
   const stage = caseData ? getCaseStage(caseData) : null;
   const isPaused = (caseData?.IApause || "").toLowerCase() === "sim";
@@ -313,7 +352,37 @@ export function ContactPanel({
           </div>
 
           {/* Action Buttons */}
-          <div className="px-4 py-4">
+          <div className="space-y-2 px-4 py-4">
+            {caseData?.resultado === "ganho" ? (
+              <div className="flex items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 dark:border-emerald-800 dark:bg-emerald-900/30">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                  Caso finalizado (Ganho)
+                </span>
+              </div>
+            ) : caseData?.resultado === "perdido" ? (
+              <div className="flex items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 dark:border-red-800 dark:bg-red-900/30">
+                <CheckCircle2 className="h-4 w-4 text-red-600 dark:text-red-400" />
+                <span className="text-sm font-medium text-red-700 dark:text-red-300">
+                  Caso finalizado (Perdido)
+                </span>
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                className="w-full gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
+                onClick={handleFinishCase}
+                disabled={isFinishing || !caseData}
+              >
+                {isFinishing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4" />
+                )}
+                Finalizar caso
+              </Button>
+            )}
+
             <Button
               variant="outline"
               className="w-full gap-2"

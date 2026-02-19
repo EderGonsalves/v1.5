@@ -23,8 +23,13 @@ import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import { useRouter } from "next/navigation";
 import { LoadingScreen } from "@/components/ui/loading-screen";
 import { Input } from "@/components/ui/input";
-import { MessageSquareText, RefreshCw, List, Kanban, Loader2, Plus, SlidersHorizontal } from "lucide-react";
+import { MessageSquareText, RefreshCw, List, Kanban, Loader2, Plus, SlidersHorizontal, Clock, CheckSquare } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import { useQueueMode } from "@/hooks/use-queue-mode";
+import { claimCase } from "@/services/queue-mode-client";
+import { QueueCaseItem } from "@/components/queue/QueueCaseItem";
+import { BulkAssignBar } from "@/components/queue/BulkAssignBar";
+import { useUsers } from "@/hooks/use-users";
 import {
   Dialog,
   DialogContent,
@@ -195,6 +200,19 @@ export default function CasosPage() {
   const [newCasePhone, setNewCasePhone] = useState("");
   const [isCreatingCase, setIsCreatingCase] = useState(false);
   const [createCaseError, setCreateCaseError] = useState<string | null>(null);
+  // Queue mode
+  const { queueMode } = useQueueMode();
+  const [claimingCaseId, setClaimingCaseId] = useState<number | null>(null);
+
+  // Bulk assign selection (admin only)
+  const [selectedCaseIds, setSelectedCaseIds] = useState<Set<number>>(new Set());
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const { users: allUsers } = useUsers(normalizedInstitutionId ?? undefined);
+  const eligibleUsers = useMemo(
+    () => allUsers.filter((u) => u.isActive && u.receivesCases),
+    [allUsers],
+  );
+
   // For the dropdown: sysAdmin sees all departments, others see their own
   const isFullAccessAdmin = isMyGlobalAdmin || isMyOfficeAdmin;
   const filterableDepartments = isFullAccessAdmin ? allDepartments : myDepartments;
@@ -384,10 +402,21 @@ export default function CasosPage() {
     normalizedEndDate,
   ]);
 
-  // Casos visíveis na tela (paginação virtual)
+  // Separar casos da fila de espera (não atribuídos) dos atribuídos (modo manual)
+  const unassignedCases = useMemo(() => {
+    if (queueMode !== "manual") return [];
+    return visibleCases.filter((row) => !row.responsavel || String(row.responsavel).trim() === "");
+  }, [visibleCases, queueMode]);
+
+  const assignedVisibleCases = useMemo(() => {
+    if (queueMode !== "manual") return visibleCases;
+    return visibleCases.filter((row) => row.responsavel && String(row.responsavel).trim() !== "");
+  }, [visibleCases, queueMode]);
+
+  // Casos visíveis na tela (paginação virtual) — usa assignedVisibleCases no modo manual
   const paginatedCases = useMemo(() => {
-    return visibleCases.slice(0, visibleCount);
-  }, [visibleCases, visibleCount]);
+    return assignedVisibleCases.slice(0, visibleCount);
+  }, [assignedVisibleCases, visibleCount]);
 
   // Verifica se há mais casos para exibir (virtual) ou buscar (servidor)
   const hasMoreToShow = visibleCases.length > visibleCount;
@@ -598,8 +627,10 @@ export default function CasosPage() {
         setCasesCache(institutionId, sortedResults, response.totalCount);
       }
 
-      // Auto-assign unassigned cases (fire-and-forget)
-      fetch("/api/v1/cases/auto-assign", { method: "POST" }).catch(() => {});
+      // Auto-assign unassigned cases (fire-and-forget) — skip in manual queue mode
+      if (queueMode !== "manual") {
+        fetch("/api/v1/cases/auto-assign", { method: "POST" }).catch(() => {});
+      }
     } catch (err) {
       if (!silent) {
         console.error("Erro ao carregar casos:", err);
@@ -700,6 +731,61 @@ export default function CasosPage() {
   useEffect(() => {
     setVisibleCount(50);
   }, [selectedInstitution, searchQuery, stageFilter, filterDepartment, normalizedStartDate, normalizedEndDate]);
+
+  // --- Queue handlers ---
+  const handleClaimCase = async (caseId: number) => {
+    setClaimingCaseId(caseId);
+    try {
+      await claimCase(caseId);
+      // Invalidate caches and reload
+      casesMemoryCache = null;
+      sessionStorage.removeItem(CASES_CACHE_KEY);
+      await loadCases(true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Erro ao pegar caso";
+      alert(msg);
+      // Refresh in case another agent claimed it
+      await loadCases(true);
+    } finally {
+      setClaimingCaseId(null);
+    }
+  };
+
+  const handleBulkSelectChange = (caseId: number, checked: boolean) => {
+    setSelectedCaseIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        if (next.size >= 50) return prev; // limit
+        next.add(caseId);
+      } else {
+        next.delete(caseId);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    const ids = unassignedCases.slice(0, 50).map((c) => c.id);
+    setSelectedCaseIds(new Set(ids));
+  };
+
+  const handleBulkAssignComplete = (result: {
+    successCount: number;
+    skippedCount: number;
+    failedCount: number;
+    targetUserName: string;
+  }) => {
+    setSelectedCaseIds(new Set());
+    setIsSelectMode(false);
+    // Invalidate caches and reload
+    casesMemoryCache = null;
+    sessionStorage.removeItem(CASES_CACHE_KEY);
+    loadCases(true);
+    const msg = result.skippedCount > 0
+      ? `${result.successCount} caso(s) atribuído(s) para ${result.targetUserName}. ${result.skippedCount} já estava(m) atribuído(s).`
+      : `${result.successCount} caso(s) atribuído(s) para ${result.targetUserName}.`;
+    alert(msg);
+  };
 
   const handleCaseClick = (caseRow: BaserowCaseRow) => {
     setSelectedCase(caseRow);
@@ -949,16 +1035,9 @@ export default function CasosPage() {
               </Button>
             </div>
           </div>
-          {/* Busca sempre visível */}
-          <div className="flex flex-col gap-1">
-            <label
-              htmlFor="cases-search"
-              className="text-xs font-semibold uppercase tracking-wide text-muted-foreground sr-only sm:not-sr-only"
-            >
-              Buscar casos
-            </label>
+          {/* Busca mobile - sempre visível */}
+          <div className="sm:hidden">
             <Input
-              id="cases-search"
               type="search"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
@@ -966,11 +1045,27 @@ export default function CasosPage() {
               className="w-full"
             />
           </div>
-          {/* Filtros extras - colapsáveis no mobile */}
+          {/* Busca + Filtros - mesma linha no desktop */}
           <div className={cn(
-            "grid gap-3 grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-7",
-            filtersExpanded ? "grid" : "hidden sm:grid"
+            "gap-3 grid-cols-3 lg:grid-cols-5 xl:grid-cols-7",
+            filtersExpanded ? "grid sm:grid" : "hidden sm:grid"
           )}>
+            <div className="hidden sm:flex flex-col gap-1 col-span-2">
+              <label
+                htmlFor="cases-search"
+                className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+              >
+                Buscar casos
+              </label>
+              <Input
+                id="cases-search"
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Buscar por nome, ID ou telefone..."
+                className="w-full"
+              />
+            </div>
             <div className="flex flex-col gap-1">
               <label
                 htmlFor="stage-filter"
@@ -1083,6 +1178,8 @@ export default function CasosPage() {
               cases={visibleCases}
               institutionId={normalizedInstitutionId!}
               departmentId={filterDepartment !== "all" ? Number(filterDepartment) : null}
+              queueMode={queueMode}
+              isAdmin={isFullAccessAdmin}
               onRefresh={() => loadCases()}
               onCaseUpdate={(caseId, updates) => {
                 setCases((prev) =>
@@ -1094,9 +1191,73 @@ export default function CasosPage() {
         ) : (
           <>
             <div>
-              {visibleCases.length === 0 ? (
+              {/* Fila de Espera — modo manual */}
+              {queueMode === "manual" && (
+                <div className="mb-4">
+                  <div className="flex items-center gap-2 px-3 sm:px-4 py-2 border-b border-[#7E99B5] dark:border-border/60">
+                    <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Fila de Espera ({unassignedCases.length})
+                    </span>
+                    {isFullAccessAdmin && unassignedCases.length > 0 && (
+                      <Button
+                        variant={isSelectMode ? "default" : "outline"}
+                        size="sm"
+                        className="gap-1.5 h-7 text-xs ml-auto"
+                        onClick={() => {
+                          setIsSelectMode(!isSelectMode);
+                          if (isSelectMode) setSelectedCaseIds(new Set());
+                        }}
+                      >
+                        <CheckSquare className="h-3 w-3" />
+                        {isSelectMode ? "Cancelar" : "Selecionar"}
+                      </Button>
+                    )}
+                    {isSelectMode && unassignedCases.length > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={handleSelectAll}
+                        disabled={selectedCaseIds.size >= 50}
+                      >
+                        Selecionar todos ({Math.min(unassignedCases.length, 50)})
+                      </Button>
+                    )}
+                    {isSelectMode && selectedCaseIds.size >= 50 && (
+                      <span className="text-xs text-amber-600 dark:text-amber-400">Máx. 50</span>
+                    )}
+                  </div>
+                  {unassignedCases.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-6">
+                      Nenhum caso na fila de espera.
+                    </p>
+                  ) : (
+                    <div>
+                      {unassignedCases.map((caseRow) => (
+                        <QueueCaseItem
+                          key={caseRow.id}
+                          caseRow={caseRow}
+                          onClaim={handleClaimCase}
+                          isClaiming={claimingCaseId === caseRow.id}
+                          onClick={() => handleCaseClick(caseRow)}
+                          selectable={isSelectMode && isFullAccessAdmin}
+                          selected={selectedCaseIds.has(caseRow.id)}
+                          onSelectChange={handleBulkSelectChange}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {assignedVisibleCases.length === 0 && unassignedCases.length === 0 ? (
                 <div className="py-12 text-center text-muted-foreground">
                   Nenhum caso encontrado.
+                </div>
+              ) : assignedVisibleCases.length === 0 && unassignedCases.length > 0 ? (
+                <div className="py-8 text-center text-muted-foreground text-sm">
+                  Todos os casos estão na fila de espera.
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -1196,6 +1357,19 @@ export default function CasosPage() {
                 );
               }}
             />
+
+            {/* Barra flutuante de atribuição em lote */}
+            {isSelectMode && (
+              <BulkAssignBar
+                selectedCaseIds={selectedCaseIds}
+                eligibleUsers={eligibleUsers}
+                onClearSelection={() => {
+                  setSelectedCaseIds(new Set());
+                  setIsSelectMode(false);
+                }}
+                onAssignComplete={handleBulkAssignComplete}
+              />
+            )}
           </>
         )}
       </div>

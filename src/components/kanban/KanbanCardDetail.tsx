@@ -38,6 +38,22 @@ import { useDepartments } from "@/hooks/use-departments";
 import { fetchDepartmentUsersClient } from "@/services/departments-client";
 import { notifyTransferWebhook } from "@/services/transfer-notify";
 import type { UserPublicRow } from "@/services/permissions";
+
+/** Send a ghost (internal) assignment message via the existing messages API */
+const sendAssignmentGhostMessage = async (caseId: number, message: string) => {
+  try {
+    const formData = new FormData();
+    formData.append("content", message);
+    formData.append("sender", "sistema");
+    formData.append("type", "ghost");
+    await fetch(`/api/cases/${caseId}/messages`, {
+      method: "POST",
+      body: formData,
+    });
+  } catch (err) {
+    console.error("Erro ao enviar ghost message de atribuição:", err);
+  }
+};
 import { LawsuitTab } from "@/components/lawsuit/LawsuitTab";
 
 type KanbanCardDetailProps = {
@@ -233,7 +249,7 @@ export function KanbanCardDetail({
         assigned_to_user_id: targetUser?.id ?? null,
       });
 
-      // Notify webhook if responsavel changed
+      // Notify webhook and create ghost message if responsavel changed
       if (responsavel && responsavel !== previousResponsavel) {
         if (targetUser) {
           notifyTransferWebhook({
@@ -252,6 +268,13 @@ export function KanbanCardDetail({
               ? { id: selectedDept.id, name: selectedDept.name }
               : undefined,
           });
+
+          // Create ghost message for assignment tracking
+          const currentUserName = (data.auth?.payload as Record<string, unknown>)?.name as string | undefined;
+          const ghostMsg = previousResponsavel
+            ? `📋 ${currentUserName || "Administrador"} transferiu o caso para ${responsavel}`
+            : `📋 Caso atribuído para ${responsavel}`;
+          sendAssignmentGhostMessage(caseData.id, ghostMsg);
         }
       }
 

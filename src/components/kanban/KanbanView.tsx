@@ -20,6 +20,8 @@ import {
 } from "@dnd-kit/sortable";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, Settings2, ChevronLeft, ChevronRight } from "lucide-react";
+import { QueueKanbanColumn } from "@/components/kanban/QueueKanbanColumn";
+import type { QueueMode } from "@/services/queue-mode-client";
 import {
   getKanbanColumns,
   getCaseKanbanStatus,
@@ -90,6 +92,8 @@ type KanbanViewProps = {
   cases: BaserowCaseRow[];
   institutionId: number;
   departmentId?: number | null;
+  queueMode?: QueueMode;
+  isAdmin?: boolean;
   onRefresh?: () => void;
   onCaseUpdate?: (caseId: number, updates: Partial<BaserowCaseRow>) => void;
 };
@@ -98,6 +102,8 @@ export function KanbanView({
   cases,
   institutionId,
   departmentId,
+  queueMode,
+  isAdmin,
   onRefresh,
   onCaseUpdate,
 }: KanbanViewProps) {
@@ -332,7 +338,18 @@ export function KanbanView({
     };
   }, []);
 
-  // Map cases to their columns
+  // Separate unassigned cases for manual queue mode
+  const unassignedCases = useMemo(() => {
+    if (queueMode !== "manual") return [];
+    return cases.filter((c) => !c.responsavel || String(c.responsavel).trim() === "");
+  }, [cases, queueMode]);
+
+  const assignableCases = useMemo(() => {
+    if (queueMode !== "manual") return cases;
+    return cases.filter((c) => c.responsavel && String(c.responsavel).trim() !== "");
+  }, [cases, queueMode]);
+
+  // Map cases to their columns (only assigned cases in manual mode)
   const casesWithStatus = useMemo((): CaseWithStatus[] => {
     const statusMap = new Map<number, number>();
     caseStatuses.forEach((status) => {
@@ -361,7 +378,7 @@ export function KanbanView({
       return autoColumn?.id || columns[0]?.id || null;
     };
 
-    return cases.map((caseRow) => {
+    return assignableCases.map((caseRow) => {
       const manualColumnId = statusMap.get(Number(caseRow.id));
 
       // If there's a manual column assignment AND the column exists in the current board, use it
@@ -375,7 +392,7 @@ export function KanbanView({
         kanbanColumnId: autoAssign(caseRow),
       };
     });
-  }, [cases, caseStatuses, columns]);
+  }, [assignableCases, caseStatuses, columns]);
 
   // Group cases by column and sort by most recent first
   const casesByColumn = useMemo(() => {
@@ -724,6 +741,15 @@ export function KanbanView({
               strategy={horizontalListSortingStrategy}
             >
               <div className="flex gap-3 lg:gap-4 h-full min-w-max pb-4">
+                {/* Queue column — outside DnD sortable context */}
+                {queueMode === "manual" && (
+                  <QueueKanbanColumn
+                    cases={unassignedCases}
+                    onCardClick={handleCardClick}
+                    onCaseClaimed={() => onRefresh?.()}
+                    isAdmin={isAdmin}
+                  />
+                )}
                 {columns.map((column) => (
                   <KanbanColumn
                     key={column.id}

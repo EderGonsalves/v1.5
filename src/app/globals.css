@@ -59,8 +59,7 @@
 /* ===== LIGHT MODE - Legal Design System (Navy only) ===== */
 :root {
   --radius: 0.625rem;
-  /* Background: entre Navy-100 e Navy-50 (contrasta com sidebar) */
-  --background: #E2EAF1;
+  --background: #FFFFFF;
   --foreground: #1F1F1F;
   /* Card */
   --card: #FFFFFF;

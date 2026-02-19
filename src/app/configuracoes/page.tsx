@@ -1,15 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
+import { useQueueMode } from "@/hooks/use-queue-mode";
+import { updateQueueMode, type QueueMode } from "@/services/queue-mode-client";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -279,6 +275,24 @@ export default function ConfiguracoesPage() {
   const [isSendingToWebhook, setIsSendingToWebhook] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Queue mode
+  const { queueMode, setQueueMode, refresh: refreshQueueMode } = useQueueMode();
+  const [isUpdatingQueueMode, setIsUpdatingQueueMode] = useState(false);
+  const handleQueueModeChange = useCallback(async (newMode: QueueMode) => {
+    const previousMode = queueMode;
+    setQueueMode(newMode); // Optimistic update
+    setIsUpdatingQueueMode(true);
+    try {
+      await updateQueueMode(newMode);
+      await refreshQueueMode();
+    } catch (err) {
+      setQueueMode(previousMode); // Revert on error
+      alert(err instanceof Error ? err.message : "Erro ao atualizar modo de fila");
+    } finally {
+      setIsUpdatingQueueMode(false);
+    }
+  }, [queueMode, setQueueMode, refreshQueueMode]);
 
   useEffect(() => {
     if (!isHydrated) return;
@@ -880,8 +894,8 @@ export default function ConfiguracoesPage() {
   }
 
   return (
-    <main className="min-h-screen bg-background py-8">
-      <div className="mx-auto flex max-w-5xl flex-col gap-8 px-4">
+    <main className="min-h-screen bg-background py-2 sm:py-4">
+      <div className="mx-auto flex max-w-5xl flex-col gap-3 sm:gap-4 px-3 sm:px-4">
         <div className="flex justify-end">
           <Button
             onClick={handleSendToWebhook}
@@ -893,34 +907,51 @@ export default function ConfiguracoesPage() {
         </div>
 
         {error && (
-          <Card className="border-destructive">
-            <CardHeader>
-              <CardTitle className="text-destructive">Erro</CardTitle>
-              <CardDescription>{error}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button onClick={loadConfigs}>Tentar novamente</Button>
-            </CardContent>
-          </Card>
+          <div className="border-b border-destructive px-3 sm:px-4 py-3">
+            <p className="text-sm font-semibold text-destructive">Erro</p>
+            <p className="text-sm text-muted-foreground">{error}</p>
+            <Button onClick={loadConfigs} size="sm" className="mt-2">Tentar novamente</Button>
+          </div>
         )}
 
         {successMessage && (
-          <Card className="border-emerald-500 bg-emerald-50 dark:bg-emerald-950">
-            <CardContent className="pt-6">
-              <p className="text-sm text-emerald-900 dark:text-emerald-100">{successMessage}</p>
-            </CardContent>
-          </Card>
+          <div className="border-b border-emerald-300 dark:border-emerald-700 px-3 sm:px-4 py-3 bg-emerald-50 dark:bg-emerald-950/30">
+            <p className="text-sm text-emerald-900 dark:text-emerald-100">{successMessage}</p>
+          </div>
         )}
 
         {configs.length === 0 && !error && (
-          <Card>
-            <CardContent className="flex items-center justify-center py-12">
-              <p className="text-muted-foreground">
-                Nenhuma configuração encontrada para esta instituição (ID: {data.auth?.institutionId}).
-              </p>
-            </CardContent>
-          </Card>
+          <div className="py-12 text-center text-muted-foreground">
+            Nenhuma configuração encontrada para esta instituição (ID: {data.auth?.institutionId}).
+          </div>
         )}
+
+        {/* Modo de distribuição de casos */}
+        <div className="border-b border-[#7E99B5] dark:border-border/60 px-3 sm:px-4 py-4 space-y-3">
+          <div>
+            <p className="text-sm font-semibold text-foreground">Modo de distribuição de casos</p>
+            <p className="text-xs text-muted-foreground">
+              Escolha como os novos casos são distribuídos entre os atendentes.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <select
+              value={queueMode}
+              onChange={(e) => handleQueueModeChange(e.target.value as QueueMode)}
+              disabled={isUpdatingQueueMode}
+              className="h-9 rounded-md border border-input bg-background px-3 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+            >
+              <option value="round_robin">Round-Robin (automático)</option>
+              <option value="manual">Fila de Espera (manual)</option>
+            </select>
+            {isUpdatingQueueMode && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {queueMode === "manual"
+              ? "Casos novos ficam na fila de espera. Atendentes devem clicar em 'Pegar' para assumir um caso."
+              : "Casos novos são atribuídos automaticamente ao próximo atendente disponível."}
+          </p>
+        </div>
 
         <Accordion type="multiple" className="space-y-4">
           {configs.map((config, index) => {
@@ -963,9 +994,9 @@ export default function ConfiguracoesPage() {
               <AccordionItem
                 key={config.id ? "office-" + String(config.id) : "office-" + String(index)}
                 value={"office-" + String(config.id ?? index)}
-                className="rounded-lg border border-border/70 bg-background px-0"
+                className="border-b border-[#7E99B5] dark:border-border/60 px-0"
               >
-                <AccordionTrigger className="w-full px-4 py-3 text-left hover:no-underline">
+                <AccordionTrigger className="w-full px-3 sm:px-4 py-3 text-left hover:no-underline">
                   <div className="flex flex-col">
                     <span className="text-base font-semibold text-foreground">
                       {companyName}
@@ -975,27 +1006,24 @@ export default function ConfiguracoesPage() {
                     </span>
                   </div>
                 </AccordionTrigger>
-                <AccordionContent className="px-0">
-                  <Card className="border-none shadow-none">
-                    <CardHeader className="pb-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <CardTitle>Dados do escritorio</CardTitle>
-                          <CardDescription>
-                            ID do registro: {config.id} | Instituicao #{institutionLabel}
-                          </CardDescription>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={loadConfigs}
-                        >
-                          Atualizar
-                        </Button>
+                <AccordionContent className="px-3 sm:px-4 pt-2">
+                  <div className="pb-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Dados do escritorio</p>
+                        <p className="text-xs text-muted-foreground">
+                          ID do registro: {config.id} | Instituicao #{institutionLabel}
+                        </p>
                       </div>
-                    </CardHeader>
-                    <CardContent>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={loadConfigs}
+                      >
+                        Atualizar
+                      </Button>
+                    </div>
                       {SECTION_ORDER.map((label) => {
                         const fields = sections[label];
                         if (!fields.length) {
@@ -1039,8 +1067,7 @@ export default function ConfiguracoesPage() {
                           </div>
                         );
                       })}
-                    </CardContent>
-                  </Card>
+                  </div>
                 </AccordionContent>
               </AccordionItem>
             );
@@ -1048,20 +1075,18 @@ export default function ConfiguracoesPage() {
         </Accordion>
 
 
-        <Card>
-          <CardContent className="flex items-center justify-center gap-4 py-6">
-            <Button variant="outline" onClick={loadConfigs} disabled={isLoading || isSendingToWebhook}>
-              Recarregar
-            </Button>
-            <Button 
-              onClick={handleSendToWebhook} 
-              disabled={isLoading || isSendingToWebhook || configs.length === 0}
-              className="bg-primary text-primary-foreground hover:bg-primary/90"
-            >
-              {isSendingToWebhook ? "Enviando..." : "Atualizar e Enviar"}
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="flex items-center justify-center gap-4 py-6">
+          <Button variant="outline" onClick={loadConfigs} disabled={isLoading || isSendingToWebhook}>
+            Recarregar
+          </Button>
+          <Button
+            onClick={handleSendToWebhook}
+            disabled={isLoading || isSendingToWebhook || configs.length === 0}
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
+          >
+            {isSendingToWebhook ? "Enviando..." : "Atualizar e Enviar"}
+          </Button>
+        </div>
       </div>
     </main>
   );

@@ -45,7 +45,9 @@ import { KanbanColumn } from "@/components/kanban/KanbanColumn";
 import { KanbanCard } from "@/components/kanban/KanbanCard";
 import { KanbanCardDetail } from "@/components/kanban/KanbanCardDetail";
 import { ColumnEditorModal } from "@/components/kanban/ColumnEditorModal";
+import { QueueKanbanColumn } from "@/components/kanban/QueueKanbanColumn";
 import { getCaseStage } from "@/lib/case-stats";
+import { useQueueMode } from "@/hooks/use-queue-mode";
 
 type CaseWithStatus = BaserowCaseRow & {
   kanbanColumnId: number | null;
@@ -128,6 +130,7 @@ export default function KanbanPage() {
   } = useMyDepartments();
   const { departments: allDepartments } = useDepartments(normalizedInstitutionId ?? undefined);
   const isFullAccessAdmin = isMyGlobalAdmin || isMyOfficeAdmin;
+  const { queueMode } = useQueueMode();
   const viewableDepartments = useMemo(() => {
     if (isFullAccessAdmin) return allDepartments;
     return myDepartments;
@@ -361,6 +364,17 @@ export default function KanbanPage() {
   }, [normalizedInstitutionId, selectedDepartmentId, columns, caseStatuses, cases]);
 
   // Map cases to their columns
+  // Separate unassigned cases for manual queue mode
+  const unassignedQueueCases = useMemo(() => {
+    if (queueMode !== "manual") return [];
+    return cases.filter((c) => !c.responsavel || String(c.responsavel).trim() === "");
+  }, [cases, queueMode]);
+
+  const assignableCases = useMemo(() => {
+    if (queueMode !== "manual") return cases;
+    return cases.filter((c) => c.responsavel && String(c.responsavel).trim() !== "");
+  }, [cases, queueMode]);
+
   const casesWithStatus = useMemo((): CaseWithStatus[] => {
     const statusMap = new Map<number, number>();
     caseStatuses.forEach((status) => {
@@ -372,7 +386,7 @@ export default function KanbanPage() {
       }
     });
 
-    return cases.map((caseRow) => {
+    return assignableCases.map((caseRow) => {
       const manualColumnId = statusMap.get(Number(caseRow.id));
 
       // If there's a manual column assignment, use it
@@ -397,7 +411,7 @@ export default function KanbanPage() {
         kanbanColumnId: autoColumn?.id || columns[0]?.id || null,
       };
     });
-  }, [cases, caseStatuses, columns]);
+  }, [assignableCases, caseStatuses, columns]);
 
   // Filter cases by department visibility
   const departmentFilteredCases = useMemo(() => {
@@ -768,6 +782,15 @@ export default function KanbanPage() {
               strategy={horizontalListSortingStrategy}
             >
               <div className="flex gap-4 h-full min-w-max">
+                {/* Queue column — outside DnD sortable context */}
+                {queueMode === "manual" && (
+                  <QueueKanbanColumn
+                    cases={unassignedQueueCases}
+                    onCardClick={handleCardClick}
+                    onCaseClaimed={() => loadData()}
+                    isAdmin={isFullAccessAdmin}
+                  />
+                )}
                 {columns.map((column) => (
                   <KanbanColumn
                     key={column.id}

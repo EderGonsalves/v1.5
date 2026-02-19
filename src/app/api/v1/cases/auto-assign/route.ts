@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
 
 import { getRequestAuth } from "@/lib/auth/session";
+import { getQueueMode } from "@/lib/queue-mode";
+import { createAssignmentGhostMessage } from "@/lib/chat/assignment-message";
 import { fetchInstitutionUsers } from "@/services/permissions";
 import { updateBaserowCase } from "@/services/api";
 import type { BaserowCaseRow } from "@/services/api";
@@ -75,6 +77,12 @@ export async function POST(request: NextRequest) {
   }
 
   const institutionId = auth.institutionId;
+
+  // Check queue mode — skip auto-assign entirely for manual mode
+  const queueMode = await getQueueMode(institutionId);
+  if (queueMode === "manual") {
+    return NextResponse.json({ assigned: [], skipped: true, reason: "manual_queue_mode" });
+  }
 
   // Throttle check
   const lastRun = lastRunMap.get(institutionId) ?? 0;
@@ -197,6 +205,12 @@ export async function POST(request: NextRequest) {
         recordAssignment(targetUser.id, institutionId).catch((err) =>
           console.error("Erro ao registrar atribuição na fila:", err),
         );
+
+        // Create ghost message for assignment (fire-and-forget)
+        createAssignmentGhostMessage(
+          caseRow.id,
+          `📋 Caso atribuído automaticamente para ${targetUser.name}`,
+        ).catch((err) => console.error("Erro ao criar ghost message:", err));
 
         assigned.push({
           caseId: caseRow.id,
