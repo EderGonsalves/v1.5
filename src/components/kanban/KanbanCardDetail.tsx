@@ -836,6 +836,7 @@ export function KanbanCardDetail({
                     : Number(caseData["body.auth.institutionId"]) || 0)
                 }
                 caseData={caseData}
+                clientData={clientData}
               />
             </TabsContent>
           </Tabs>
