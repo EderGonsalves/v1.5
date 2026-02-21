@@ -93,6 +93,11 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # FFmpeg para conversão de áudio para OGG/OPUS (formato WhatsApp)
 RUN apk add --no-cache ffmpeg
 
+# Chromium para geração de PDF (puppeteer-core)
+RUN apk add --no-cache chromium
+ENV CHROMIUM_PATH=/usr/bin/chromium-browser
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+
 # Criar usuário não-root
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs

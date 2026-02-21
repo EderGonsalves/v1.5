@@ -3,8 +3,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
-import { useQueueMode } from "@/hooks/use-queue-mode";
-import { updateQueueMode, type QueueMode } from "@/services/queue-mode-client";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -276,23 +274,6 @@ export default function ConfiguracoesPage() {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Queue mode
-  const { queueMode, setQueueMode, refresh: refreshQueueMode } = useQueueMode();
-  const [isUpdatingQueueMode, setIsUpdatingQueueMode] = useState(false);
-  const handleQueueModeChange = useCallback(async (newMode: QueueMode) => {
-    const previousMode = queueMode;
-    setQueueMode(newMode); // Optimistic update
-    setIsUpdatingQueueMode(true);
-    try {
-      await updateQueueMode(newMode);
-      await refreshQueueMode();
-    } catch (err) {
-      setQueueMode(previousMode); // Revert on error
-      alert(err instanceof Error ? err.message : "Erro ao atualizar modo de fila");
-    } finally {
-      setIsUpdatingQueueMode(false);
-    }
-  }, [queueMode, setQueueMode, refreshQueueMode]);
 
   useEffect(() => {
     if (!isHydrated) return;
@@ -894,8 +875,8 @@ export default function ConfiguracoesPage() {
   }
 
   return (
-    <main className="min-h-screen bg-background py-2 sm:py-4">
-      <div className="mx-auto flex max-w-5xl flex-col gap-3 sm:gap-4 px-3 sm:px-4">
+    <div>
+      <div className="flex flex-col gap-3 sm:gap-4">
         <div className="flex justify-end">
           <Button
             onClick={handleSendToWebhook}
@@ -920,38 +901,12 @@ export default function ConfiguracoesPage() {
           </div>
         )}
 
+
         {configs.length === 0 && !error && (
           <div className="py-12 text-center text-muted-foreground">
             Nenhuma configuração encontrada para esta instituição (ID: {data.auth?.institutionId}).
           </div>
         )}
-
-        {/* Modo de distribuição de casos */}
-        <div className="border-b border-[#7E99B5] dark:border-border/60 px-3 sm:px-4 py-4 space-y-3">
-          <div>
-            <p className="text-sm font-semibold text-foreground">Modo de distribuição de casos</p>
-            <p className="text-xs text-muted-foreground">
-              Escolha como os novos casos são distribuídos entre os atendentes.
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <select
-              value={queueMode}
-              onChange={(e) => handleQueueModeChange(e.target.value as QueueMode)}
-              disabled={isUpdatingQueueMode}
-              className="h-9 rounded-md border border-input bg-background px-3 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
-            >
-              <option value="round_robin">Round-Robin (automático)</option>
-              <option value="manual">Fila de Espera (manual)</option>
-            </select>
-            {isUpdatingQueueMode && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-          </div>
-          <p className="text-sm text-muted-foreground">
-            {queueMode === "manual"
-              ? "Casos novos ficam na fila de espera. Atendentes devem clicar em 'Pegar' para assumir um caso."
-              : "Casos novos são atribuídos automaticamente ao próximo atendente disponível."}
-          </p>
-        </div>
 
         <Accordion type="multiple" className="space-y-4">
           {configs.map((config, index) => {
@@ -1088,6 +1043,6 @@ export default function ConfiguracoesPage() {
           </Button>
         </div>
       </div>
-    </main>
+    </div>
   );
 }

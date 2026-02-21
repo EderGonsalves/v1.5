@@ -4,19 +4,13 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Settings,
-  Plug,
   LogOut,
   FileText,
   BarChart3,
-  Repeat2,
   MessageCircle,
   PanelLeftClose,
   PanelLeftOpen,
   X,
-  CalendarDays,
-  ShieldCheck,
-  Users,
-  Building2,
   Bell,
   CircleHelp,
 } from "lucide-react";
@@ -37,13 +31,8 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
   { href: "/casos", label: "Casos", icon: FileText },
   { href: "/chat", label: "Chat", icon: MessageCircle },
-  { href: "/agenda", label: "Agenda", icon: CalendarDays },
   { href: "/estatisticas", label: "Estatísticas", icon: BarChart3 },
-  { href: "/configuracoes", label: "Configurações", icon: Settings },
-  { href: "/conexoes", label: "Conexões", icon: Plug },
-  { href: "/follow-up", label: "Follow-up", icon: Repeat2 },
-  { href: "/usuarios", label: "Usuários", icon: Users, requiresAdmin: true },
-  { href: "/departamentos", label: "Departamentos", icon: Building2, requiresAdmin: true },
+  { href: "/configuracoes", label: "Configurações", icon: Settings, requiresAdmin: true },
   { href: "/notificacoes", label: "Notificações", icon: Bell, requiresSysAdmin: true },
 ];
 
@@ -71,15 +60,6 @@ export function Sidebar() {
   const showSuport = isSysAdmin || enabledPages.includes("/suporte");
   const navItems: NavItem[] = [
     ...baseNavItems,
-    ...(isSysAdmin
-      ? [
-          {
-            href: "/configuracoes/permissoes",
-            label: "Permissões",
-            icon: ShieldCheck,
-          },
-        ]
-      : []),
     ...(showSuport
       ? [{ href: "/suporte", label: "Suporte", icon: CircleHelp }]
       : []),

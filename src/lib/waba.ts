@@ -25,6 +25,10 @@ export type WabaPhoneInfo = {
   label?: string;
   departmentId?: number | null;
   departmentName?: string | null;
+  wabaPhoneId?: string | null;
+  riasignWabaConfigId?: string | null;
+  institutionId?: number | null;
+  institutionName?: string | null;
 };
 
 /**
@@ -57,12 +61,20 @@ export const getInstitutionWabaPhoneNumbers = async (
           seenPhones.add(normalized);
           const deptId = record["phone_department_id"];
           const deptName = record["phone_department_name"];
+          const wabaPhoneId = record["waba_business_account_id"];
+          const riasignWabaConfigId = record["riasign_waba_config_id"];
+          const instId = record["body.auth.institutionId"];
+          const instName = record["institution_name"] ?? record["waba_label"];
           phoneNumbers.push({
             phoneNumber: normalized,
             configId: config.id,
             label: record["waba_label"] as string | undefined,
             departmentId: typeof deptId === "number" ? deptId : null,
             departmentName: typeof deptName === "string" ? deptName : null,
+            wabaPhoneId: wabaPhoneId != null ? String(wabaPhoneId).trim() || null : null,
+            riasignWabaConfigId: riasignWabaConfigId != null ? String(riasignWabaConfigId).trim() || null : null,
+            institutionId: instId != null ? Number(instId) || null : null,
+            institutionName: typeof instName === "string" ? instName : null,
           });
         }
       }

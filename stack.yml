@@ -83,10 +83,19 @@ services:
       - VAPID_SUBJECT=mailto:suporte@riasistemas.com.br
       - BASEROW_PUSH_SUBSCRIPTIONS_TABLE_ID=254
       - BASEROW_PUSH_NOTIFICATIONS_TABLE_ID=255
+      # RIA Sign — Electronic Signature
+      - RIASIGN_API_KEY=${RIASIGN_API_KEY}
+      - RIASIGN_BASE_URL=https://sign.riasistemas.com.br
+      - RIASIGN_WEBHOOK_SECRET=${RIASIGN_WEBHOOK_SECRET}
+      - BASEROW_SIGN_ENVELOPES_TABLE_ID=256
+      - BASEROW_DOCUMENT_TEMPLATES_TABLE_ID=257
+      - CHROMIUM_PATH=/usr/bin/chromium-browser
+      - TEMPLATES_STORAGE_DIR=/app/data/doc-templates
     networks:
       - minha_rede
     volumes:
       - onboarding-uploads:/app/public/rag-uploads
+      - onboarding-doc-templates:/app/data/doc-templates
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => {let data='';r.on('data',(c)=>{data+=c});r.on('end',()=>{try{const json=JSON.parse(data);process.exit(json.status==='ok'?0:1)}catch(e){process.exit(r.statusCode===200?0:1)}})}).on('error',()=>process.exit(1))"]
       interval: 30s
@@ -96,6 +105,8 @@ services:
 
 volumes:
   onboarding-uploads:
+    driver: local
+  onboarding-doc-templates:
     driver: local
 
 networks:

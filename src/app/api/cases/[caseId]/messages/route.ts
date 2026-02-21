@@ -541,8 +541,6 @@ export async function POST(
 
     const timestamp = new Date().toISOString();
     let newMessage: CaseMessage;
-    let webhookDispatched = false;
-
     // Determine message type based on original file MIME (not Baserow's detection)
     const determineMessageType = (originalMimes: string[]): MessageType => {
       if (!originalMimes.length) return "text";
@@ -571,7 +569,7 @@ export async function POST(
       return idx >= 0 ? (files[idx]?.name ?? undefined) : undefined;
     };
 
-    // Only dispatch webhook if we have phone numbers and content/attachments
+    // Dispatch webhook if we have phone numbers — N8N sends via WhatsApp AND saves to Baserow
     if (wabaPhoneNumber && customerPhone && (content || uploadedAttachments.length)) {
       const now = new Date();
       const webhookPayload: ChatWebhookPayload = {
@@ -614,14 +612,12 @@ export async function POST(
       }
 
       await dispatchChatWebhook(webhookPayload);
-      webhookDispatched = true;
 
-      // When webhook is dispatched, it creates the record in Baserow as "usuário"
-      // We return a temporary message object - actual record comes from webhook
+      // N8N handles Baserow record creation — return temporary message for optimistic UI
       newMessage = {
-        id: Date.now(), // Temporary ID until next poll
+        id: Date.now(),
         caseId: rowId,
-        sender: "bot", // Webhook creates as "usuário" which normalizes to "bot"
+        sender: "bot",
         direction: "outbound",
         content,
         createdAt: timestamp,
@@ -638,10 +634,10 @@ export async function POST(
         ...(isGhostMessage && { metadata: { type: "ghost" } }),
       };
     } else {
-      // No webhook available or ghost message - create record directly in Baserow
+      // No webhook available — create record directly in Baserow
       const createdRow = await createCaseMessageRow({
         caseIdentifier: identifiers[0] ?? rowId,
-        sender: "bot", // Use "bot" (usuário) instead of "agente"
+        sender: "bot",
         content,
         attachments: uploadedAttachments,
         timestamp,
@@ -656,7 +652,6 @@ export async function POST(
 
       newMessage = normalizeCaseMessageRow(createdRow, rowId, customerPhone);
 
-      // Add ghost metadata
       if (isGhostMessage) {
         newMessage.metadata = { ...newMessage.metadata, type: "ghost" };
       }

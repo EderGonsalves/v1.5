@@ -15,6 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import { useSidebar } from "@/components/sidebar/sidebar-context";
+import { usePermissionsStatus } from "@/hooks/use-permissions-status";
+import { useMyDepartments } from "@/hooks/use-my-departments";
 import {
   getAgentStateRows,
   getBaserowConfigs,
@@ -29,6 +31,12 @@ export const Header = () => {
   const { openMobile, isDarkMode, toggleDarkMode } = useSidebar();
   const [isMounted, setIsMounted] = useState(false);
   const institutionId = data.auth?.institutionId ?? null;
+  const authSignature = data.auth
+    ? `${data.auth.institutionId}:${data.auth.legacyUserId ?? ""}`
+    : null;
+  const { isSysAdmin, isOfficeAdmin: isPermOfficeAdmin } = usePermissionsStatus(authSignature);
+  const { isOfficeAdmin } = useMyDepartments();
+  const isAdmin = isSysAdmin || isOfficeAdmin || isPermOfficeAdmin;
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
   const [isAgentConnected, setIsAgentConnected] = useState(false);
   const [isStatusLoading, setIsStatusLoading] = useState(false);
@@ -244,51 +252,53 @@ export const Header = () => {
 
         {/* Right: AI toggle + Dark mode */}
         <div className="flex items-center gap-1.5 sm:gap-3">
-          {/* AI Connection Toggle */}
-          <div className="flex flex-col gap-1">
-            <div
-              className="flex items-center gap-1.5 sm:gap-2 rounded-full border border-border/60 bg-card px-2 sm:px-3 py-1 text-sm font-medium"
-              title={
-                phoneNumber
-                  ? `Estado do agente para ${phoneNumber}`
-                  : "Defina o numero waba nas configuracoes para habilitar o controle"
-              }
-            >
-              <Switch
-                checked={isAgentConnected}
-                onCheckedChange={(checked) => {
-                  if (!isSwitchDisabled) {
-                    handleAgentStateChange(checked);
-                  }
-                }}
-                disabled={isSwitchDisabled}
-                aria-label="Alternar o estado de conexao do agente"
-              />
-              <span
-                className={
-                  isAgentConnected
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : "text-muted-foreground"
+          {/* AI Connection Toggle — visible only for Admin */}
+          {isAdmin && (
+            <div className="flex flex-col gap-1">
+              <div
+                className="flex items-center gap-1.5 sm:gap-2 rounded-full border border-border/60 bg-card px-2 sm:px-3 py-1 text-sm font-medium"
+                title={
+                  phoneNumber
+                    ? `Estado do agente para ${phoneNumber}`
+                    : "Defina o numero waba nas configuracoes para habilitar o controle"
                 }
               >
-                <span className="hidden sm:inline">{connectionLabel}</span>
-                <span className="sm:hidden inline-flex items-center">
-                  <span className={cn(
-                    "h-2 w-2 rounded-full inline-block",
-                    isAgentConnected ? "bg-emerald-500" : "bg-gray-400"
-                  )} />
+                <Switch
+                  checked={isAgentConnected}
+                  onCheckedChange={(checked) => {
+                    if (!isSwitchDisabled) {
+                      handleAgentStateChange(checked);
+                    }
+                  }}
+                  disabled={isSwitchDisabled}
+                  aria-label="Alternar o estado de conexao do agente"
+                />
+                <span
+                  className={
+                    isAgentConnected
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-muted-foreground"
+                  }
+                >
+                  <span className="hidden sm:inline">{connectionLabel}</span>
+                  <span className="sm:hidden inline-flex items-center">
+                    <span className={cn(
+                      "h-2 w-2 rounded-full inline-block",
+                      isAgentConnected ? "bg-emerald-500" : "bg-gray-400"
+                    )} />
+                  </span>
                 </span>
-              </span>
-              {isProcessingState ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                {isProcessingState ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                ) : null}
+              </div>
+              {switchError ? (
+                <span className="text-[11px] font-medium text-destructive">
+                  {switchError}
+                </span>
               ) : null}
             </div>
-            {switchError ? (
-              <span className="text-[11px] font-medium text-destructive">
-                {switchError}
-              </span>
-            ) : null}
-          </div>
+          )}
 
           {/* Dark Mode Toggle */}
           <Button

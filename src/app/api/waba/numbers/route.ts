@@ -18,13 +18,19 @@ export async function GET(request: NextRequest) {
     // Permitir override do institutionId via query param (para admin)
     const searchParams = request.nextUrl.searchParams;
     const requestedInstitutionId = searchParams.get("institutionId");
+    const allOffices = searchParams.get("all") === "true";
     const debug = searchParams.get("debug") === "true";
 
     let institutionId = auth.institutionId;
 
     // Admin (institutionId=4) pode ver qualquer instituição
-    if (requestedInstitutionId && auth.institutionId === 4) {
-      institutionId = Number(requestedInstitutionId);
+    if (auth.institutionId === 4) {
+      if (allOffices) {
+        // SysAdmin quer ver TODOS os escritórios (sem filtro)
+        institutionId = 4; // institutionId=4 não filtra (vê tudo)
+      } else if (requestedInstitutionId) {
+        institutionId = Number(requestedInstitutionId);
+      }
     }
 
     const wabaNumbers = await getInstitutionWabaPhoneNumbers(institutionId);

@@ -3,6 +3,118 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* TipTap / ProseMirror editor styles */
+.ProseMirror {
+  min-height: 300px;
+  padding: 16px;
+  outline: none;
+  color: #1F1F1F;
+}
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: #94a3b8;
+  pointer-events: none;
+  float: left;
+  height: 0;
+}
+.ProseMirror h1,
+.ProseMirror h2,
+.ProseMirror h3 {
+  color: inherit;
+}
+.dark .ProseMirror {
+  color: #e2e8f0;
+}
+.dark .ProseMirror p.is-editor-empty:first-child::before {
+  color: #64748b;
+}
+
+/* DOCX converted header/footer sections */
+.doc-header,
+.doc-footer {
+  padding: 8px 12px;
+  background: #f8fafc;
+  color: #1F1F1F;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 0.85em;
+}
+.doc-footer {
+  border-bottom: none;
+  border-top: 1px solid #e2e8f0;
+}
+.dark .doc-header,
+.dark .doc-footer {
+  background: #1e293b;
+  color: #e2e8f0;
+  border-color: #334155;
+}
+.doc-header img,
+.doc-footer img {
+  max-height: 80px;
+  display: inline-block;
+}
+
+/* TipTap table styles */
+.ProseMirror table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+}
+.ProseMirror th,
+.ProseMirror td {
+  border: 1px solid #d1d5db;
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.ProseMirror th {
+  background: #f1f5f9;
+  font-weight: 600;
+}
+.dark .ProseMirror th,
+.dark .ProseMirror td {
+  border-color: #475569;
+}
+.dark .ProseMirror th {
+  background: #1e293b;
+}
+
+/* TipTap images */
+.ProseMirror img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Document editor buttons — cor explícita para ícones SVG.
+   Usa !important para sobrescrever regras globais de cor em botões. */
+button[data-editor-btn] {
+  color: #456585 !important;
+}
+button[data-editor-btn]:hover {
+  color: #1F1F1F !important;
+}
+button[data-editor-btn][data-active="true"] {
+  color: #263850 !important;
+  background-color: color-mix(in srgb, #263850 10%, transparent);
+}
+.dark button[data-editor-btn] {
+  color: #94ADCA !important;
+}
+.dark button[data-editor-btn]:hover {
+  color: #D4E0EB !important;
+}
+.dark button[data-editor-btn][data-active="true"] {
+  color: #7E99B5 !important;
+  background-color: color-mix(in srgb, #7E99B5 10%, transparent);
+}
+button[data-editor-btn][data-active="amber"] {
+  color: #92400e !important;
+}
+.dark button[data-editor-btn][data-active="amber"] {
+  color: #fcd34d !important;
+  background-color: transparent !important;
+}
+
 @layer utilities {
   .scrollbar-hide {
     -ms-overflow-style: none;
@@ -187,7 +299,7 @@
     [class*="text-xs"],
     [class*="text-base"],
     .text-muted-foreground
-  ):not(button):not([role="button"]):not([data-slot="button"]):not([data-slot="button"] *):not(.chat-bubble-agent *):not([data-sidebar] *) {
+  ):not(button):not([role="button"]):not([data-slot="button"]):not([data-slot="button"] *):not(.chat-bubble-agent *):not([data-sidebar] *):not([class~="bg-primary"] *) {
     color: #4A4A4A;
   }
 
@@ -204,7 +316,7 @@
     [class*="text-xs"],
     [class*="text-base"],
     .text-muted-foreground
-  ):not(button):not([role="button"]):not([data-slot="button"]):not([data-slot="button"] *):not(.chat-bubble-agent *):not([data-sidebar] *) {
+  ):not(button):not([role="button"]):not([data-slot="button"]):not([data-slot="button"] *):not(.chat-bubble-agent *):not([data-sidebar] *):not([class~="bg-primary"] *) {
     color: #7E99B5;
   }
 
@@ -221,7 +333,9 @@
     color: #ffffff !important;
   }
 
-  /* Contraste para botoes com fundo escuro */
+  /* Contraste para botoes com fundo escuro sólido.
+     Usa ~= (exact word match) para não casar variantes com opacidade
+     como bg-primary/5, hover:bg-muted, bg-muted/30 etc. */
   :is(
     button,
     [role="button"],
@@ -229,16 +343,31 @@
     .btn,
     .button
   ):is(
-    [class*="bg-black"],
+    [class~="bg-black"],
     [class*="bg-zinc-9"],
     [class*="bg-neutral-9"],
     [class*="bg-stone-9"],
     [class*="bg-slate-9"],
-    [class*="bg-primary"],
-    [class*="bg-card"],
-    [class*="bg-muted"],
-    [class*="bg-foreground"]
-  ) {
+    [class~="bg-primary"],
+    [class~="bg-card"],
+    [class~="bg-foreground"]
+  ),
+  :is(
+    button,
+    [role="button"],
+    a[role="button"],
+    .btn,
+    .button
+  ):is(
+    [class~="bg-black"],
+    [class*="bg-zinc-9"],
+    [class*="bg-neutral-9"],
+    [class*="bg-stone-9"],
+    [class*="bg-slate-9"],
+    [class~="bg-primary"],
+    [class~="bg-card"],
+    [class~="bg-foreground"]
+  ) * {
     color: #ffffff !important;
   }
 }

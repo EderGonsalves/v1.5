@@ -55,6 +55,8 @@ const sendAssignmentGhostMessage = async (caseId: number, message: string) => {
   }
 };
 import { LawsuitTab } from "@/components/lawsuit/LawsuitTab";
+import { SignatureTab } from "@/components/documents/SignatureTab";
+import { PenLine } from "lucide-react";
 
 type KanbanCardDetailProps = {
   caseData: BaserowCaseRow | null;
@@ -355,7 +357,7 @@ export function KanbanCardDetail({
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-3 sm:py-4">
           <Tabs defaultValue="caso" className="h-full">
-            <TabsList className="flex w-full overflow-x-auto scrollbar-hide mb-4 sm:mb-6 sm:grid sm:grid-cols-5">
+            <TabsList className="flex w-full overflow-x-auto scrollbar-hide mb-4 sm:mb-6 sm:grid sm:grid-cols-6">
               <TabsTrigger value="caso" className="gap-1.5 sm:gap-2 shrink-0 text-xs sm:text-sm px-2.5 sm:px-3">
                 <Briefcase className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 Caso
@@ -375,6 +377,10 @@ export function KanbanCardDetail({
               <TabsTrigger value="resumo" className="gap-1.5 sm:gap-2 shrink-0 text-xs sm:text-sm px-2.5 sm:px-3">
                 <FileText className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 Resumo
+              </TabsTrigger>
+              <TabsTrigger value="documentos" className="gap-1.5 sm:gap-2 shrink-0 text-xs sm:text-sm px-2.5 sm:px-3">
+                <PenLine className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                Docs
               </TabsTrigger>
             </TabsList>
 
@@ -817,6 +823,20 @@ export function KanbanCardDetail({
                   </div>
                 )}
               </div>
+            </TabsContent>
+
+            {/* Aba Documentos / Assinatura */}
+            <TabsContent value="documentos" className="mt-0">
+              <SignatureTab
+                caseId={caseData.id}
+                institutionId={
+                  caseData.InstitutionID ||
+                  (typeof caseData["body.auth.institutionId"] === "number"
+                    ? caseData["body.auth.institutionId"]
+                    : Number(caseData["body.auth.institutionId"]) || 0)
+                }
+                caseData={caseData}
+              />
             </TabsContent>
           </Tabs>
         </div>

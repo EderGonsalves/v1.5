@@ -185,7 +185,7 @@ export default function PermissionsAdminPage() {
 
   if (!isLoading && !isSysAdmin) {
     return (
-      <main className="min-h-screen bg-background py-4">
+      <div>
         <div className="mx-auto max-w-6xl px-4 py-16 text-center">
           <ShieldCheck className="mx-auto h-10 w-10 text-muted-foreground/50" />
           <h2 className="mt-3 text-sm font-semibold text-foreground">
@@ -195,12 +195,12 @@ export default function PermissionsAdminPage() {
             Apenas o SysAdmin pode acessar esta página.
           </p>
         </div>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="min-h-screen bg-background py-4">
+    <div>
       <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-[#7E99B5] dark:border-border/60">
@@ -399,6 +399,6 @@ export default function PermissionsAdminPage() {
           ))
         )}
       </div>
-    </main>
+    </div>
   );
 }

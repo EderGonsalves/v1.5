@@ -907,6 +907,9 @@ export type BaserowCaseRow = {
   lawsuit_summary?: string | null;
   lawsuit_last_update?: string | null;
   notas_caso?: string | null;
+  // Electronic signature fields
+  sign_envelope_id?: string | null;
+  sign_status?: string | null;
   [key: string]: unknown;
 };
 
