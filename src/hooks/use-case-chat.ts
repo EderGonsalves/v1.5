@@ -48,10 +48,12 @@ const DEFAULT_META: ChatMeta = {
 // ---------------------------------------------------------------------------
 // Adaptive polling intervals (ms)
 // ---------------------------------------------------------------------------
-const POLL_ACTIVE = 3_000;   // Conversa ativa (interação recente)
+const POLL_ACTIVE = 2_000;   // Conversa ativa (interação recente)
+const POLL_BURST  = 1_000;   // Burst após enviar mensagem (captar resposta rápido)
 const POLL_IDLE   = 15_000;  // Sem interação há 30 s
 const POLL_BG     = 60_000;  // Aba em background
 const IDLE_THRESHOLD_MS = 30_000; // Tempo sem interação para considerar idle
+const BURST_DURATION_MS = 15_000; // Duração do burst polling após envio
 
 // Cache de mensagens por caseId
 type CachedChat = {
@@ -111,6 +113,10 @@ export const useCaseChat = (
   // Adaptive polling state
   const etagRef = useRef<string | null>(null);
   const lastInteractionRef = useRef(Date.now());
+  const burstUntilRef = useRef(0); // Timestamp até quando manter burst polling
+
+  // Mensagens otimistas pendentes (ainda não confirmadas pelo Baserow)
+  const pendingOptimisticRef = useRef<CaseMessage[]>([]);
 
   /** Marca interação do usuário — mantém polling em ritmo rápido */
   const markActive = useCallback(() => {
@@ -168,13 +174,42 @@ export const useCaseChat = (
         }
 
         const data = (await response.json()) as ChatFetchResponse;
-        setMessages(data.messages);
+
+        // Merge: manter mensagens otimistas que ainda não apareceram no Baserow
+        const serverMessages = data.messages;
+        const serverIds = new Set(serverMessages.map((m) => m.id));
+        const serverContents = new Set(
+          serverMessages.map((m) => `${m.content}|${m.direction}`),
+        );
+
+        // Remover otimistas já confirmadas (mesmo id OU mesmo content+direction)
+        // Também limpar otimistas com mais de 60s (fallback caso N8N falhe)
+        const now = Date.now();
+        const OPTIMISTIC_TTL_MS = 60_000;
+        pendingOptimisticRef.current = pendingOptimisticRef.current.filter(
+          (opt) => {
+            // Expirada — remover silenciosamente
+            if (now - opt.id > OPTIMISTIC_TTL_MS) return false;
+            // Confirmada pelo servidor — remover
+            if (serverIds.has(opt.id)) return false;
+            if (serverContents.has(`${opt.content}|${opt.direction}`)) return false;
+            return true;
+          },
+        );
+
+        // Combinar: msgs do servidor + otimistas ainda pendentes
+        const merged =
+          pendingOptimisticRef.current.length > 0
+            ? [...serverMessages, ...pendingOptimisticRef.current]
+            : serverMessages;
+
+        setMessages(merged);
         setCaseSummary(data.case);
         setMeta(data.meta);
 
-        // Salvar no cache
+        // Salvar no cache (só as do servidor, otimistas são voláteis)
         setChatCache(caseRowId, {
-          messages: data.messages,
+          messages: serverMessages,
           caseSummary: data.case,
           meta: data.meta,
         });
@@ -194,9 +229,11 @@ export const useCaseChat = (
   );
 
   useEffect(() => {
-    // Reset ETag e interação ao trocar de caso
+    // Reset ETag, interação e otimistas ao trocar de caso
     etagRef.current = null;
     lastInteractionRef.current = Date.now();
+    burstUntilRef.current = 0;
+    pendingOptimisticRef.current = [];
 
     // Verificar cache primeiro
     const cached = getChatCache(caseRowId);
@@ -221,6 +258,7 @@ export const useCaseChat = (
 
     const getInterval = (): number => {
       if (typeof document !== "undefined" && document.hidden) return POLL_BG;
+      if (Date.now() < burstUntilRef.current) return POLL_BURST;
       if (Date.now() - lastInteractionRef.current > IDLE_THRESHOLD_MS) return POLL_IDLE;
       return POLL_ACTIVE;
     };
@@ -305,6 +343,16 @@ export const useCaseChat = (
         }
 
         const result = (await response.json()) as SendMessageResponse;
+
+        // Registrar como otimista — será mantida até Baserow confirmar
+        pendingOptimisticRef.current = [
+          ...pendingOptimisticRef.current,
+          result.message,
+        ];
+
+        // Ativar burst polling para captar resposta mais rápido
+        burstUntilRef.current = Date.now() + BURST_DURATION_MS;
+
         setMessages((prev) => [...prev, result.message]);
         updateMeta((prev) => {
           const next: ChatMeta = {

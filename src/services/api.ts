@@ -924,6 +924,8 @@ export type GetBaserowCasesParams = {
   maxPages?: number;
   /** Called after each page is fetched — enables progressive rendering */
   onPageLoaded?: (partialResults: BaserowCaseRow[], totalCount: number) => void;
+  /** Baserow `include` fields — only return these fields (reduces payload dramatically) */
+  includeFields?: string[];
 };
 
 export type BaserowCasesResponse = {
@@ -996,6 +998,7 @@ export const getBaserowCases = async ({
   newestFirst = false,
   maxPages,
   onPageLoaded,
+  includeFields,
 }: GetBaserowCasesParams = {}): Promise<BaserowCasesResponse> => {
   try {
     // Usar filtro server-side do Baserow para instituições não-admin
@@ -1010,6 +1013,9 @@ export const getBaserowCases = async ({
       });
       if (useServerFilter) {
         params.set("filter__InstitutionID__equal", String(institutionId));
+      }
+      if (includeFields?.length) {
+        params.set("include", includeFields.join(","));
       }
       return `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASES_TABLE_ID}/?${params.toString()}`;
     };
@@ -1053,17 +1059,29 @@ export const getBaserowCases = async ({
         }
       };
 
-      for (let p = totalPages; p >= 2 && pagesLoaded < pageBudget; p--) {
-        const response = await baserowGet<BaserowListResponse<FollowUpHistoryRow>>(
-          buildUrl(p),
-        );
-        const pageResults: BaserowCaseRow[] = response.data?.results || [];
-        pushUnique(pageResults);
-        pagesLoaded++;
+      // Build list of pages to fetch (from last to 2nd)
+      const pagesToFetch: number[] = [];
+      for (let p = totalPages; p >= 2 && pagesToFetch.length < pageBudget; p--) {
+        pagesToFetch.push(p);
+      }
 
-        if (onPageLoaded) {
-          onPageLoaded([...allResults], totalCount);
-        }
+      // Fetch all pages in PARALLEL (instead of sequential)
+      const pageResponses = await Promise.all(
+        pagesToFetch.map((p) =>
+          baserowGet<BaserowListResponse<FollowUpHistoryRow>>(buildUrl(p))
+            .then((resp) => ({ page: p, results: (resp.data?.results || []) as BaserowCaseRow[] })),
+        ),
+      );
+
+      // Process results in page order (highest first = newest first)
+      pageResponses.sort((a, b) => b.page - a.page);
+      for (const pr of pageResponses) {
+        pushUnique(pr.results);
+        pagesLoaded++;
+      }
+
+      if (onPageLoaded && pagesLoaded > 0) {
+        onPageLoaded([...allResults], totalCount);
       }
 
       // Append page 1 data only if we fetched ALL remaining pages (complete dataset)

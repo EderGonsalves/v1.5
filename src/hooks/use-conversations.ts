@@ -33,6 +33,26 @@ const MEMORY_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
 const PAGE_SIZE = 200;
 const INITIAL_MAX_PAGES = 3;
 
+// Campos mínimos necessários para a lista de conversas (reduz payload ~80%)
+const CONVERSATION_FIELDS = [
+  "CaseId",
+  "CustumerName",
+  "CustumerPhone",
+  "Data",
+  "Resumo",
+  "DepoimentoInicial",
+  "IApause",
+  "BJCaseId",
+  "EtapaPerguntas",
+  "EtapaFinal",
+  "display_phone_number",
+  "department_id",
+  "department_name",
+  "assigned_to_user_id",
+  "responsavel",
+  "InstitutionID",
+];
+
 // Adaptive polling para lista de conversas (mais lento que chat)
 const CONV_POLL_ACTIVE = 30_000;  // 30 s quando aba ativa
 const CONV_POLL_BG     = 120_000; // 2 min quando aba background
@@ -157,6 +177,7 @@ export const useConversations = (institutionId: number | undefined) => {
           fetchAll: true,
           newestFirst: true,
           maxPages: INITIAL_MAX_PAGES,
+          includeFields: CONVERSATION_FIELDS,
           onPageLoaded: (partial) => {
             const normalized = sortDesc(partial.map(normalizeRow));
             setConversations(normalized);
@@ -214,7 +235,7 @@ export const useConversations = (institutionId: number | undefined) => {
 
       const results = await Promise.all(
         pagesToFetch.map((p) =>
-          getBaserowCases({ institutionId, page: p, pageSize: PAGE_SIZE }),
+          getBaserowCases({ institutionId, page: p, pageSize: PAGE_SIZE, includeFields: CONVERSATION_FIELDS }),
         ),
       );
 

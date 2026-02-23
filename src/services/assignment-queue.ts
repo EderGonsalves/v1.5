@@ -118,6 +118,62 @@ export const recordAssignment = async (
   }
 };
 
+/**
+ * Batch-record multiple assignments using pre-fetched queue records.
+ * Groups increments by user and does ONE sequential PATCH/POST per user
+ * instead of N parallel fire-and-forget calls.
+ */
+export const recordAssignmentsBatch = async (
+  assignments: Array<{ userId: number; institutionId: number }>,
+  existingRecords: QueueRecord[],
+): Promise<void> => {
+  if (assignments.length === 0) return;
+
+  const now = new Date().toISOString();
+
+  // Group assignment counts by userId
+  const countsByUser = new Map<number, number>();
+  for (const a of assignments) {
+    countsByUser.set(a.userId, (countsByUser.get(a.userId) ?? 0) + 1);
+  }
+
+  // Build a map of existing records by user_id
+  const recordMap = new Map<number, QueueRecord>();
+  for (const rec of existingRecords) {
+    recordMap.set(Number(rec.user_id), rec);
+  }
+
+  // Process each user SEQUENTIALLY to avoid lock contention
+  for (const [userId, increment] of countsByUser) {
+    try {
+      const existing = recordMap.get(userId);
+      if (existing) {
+        const currentCount = Number(existing.assignment_count) || 0;
+        await client().patch(
+          `/database/rows/table/${TABLE_ID}/${existing.id}/?user_field_names=true`,
+          {
+            last_assigned_at: now,
+            assignment_count: currentCount + increment,
+          },
+        );
+      } else {
+        const instId = assignments.find((a) => a.userId === userId)!.institutionId;
+        await client().post(
+          `/database/rows/table/${TABLE_ID}/?user_field_names=true`,
+          {
+            user_id: userId,
+            institution_id: instId,
+            last_assigned_at: now,
+            assignment_count: increment,
+          },
+        );
+      }
+    } catch (err) {
+      console.error(`Erro ao registrar assignment batch para user ${userId}:`, err);
+    }
+  }
+};
+
 // ---------------------------------------------------------------------------
 // Round-Robin Selection
 // ---------------------------------------------------------------------------

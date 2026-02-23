@@ -9,7 +9,7 @@ import { updateBaserowCase } from "@/services/api";
 import type { BaserowCaseRow } from "@/services/api";
 import { fetchDepartmentUserIds } from "@/services/departments";
 import { getPhoneDepartmentMap } from "@/lib/waba";
-import { fetchQueueRecords, recordAssignment, pickNextUser } from "@/services/assignment-queue";
+import { fetchQueueRecords, recordAssignmentsBatch, pickNextUser } from "@/services/assignment-queue";
 
 const BASEROW_API_URL =
   process.env.BASEROW_API_URL ||
@@ -125,6 +125,9 @@ export async function POST(request: NextRequest) {
       departmentName?: string | null;
     }> = [];
 
+    // Accumulate assignments for batch update at the end
+    const pendingAssignments: Array<{ userId: number; institutionId: number }> = [];
+
     for (const caseRow of unassigned) {
       try {
         let assignDeptId: number | null = null;
@@ -201,10 +204,8 @@ export async function POST(request: NextRequest) {
           department_name: assignDeptName,
         });
 
-        // Record assignment in queue (fire-and-forget to not block loop)
-        recordAssignment(targetUser.id, institutionId).catch((err) =>
-          console.error("Erro ao registrar atribuição na fila:", err),
-        );
+        // Accumulate for batch update (instead of N parallel fire-and-forget calls)
+        pendingAssignments.push({ userId: targetUser.id, institutionId });
 
         // Create ghost message for assignment (fire-and-forget)
         createAssignmentGhostMessage(
@@ -250,6 +251,11 @@ export async function POST(request: NextRequest) {
         );
       }
     }
+
+    // Batch-record all assignments sequentially (1 PATCH per user, not N parallel)
+    recordAssignmentsBatch(pendingAssignments, queueRecords).catch((err) =>
+      console.error("Erro ao registrar assignments em batch:", err),
+    );
 
     return NextResponse.json({ assigned });
   } catch (err) {

@@ -131,11 +131,20 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Campos mínimos para lista de conversas (reduz payload ~80%)
+    const includeFields = [
+      "CaseId", "CustumerName", "CustumerPhone", "Data", "Resumo",
+      "DepoimentoInicial", "IApause", "BJCaseId", "EtapaPerguntas",
+      "EtapaFinal", "display_phone_number", "department_id",
+      "department_name", "assigned_to_user_id", "responsavel", "InstitutionID",
+    ];
+
     // Buscar do Baserow (com filtro server-side se não-admin)
     const response = await getBaserowCases({
       institutionId,
       pageSize: 200,
       fetchAll: true,
+      includeFields,
     });
 
     // Normalizar e ordenar por ID desc (mais recentes primeiro)
