@@ -65,61 +65,17 @@ export const AddressSection = ({ data, onChange }: AddressSectionProps) => {
 
           <FormField
             control={form.control}
-            name="street"
+            name="fullAddress"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Rua</FormLabel>
+                <FormLabel>Endereço completo</FormLabel>
                 <FormControl>
-                  <Input {...field} />
+                  <Input placeholder="Av. Paulista, 1000 - São Paulo/SP - CEP 01310-100" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
-
-          <div className="grid gap-4 sm:grid-cols-3">
-            <FormField
-              control={form.control}
-              name="city"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Cidade</FormLabel>
-                  <FormControl>
-                    <Input {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="state"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Estado</FormLabel>
-                  <FormControl>
-                    <Input {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="zipCode"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>CEP</FormLabel>
-                  <FormControl>
-                    <Input {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
         </form>
       </Form>
     );
@@ -135,25 +91,8 @@ export const AddressSection = ({ data, onChange }: AddressSectionProps) => {
         </Button>
       </div>
       <div className="space-y-1 text-sm">
-        <p>
-          <span className="font-medium">Rua:</span> {data.street || "-"}
-        </p>
-        <p>
-          <span className="font-medium">Cidade:</span> {data.city || "-"} /{" "}
-          {data.state || "-"}
-        </p>
-        <p>
-          <span className="font-medium">CEP:</span> {data.zipCode || "-"}
-        </p>
+        <p>{data.fullAddress || "-"}</p>
       </div>
     </div>
   );
 };
-
-
-
-
-
-
-
-

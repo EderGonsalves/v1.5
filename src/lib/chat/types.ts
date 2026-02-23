@@ -27,6 +27,7 @@ export type CaseMessage = {
   id: number;
   caseId: number;
   sender: CaseMessageSender;
+  senderName?: string;
   direction: CaseMessageDirection;
   content: string;
   createdAt: string;

@@ -53,12 +53,18 @@ export const fetchPermissionsStatusClient =
       return statusCache.promise;
     }
 
-    const promise = handleResponse<PermissionsStatusResult>(
-      await fetch("/api/v1/permissions/status", {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
+    const promise = fetch("/api/v1/permissions/status", {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    })
+      .then((res) => handleResponse<PermissionsStatusResult>(res))
+      .catch((err) => {
+        // Invalidate cache on failure so next call retries immediately
+        if (statusCache?.promise === promise) {
+          statusCache = null;
+        }
+        throw err;
+      });
 
     statusCache = { promise, ts: now };
     return promise;

@@ -102,16 +102,20 @@ const computeSessionDeadline = (lastClientMessageAt: string | null): string | nu
 
 const formatConversationLine = ({
   sender,
+  senderName,
   timestamp,
   content,
   attachmentNames,
 }: {
   sender: CaseMessageSender;
+  senderName?: string;
   timestamp: string;
   content: string;
   attachmentNames: string[];
 }) => {
-  const actorLabel = sender === "cliente" ? "Cliente" : "Agente";
+  const actorLabel = sender === "cliente"
+    ? "Cliente"
+    : senderName || "Agente";
   const formattedTimestamp = new Date(timestamp).toLocaleString("pt-BR", {
     timeStyle: "short",
     dateStyle: "short",
@@ -569,7 +573,38 @@ export async function POST(
       return idx >= 0 ? (files[idx]?.name ?? undefined) : undefined;
     };
 
-    // Dispatch webhook if we have phone numbers — N8N sends via WhatsApp AND saves to Baserow
+    // Resolver nome do usuário para mensagens de agente humano
+    const senderName =
+      sender === "agente" || sender === "bot"
+        ? (typeof auth.payload?.name === "string" && auth.payload.name.trim()) ||
+          auth.legacyUserId ||
+          "Agente"
+        : undefined;
+
+    // 1. Salvar mensagem diretamente no Baserow (sem depender do N8N)
+    const createdRow = await createCaseMessageRow({
+      caseIdentifier: identifiers[0] ?? rowId,
+      sender,
+      senderName,
+      content,
+      attachments: uploadedAttachments,
+      timestamp,
+      from: wabaPhoneNumber ?? undefined,
+      to: customerPhone || undefined,
+      messages_type: messageType,
+      field: fieldValue,
+      audioid: messageType === "audio" ? getMediaId(uploadedAttachments, "audio") : undefined,
+      imageId: messageType === "image" ? getMediaId(uploadedAttachments, "image") : undefined,
+      documentId: messageType === "document" ? getMediaId(uploadedAttachments, "document") : undefined,
+    });
+
+    newMessage = normalizeCaseMessageRow(createdRow, rowId, customerPhone);
+
+    if (isGhostMessage) {
+      newMessage.metadata = { ...newMessage.metadata, type: "ghost" };
+    }
+
+    // 2. Dispatch webhook para envio do WhatsApp (fire-and-forget — não bloqueia resposta)
     if (wabaPhoneNumber && customerPhone && (content || uploadedAttachments.length)) {
       const now = new Date();
       const webhookPayload: ChatWebhookPayload = {
@@ -581,7 +616,6 @@ export async function POST(
         messages_type: messageType,
       };
 
-      // Add imageId, audioid or documentId based on message type
       if (messageType === "image") {
         webhookPayload.imageId = getMediaId(uploadedAttachments, "image");
       } else if (messageType === "audio") {
@@ -590,14 +624,10 @@ export async function POST(
         webhookPayload.documentId = getMediaId(uploadedAttachments, "document");
       }
 
-      // Montar URL do proxy para servir o arquivo com Content-Type correto
-      // (evita rejeição do WhatsApp por header/redirect do Baserow)
       if (uploadedAttachments.length > 0) {
         const firstFile = uploadedAttachments[0];
         const rawUrl = firstFile.url ?? "";
         const mime = normalizeWhatsAppMime(originalMimeTypes[0]);
-
-        // APP_URL (domínio público) com fallback para origin do request
         const origin = process.env.APP_URL?.replace(/\/+$/, "") || request.nextUrl.origin;
         const proxyUrl = `${origin}/api/media/proxy?url=${encodeURIComponent(rawUrl)}&type=${encodeURIComponent(mime)}`;
 
@@ -606,55 +636,14 @@ export async function POST(
         webhookPayload.mediaMimeType = mime;
       }
 
-      // Add ghost type if applicable
       if (isGhostMessage) {
         webhookPayload.type = "ghost";
       }
 
-      await dispatchChatWebhook(webhookPayload);
-
-      // N8N handles Baserow record creation — return temporary message for optimistic UI
-      newMessage = {
-        id: Date.now(),
-        caseId: rowId,
-        sender: "bot",
-        direction: "outbound",
-        content,
-        createdAt: timestamp,
-        deliveryStatus: "sent",
-        kind,
-        attachments: uploadedAttachments.map((file) => ({
-          id: String(file.id ?? file.name ?? Date.now()),
-          name: file.original_name ?? file.name ?? "arquivo",
-          mimeType: file.mime_type ?? "application/octet-stream",
-          size: file.size ?? 0,
-          url: file.url ?? "",
-          isImage: file.is_image ?? false,
-        })),
-        ...(isGhostMessage && { metadata: { type: "ghost" } }),
-      };
-    } else {
-      // No webhook available — create record directly in Baserow
-      const createdRow = await createCaseMessageRow({
-        caseIdentifier: identifiers[0] ?? rowId,
-        sender: "bot",
-        content,
-        attachments: uploadedAttachments,
-        timestamp,
-        from: wabaPhoneNumber ?? undefined,
-        to: customerPhone || undefined,
-        messages_type: messageType,
-        field: fieldValue,
-        audioid: messageType === "audio" ? getMediaId(uploadedAttachments, "audio") : undefined,
-        imageId: messageType === "image" ? getMediaId(uploadedAttachments, "image") : undefined,
-        documentId: messageType === "document" ? getMediaId(uploadedAttachments, "document") : undefined,
-      });
-
-      newMessage = normalizeCaseMessageRow(createdRow, rowId, customerPhone);
-
-      if (isGhostMessage) {
-        newMessage.metadata = { ...newMessage.metadata, type: "ghost" };
-      }
+      // Fire-and-forget: não espera resposta do N8N
+      dispatchChatWebhook(webhookPayload).catch((err) =>
+        console.error("[chat] Falha ao enviar webhook WhatsApp (fire-and-forget):", err),
+      );
     }
 
     const attachmentNames = uploadedAttachments
@@ -663,6 +652,7 @@ export async function POST(
 
     const conversationLine = formatConversationLine({
       sender,
+      senderName,
       timestamp,
       content,
       attachmentNames,

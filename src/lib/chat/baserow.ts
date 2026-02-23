@@ -28,6 +28,7 @@ export type BaserowCaseMessageRow = {
   id: number;
   CaseId?: string | number | null;
   Sender?: string | null;
+  SenderName?: string | null;
   DataHora?: string | null;
   Message?: string | null;
   file?: BaserowFileValue[] | null;
@@ -365,10 +366,15 @@ const toCaseMessage = (
   const kind = guessKind(attachments, row.Message ? "text" : undefined);
   const createdAt = normalizeDate(row.DataHora || row.created_on);
 
+  const rawSenderName = row.SenderName
+    ? String(row.SenderName).trim()
+    : "";
+
   const message: CaseMessage = {
     id: row.id,
     caseId: fallbackCaseId,
     sender,
+    ...(rawSenderName ? { senderName: rawSenderName } : {}),
     direction,
     content: row.Message ?? "",
     createdAt,
@@ -571,6 +577,7 @@ export const uploadAttachmentToBaserow = async (
 type CreateCaseMessageRowInput = {
   caseIdentifier: string | number;
   sender: CaseMessageSender;
+  senderName?: string;
   content: string;
   attachments?: BaserowFileValue[];
   timestamp?: string;
@@ -583,12 +590,30 @@ type CreateCaseMessageRowInput = {
   documentId?: string;
 };
 
+/**
+ * Converte o sender interno para o valor do multi-select do Baserow.
+ * Opções na tabela 227: "cliente", "agente", "usuário"
+ */
+const toBaserowSender = (sender: CaseMessageSender): string => {
+  switch (sender) {
+    case "cliente":
+      return "cliente";
+    case "agente":
+      return "agente";
+    case "bot":
+    case "sistema":
+    default:
+      return "usuário";
+  }
+};
+
 export const createCaseMessageRow = async (input: CreateCaseMessageRowInput) => {
   ensureBaserowConfig();
 
   const payload: Record<string, unknown> = {
     CaseId: String(input.caseIdentifier),
-    Sender: input.sender,
+    Sender: toBaserowSender(input.sender),
+    SenderName: input.senderName ?? "",
     Message: input.content,
     DataHora: input.timestamp ?? new Date().toISOString(),
     field: input.field ?? "chat",

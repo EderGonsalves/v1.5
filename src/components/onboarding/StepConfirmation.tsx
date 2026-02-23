@@ -103,10 +103,7 @@ export const StepConfirmation = () => {
       content: (
         <div>
           <h4 className="text-sm font-semibold text-muted-foreground">Endereço</h4>
-          <p className="text-sm">{data.address.street || "-"}</p>
-          <p className="text-sm text-muted-foreground">
-            {data.address.city || "-"} / {data.address.state || "-"} - CEP {data.address.zipCode || "-"}
-          </p>
+          <p className="text-sm">{data.address.fullAddress || "-"}</p>
         </div>
       ),
     },

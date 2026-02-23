@@ -21,7 +21,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const authSignature = data.auth
     ? `${data.auth.institutionId}:${data.auth.legacyUserId ?? ""}`
     : null;
-  const { isSysAdmin, enabledPages, isLoading } =
+  const { isSysAdmin, enabledPages, isLoading: permLoading } =
     usePermissionsStatus(authSignature);
 
   useEffect(() => {
@@ -35,8 +35,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
+  // While permissions are loading, always render the normal layout (no flash)
   const isPageAllowed =
-    isLoading ||
+    permLoading ||
     isSysAdmin ||
     ALWAYS_ALLOWED_PATHS.some((p) => pathname === p) ||
     enabledPages.some((p) => pathname.startsWith(p));

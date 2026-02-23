@@ -31,7 +31,6 @@ type EditableField = {
 
 type SectionLabel =
   | "Sobre a sua empresa"
-  | "Endereço completo"
   | "Quem fala com o seu cliente"
   | "Briefing juridico estruturado (perguntas)"
   | "Tom de voz e mensagens-chave"
@@ -51,25 +50,16 @@ const SECTION_RULES: SectionRule[] = [
     label: "Sobre a sua empresa",
     exact: [
       "body.tenant.companyName",
-      "body.tenant.businessHours",
       "body.tenant.wabaPhoneNumber",
       "body.waba_phone_number",
-    ],
-  },
-  {
-    label: "Endereço completo",
-    exact: [
-      "body.tenant.address.street",
-      "body.tenant.address.city",
-      "body.tenant.address.state",
-      "body.tenant.address.zipCode",
+      "body.tenant.address.fullAddress",
+      "body.agentSettings.personality.greeting",
     ],
   },
   {
     label: "Quem fala com o seu cliente",
     exact: [
       "body.agentSettings.profile.agentName",
-      "body.agentSettings.profile.language",
       "body.agentSettings.profile.personalityDescription",
       "body.agentSettings.profile.expertiseArea",
     ],
@@ -82,14 +72,12 @@ const SECTION_RULES: SectionRule[] = [
       "perguntas",
       "quantidadePerguntas",
       "body.agentSettings.flow.directedQuestionsList",
-      "body.agentSettings.flow.companyOfferings",
       "body.agentSettings.flow.institutionalAdditionalInfo",
     ],
   },
   {
     label: "Tom de voz e mensagens-chave",
     exact: [
-      "body.agentSettings.personality.greeting",
       "body.agentSettings.personality.closing",
       "body.agentSettings.personality.forbiddenWords.0",
     ],
@@ -107,7 +95,6 @@ const SECTION_RULES: SectionRule[] = [
 
 const SECTION_ORDER: SectionLabel[] = [
   "Sobre a sua empresa",
-  "Endereço completo",
   "Quem fala com o seu cliente",
   "Briefing juridico estruturado (perguntas)",
   "Tom de voz e mensagens-chave",
@@ -119,46 +106,31 @@ const SECTION_METADATA: Record<
   { title: string; description: string; fieldOrder: string[] }
 > = {
   "Sobre a sua empresa": {
-    title: "Sobre a sua empresa",
-    description:
-      "Conte como o seu escritorio ou negocio se apresenta para que possamos criar a experiencia certa nas proximas etapas.",
+    title: "",
+    description: "",
     fieldOrder: [
       "body.tenant.companyName",
-      "body.tenant.businessHours",
       "body.tenant.wabaPhoneNumber",
       "body.waba_phone_number",
-    ],
-  },
-  "Endereço completo": {
-    title: "Endereço completo",
-    description:
-      "Compartilhe o endereco oficial para personalizarmos mensagens, documentos e assinaturas enviadas aos seus clientes.",
-    fieldOrder: [
-      "body.tenant.address.street",
-      "body.tenant.address.city",
-      "body.tenant.address.state",
-      "body.tenant.address.zipCode",
+      "body.tenant.address.fullAddress",
+      "body.agentSettings.personality.greeting",
     ],
   },
   "Quem fala com o seu cliente": {
-    title: "Quem fala com o seu cliente",
-    description:
-      "Descreva o agente que vai conduzir o atendimento para que possamos usar o mesmo tom, idioma e repertorio em todas as conversas.",
+    title: "",
+    description: "",
     fieldOrder: [
       "body.agentSettings.profile.agentName",
-      "body.agentSettings.profile.language",
       "body.agentSettings.profile.personalityDescription",
       "body.agentSettings.profile.expertiseArea",
     ],
   },
   "Briefing juridico estruturado (perguntas)": {
-    title: "Briefing juridico estruturado (perguntas)",
-    description:
-      "Defina o escopo, o limite de perguntas e as informacoes que sustentam o novo prompt juridico.",
+    title: "",
+    description: "",
     fieldOrder: [
       "perguntas",
       "quantidadePerguntas",
-      "body.agentSettings.flow.companyOfferings",
       "body.agentSettings.flow.briefingScope",
       "body.agentSettings.flow.maxQuestions",
       "body.agentSettings.flow.directedQuestionsList",
@@ -166,11 +138,9 @@ const SECTION_METADATA: Record<
     ],
   },
   "Tom de voz e mensagens-chave": {
-    title: "Tom de voz e mensagens-chave",
-    description:
-      "Escreva como o agente deve iniciar e encerrar as conversas e quais palavras prefere evitar.",
+    title: "",
+    description: "",
     fieldOrder: [
-      "body.agentSettings.personality.greeting",
       "body.agentSettings.personality.closing",
       "body.agentSettings.personality.forbiddenWords.0",
     ],
@@ -178,7 +148,7 @@ const SECTION_METADATA: Record<
   "Arquivos de apoio": {
     title: "Arquivos de apoio",
     description:
-      "Envie laudos, contratos, planilhas ou apresentacoes que o agente possa consultar durante o atendimento.",
+      "Envie laudos, contratos, planilhas ou apresentações que o agente possa consultar durante o atendimento.",
     fieldOrder: ["body.ragFiles."],
   },
 };
@@ -302,6 +272,7 @@ export default function ConfiguracoesPage() {
       const initialEditing: Record<number, Record<string, EditableField>> = {};
       results.forEach((config) => {
         initialEditing[config.id] = {};
+        const row = config as Record<string, unknown>;
         Object.entries(config).forEach(([key, value]) => {
           if (!isOnboardingFieldKey(key)) {
             return;
@@ -313,6 +284,27 @@ export default function ConfiguracoesPage() {
             isEditing: false,
           };
         });
+
+        // Sintetizar fullAddress a partir de campos legados se não existir
+        if (!initialEditing[config.id]["body.tenant.address.fullAddress"]) {
+          const legacyStreet = (row["body.tenant.address.street"] as string)?.trim() || "";
+          const legacyCity = (row["body.tenant.address.city"] as string)?.trim() || "";
+          const legacyState = (row["body.tenant.address.state"] as string)?.trim() || "";
+          const legacyZip = (row["body.tenant.address.zipCode"] as string)?.trim() || "";
+          const parts = [
+            legacyStreet,
+            legacyCity && legacyState ? `${legacyCity}/${legacyState}` : legacyCity || legacyState,
+            legacyZip ? `CEP ${legacyZip}` : "",
+          ].filter(Boolean);
+          const synthesized = parts.join(" - ");
+          if (synthesized) {
+            initialEditing[config.id]["body.tenant.address.fullAddress"] = {
+              key: "body.tenant.address.fullAddress",
+              value: synthesized,
+              isEditing: false,
+            };
+          }
+        }
       });
       setEditingFields(initialEditing);
     } catch (err) {
@@ -418,26 +410,23 @@ export default function ConfiguracoesPage() {
 
   // Mapeamento dos campos do Baserow para os nomes usados no onboarding
   const fieldNameMap: Record<string, string> = {
-    "body.tenant.companyName": "Nome do escritorio",
-    "body.tenant.businessHours": "Horarios de atendimento",
-    "body.tenant.wabaPhoneNumber": "Numero do WhatsApp conectado a Meta",
-    "body.waba_phone_number": "Numero do WhatsApp conectado a Meta",
-    "body.tenant.address.street": "Rua",
-    "body.tenant.address.city": "Cidade",
-    "body.tenant.address.state": "Estado",
-    "body.tenant.address.zipCode": "CEP",
+    "body.tenant.companyName": "Nome do escritório",
+    "body.tenant.businessHours": "Horários de atendimento",
+    "body.tenant.wabaPhoneNumber": "Número do WhatsApp conectado à Meta",
+    "body.waba_phone_number": "Número do WhatsApp conectado à Meta",
+    "body.tenant.address.fullAddress": "Endereço completo",
     "body.agentSettings.profile.agentName": "Nome do agente",
     "body.agentSettings.profile.language": "Idioma principal",
-    "body.agentSettings.profile.personalityDescription": "Descricao da personalidade",
-    "body.agentSettings.profile.expertiseArea": "Area de expertise",
+    "body.agentSettings.profile.personalityDescription": "Descrição da personalidade",
+    "body.agentSettings.profile.expertiseArea": "Área de expertise",
     "body.agentSettings.flow.briefingScope": "Escopo do briefing",
-    "body.agentSettings.flow.maxQuestions": "Limite maximo de perguntas",
+    "body.agentSettings.flow.maxQuestions": "Limite máximo de perguntas",
     "perguntas": "Perguntas direcionadas",
     "quantidadePerguntas": "Quantidade de perguntas",
     "body.agentSettings.flow.directedQuestionsList": "Perguntas direcionadas (JSON)",
-    "body.agentSettings.flow.institutionalAdditionalInfo": "Informacoes institucionais adicionais",
-    "body.agentSettings.flow.companyOfferings": "Informacoes institucionais adicionais (legado)",
-    "body.agentSettings.personality.greeting": "Saudacao inicial",
+    "body.agentSettings.flow.institutionalAdditionalInfo": "Informações institucionais adicionais",
+    "body.agentSettings.flow.companyOfferings": "Informações institucionais adicionais (legado)",
+    "body.agentSettings.personality.greeting": "Saudação inicial",
     "body.agentSettings.personality.closing": "Frase de despedida",
     "body.agentSettings.personality.forbiddenWords.0": "Palavras proibidas",
   };
@@ -467,7 +456,7 @@ export default function ConfiguracoesPage() {
         "mime": "Tipo do arquivo",
         "size": "Tamanho (bytes)",
         "storagePath": "Caminho",
-        "tempUrl": "URL temporaria",
+        "tempUrl": "URL temporária",
       };
       const propertyLabel =
         propertyMap[ragMatch[2]] ?? ragMatch[2];
@@ -613,10 +602,17 @@ export default function ConfiguracoesPage() {
       10,
       "+5511999999999",
     );
-    const addressStreet = ensureMinLength(row["body.tenant.address.street"], 2, "Rua");
-    const addressCity = ensureMinLength(row["body.tenant.address.city"], 2, "Cidade");
-    const addressState = ensureMinLength(row["body.tenant.address.state"], 2, "Estado");
-    const addressZipCode = ensureMinLength(row["body.tenant.address.zipCode"], 5, "00000-000");
+    // Endereço: campo único, com fallback para campos legados (street/city/state/zipCode)
+    let fullAddress = (row["body.tenant.address.fullAddress"] as string)?.trim() || "";
+    if (!fullAddress) {
+      const legacyStreet = (row["body.tenant.address.street"] as string)?.trim() || "";
+      const legacyCity = (row["body.tenant.address.city"] as string)?.trim() || "";
+      const legacyState = (row["body.tenant.address.state"] as string)?.trim() || "";
+      const legacyZip = (row["body.tenant.address.zipCode"] as string)?.trim() || "";
+      const parts = [legacyStreet, legacyCity && legacyState ? `${legacyCity}/${legacyState}` : legacyCity || legacyState, legacyZip ? `CEP ${legacyZip}` : ""].filter(Boolean);
+      fullAddress = parts.join(" - ") || "Endereço não informado";
+    }
+    fullAddress = ensureMinLength(fullAddress, 5, "Endereço não informado");
 
     // Extrair agent profile (agentName min 2, personalityDescription min 10, expertiseArea min 5)
     const agentName = ensureMinLength(row["body.agentSettings.profile.agentName"], 2, "Agente");
@@ -696,10 +692,7 @@ export default function ConfiguracoesPage() {
         phoneNumber,
         wabaPhoneNumber,
         address: {
-          street: addressStreet,
-          city: addressCity,
-          state: addressState,
-          zipCode: addressZipCode,
+          fullAddress,
         },
       },
       waba_phone_number: wabaPhoneNumber,
@@ -801,71 +794,56 @@ export default function ConfiguracoesPage() {
     const field = editingFields[rowId]?.[fieldKey];
     const isEditing = field?.isEditing ?? false;
     const displayValue = field?.value ?? value;
+    const isObject = typeof displayValue === "object" && displayValue !== null;
+    const stringValue = formatValue(displayValue);
 
     if (isEditing) {
-      const isObject = typeof displayValue === "object" && displayValue !== null;
-      const stringValue = formatValue(displayValue);
-
       return (
         <div className="space-y-2">
           {isObject ? (
             <Textarea
+              autoFocus
               value={stringValue}
               onChange={(e) => {
                 const parsed = parseValue(e.target.value, displayValue);
                 updateFieldValue(rowId, fieldKey, parsed);
+              }}
+              onBlur={() => saveField(rowId, fieldKey)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") cancelEditing(rowId, fieldKey);
               }}
               className="font-mono text-xs min-h-[200px]"
               rows={10}
             />
           ) : (
             <Input
+              autoFocus
               type={typeof displayValue === "number" ? "number" : "text"}
               value={stringValue}
               onChange={(e) => {
                 const parsed = parseValue(e.target.value, displayValue);
                 updateFieldValue(rowId, fieldKey, parsed);
               }}
+              onBlur={() => saveField(rowId, fieldKey)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") saveField(rowId, fieldKey);
+                if (e.key === "Escape") cancelEditing(rowId, fieldKey);
+              }}
               className="font-mono text-xs"
             />
           )}
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => saveField(rowId, fieldKey)}
-              disabled={isSaving}
-            >
-              Salvar
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => cancelEditing(rowId, fieldKey)}
-              disabled={isSaving}
-            >
-              Cancelar
-            </Button>
-          </div>
         </div>
       );
     }
 
     return (
-      <div className="flex items-center justify-between group">
-        <pre className="text-xs text-muted-foreground whitespace-pre-wrap break-words flex-1">
-          {formatValue(displayValue)}
+      <div
+        className="cursor-pointer hover:bg-muted/50 rounded transition-colors"
+        onClick={() => startEditing(rowId, fieldKey)}
+      >
+        <pre className="text-xs text-muted-foreground whitespace-pre-wrap break-words">
+          {stringValue || <span className="italic">Clique para editar</span>}
         </pre>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          className="opacity-0 group-hover:opacity-100 transition-opacity"
-          onClick={() => startEditing(rowId, fieldKey)}
-        >
-          Editar
-        </Button>
       </div>
     );
   };
@@ -877,17 +855,7 @@ export default function ConfiguracoesPage() {
   return (
     <div>
       <div className="flex flex-col gap-3 sm:gap-4">
-        <div className="flex justify-end">
-          <Button
-            onClick={handleSendToWebhook}
-            disabled={isLoading || isSendingToWebhook || configs.length === 0}
-            className="bg-primary text-primary-foreground hover:bg-primary/90 whitespace-nowrap"
-          >
-            {isSendingToWebhook ? "Enviando..." : "Atualizar e Enviar"}
-          </Button>
-        </div>
-
-        {error && (
+{error && (
           <div className="border-b border-destructive px-3 sm:px-4 py-3">
             <p className="text-sm font-semibold text-destructive">Erro</p>
             <p className="text-sm text-muted-foreground">{error}</p>
@@ -918,8 +886,8 @@ export default function ConfiguracoesPage() {
                 : "N/D";
             const fallbackCompanyName =
               typeof config.id === "number" || typeof config.id === "string"
-                ? "Escritorio " + String(config.id)
-                : "Escritorio " + String(index + 1);
+                ? "Escritório " + String(config.id)
+                : "Escritório " + String(index + 1);
             const companyName =
               (rowData["body.tenant.companyName"] as string | undefined) ||
               fallbackCompanyName;
@@ -943,6 +911,24 @@ export default function ConfiguracoesPage() {
               sections[sectionLabel].push([key, value]);
             });
 
+            // Sintetizar campo fullAddress a partir dos campos legados se não existir
+            const empresaSection = sections["Sobre a sua empresa"];
+            if (!empresaSection.some(([k]) => k === "body.tenant.address.fullAddress")) {
+              const legacyStreet = (rowData["body.tenant.address.street"] as string)?.trim() || "";
+              const legacyCity = (rowData["body.tenant.address.city"] as string)?.trim() || "";
+              const legacyState = (rowData["body.tenant.address.state"] as string)?.trim() || "";
+              const legacyZip = (rowData["body.tenant.address.zipCode"] as string)?.trim() || "";
+              const parts = [
+                legacyStreet,
+                legacyCity && legacyState ? `${legacyCity}/${legacyState}` : legacyCity || legacyState,
+                legacyZip ? `CEP ${legacyZip}` : "",
+              ].filter(Boolean);
+              const synthesized = parts.join(" - ");
+              if (synthesized) {
+                empresaSection.push(["body.tenant.address.fullAddress", synthesized]);
+              }
+            }
+
             let sectionRenderIndex = 0;
 
             return (
@@ -957,7 +943,7 @@ export default function ConfiguracoesPage() {
                       {companyName}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      Instituicao #{institutionLabel} - Registro #{config.id}
+                      Instituição #{institutionLabel} - Registro #{config.id}
                     </span>
                   </div>
                 </AccordionTrigger>
@@ -965,9 +951,9 @@ export default function ConfiguracoesPage() {
                   <div className="pb-4">
                     <div className="flex items-center justify-between mb-4">
                       <div>
-                        <p className="text-sm font-semibold text-foreground">Dados do escritorio</p>
+                        <p className="text-sm font-semibold text-foreground">Dados do escritório</p>
                         <p className="text-xs text-muted-foreground">
-                          ID do registro: {config.id} | Instituicao #{institutionLabel}
+                          ID do registro: {config.id} | Instituição #{institutionLabel}
                         </p>
                       </div>
                       <Button

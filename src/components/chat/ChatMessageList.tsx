@@ -418,14 +418,16 @@ export const ChatMessageList = ({
           const isAgent = message.sender === "agente";
           const isGhostMessage = message.metadata?.type === "ghost";
 
-          // Label for sender
+          // Label for sender — show user name when available
           const senderLabel = isClient
             ? "Cliente"
-            : isBot
-              ? "Bot"
-              : isAgent
-                ? "Agente"
-                : "Sistema";
+            : message.senderName
+              ? message.senderName
+              : isBot
+                ? "Bot"
+                : isAgent
+                  ? "Agente"
+                  : "Sistema";
 
           return (
             <div

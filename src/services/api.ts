@@ -1080,16 +1080,13 @@ export const getBaserowCases = async ({
         pagesLoaded++;
       }
 
-      if (onPageLoaded && pagesLoaded > 0) {
-        onPageLoaded([...allResults], totalCount);
-      }
-
       // Append page 1 data only if we fetched ALL remaining pages (complete dataset)
       if (pagesLoaded >= totalPages - 1) {
         pushUnique(firstPageResults);
-        if (onPageLoaded) {
-          onPageLoaded([...allResults], totalCount);
-        }
+      }
+
+      if (onPageLoaded && pagesLoaded > 0) {
+        onPageLoaded([...allResults], totalCount);
       }
 
       return {

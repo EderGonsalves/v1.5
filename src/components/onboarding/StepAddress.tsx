@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
@@ -50,61 +50,17 @@ export const StepAddress = () => {
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
           <FormField
             control={form.control}
-            name="street"
+            name="fullAddress"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Rua</FormLabel>
+                <FormLabel>Endereço completo</FormLabel>
                 <FormControl>
-                  <Input placeholder="Rua Exemplo, 123" {...field} />
+                  <Input placeholder="Av. Paulista, 1000 - São Paulo/SP - CEP 01310-100" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
-
-          <div className="grid gap-4 sm:grid-cols-3">
-            <FormField
-              control={form.control}
-              name="city"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Cidade</FormLabel>
-                  <FormControl>
-                    <Input placeholder="São Paulo" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="state"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Estado</FormLabel>
-                  <FormControl>
-                    <Input placeholder="SP" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="zipCode"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>CEP</FormLabel>
-                  <FormControl>
-                    <Input placeholder="00000-000" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
 
           <StepActions
             submitLabel="Continuar"

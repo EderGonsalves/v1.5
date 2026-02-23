@@ -152,21 +152,7 @@ export const loginSchema = z.object({
 
 
 export const addressSchema = z.object({
-
-  street: z.string().min(2, "Informe a rua"),
-
-  city: z.string().min(2, "Informe a cidade"),
-
-  state: z.string().min(2, "Informe o estado"),
-
-  zipCode: z
-
-    .string()
-
-    .min(5, "CEP invAlido")
-
-    .max(9, "CEP deve ter no mAximo 9 caracteres"),
-
+  fullAddress: z.string().min(5, "Informe o endereço completo"),
 });
 
 
@@ -385,10 +371,7 @@ export const defaultAgentStages: AgentStage[] = [
 
 
 export const defaultAddress: AddressInfo = {
-  street: "Av. Paulista, 1000",
-  city: "São Paulo",
-  state: "SP",
-  zipCode: "01310-100",
+  fullAddress: "Av. Paulista, 1000 - São Paulo/SP - CEP 01310-100",
 };
 
 

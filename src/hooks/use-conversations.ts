@@ -201,6 +201,7 @@ export const useConversations = (institutionId: number | undefined) => {
         // Auto-assign unassigned cases (fire-and-forget)
         if (!silent) {
           fetch("/api/v1/cases/auto-assign", { method: "POST" }).catch(() => {});
+          fetch("/api/v1/cases/auto-merge", { method: "POST" }).catch(() => {});
         }
       } catch (err) {
         setError(

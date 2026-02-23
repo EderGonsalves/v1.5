@@ -27,16 +27,8 @@ export const buildBaserowRowFromPayload = (
   data["body.waba_phone_number"] =
     ensureString(payload.waba_phone_number ?? tenant.wabaPhoneNumber);
 
-  const address = tenant.address ?? {
-    street: "",
-    city: "",
-    state: "",
-    zipCode: "",
-  };
-  data["body.tenant.address.street"] = ensureString(address.street);
-  data["body.tenant.address.city"] = ensureString(address.city);
-  data["body.tenant.address.state"] = ensureString(address.state);
-  data["body.tenant.address.zipCode"] = ensureString(address.zipCode);
+  const address = tenant.address ?? { fullAddress: "" };
+  data["body.tenant.address.fullAddress"] = ensureString(address.fullAddress);
 
   const profile = agentSettings.profile;
   data["body.agentSettings.profile.agentName"] = ensureString(
@@ -81,6 +73,9 @@ export const buildBaserowRowFromPayload = (
   );
   data["perguntas"] = directedQuestionsList.join("\n");
   data["quantidadePerguntas"] = directedQuestionsList.length;
+
+  // Ativar IA por padrão no onboarding inicial
+  data["ia_ativada"] = "sim";
 
   return data;
 };
