@@ -6,7 +6,7 @@ import {
   fetchInstitutionDepartments,
   isGlobalAdmin,
 } from "@/services/departments";
-import { fetchInstitutionUsers } from "@/services/permissions";
+import { findUserInInstitution } from "@/services/permissions";
 
 export async function GET(request: NextRequest) {
   try {
@@ -29,18 +29,22 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Resolve current user's Baserow ID
+    // Resolve current user via robust triple matching (cached)
     const legacyId = resolveLegacyIdentifier(auth);
     const email = auth.payload?.email as string | undefined;
-    const users = await fetchInstitutionUsers(auth.institutionId);
 
-    const currentUser = users.find((u) => {
-      const uEmail = u.email.toLowerCase();
-      if (email && uEmail === email.toLowerCase()) return true;
-      if (legacyId && uEmail === legacyId.toLowerCase()) return true;
-      if (legacyId && String(u.id) === legacyId) return true;
-      return false;
-    });
+    const rawUser = legacyId
+      ? await findUserInInstitution(auth.institutionId, legacyId, email)
+      : null;
+
+    const currentUser = rawUser
+      ? {
+          id: rawUser.id,
+          name: (rawUser.name ?? "").trim(),
+          email: (rawUser.email ?? "").trim(),
+          isOfficeAdmin: rawUser.is_office_admin === true,
+        }
+      : null;
 
     if (!currentUser) {
       return NextResponse.json(

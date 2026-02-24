@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getRequestAuth, resolveLegacyIdentifier } from "@/lib/auth/session";
-import { fetchInstitutionUsers } from "@/services/permissions";
+import { findUserInInstitution, fetchInstitutionUsers } from "@/services/permissions";
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,15 +12,17 @@ export async function GET(request: NextRequest) {
 
     const legacyId = resolveLegacyIdentifier(auth);
     const email = (auth.payload?.email as string | undefined)?.toLowerCase();
-    const users = await fetchInstitutionUsers(auth.institutionId);
 
-    const currentUser = users.find((u) => {
-      const uEmail = u.email.toLowerCase();
-      if (email && uEmail === email) return true;
-      if (legacyId && uEmail === legacyId.toLowerCase()) return true;
-      if (legacyId && String(u.id) === legacyId) return true;
-      return false;
-    });
+    // Use robust triple matching (cached server-side)
+    const rawUser = legacyId
+      ? await findUserInInstitution(auth.institutionId, legacyId, email)
+      : null;
+
+    // Convert to public format
+    const users = await fetchInstitutionUsers(auth.institutionId);
+    const currentUser = rawUser
+      ? users.find((u) => u.id === rawUser.id) ?? null
+      : null;
 
     if (!currentUser) {
       return NextResponse.json(

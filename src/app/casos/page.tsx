@@ -38,7 +38,6 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { usePermissionsStatus } from "@/hooks/use-permissions-status";
 import { KanbanView } from "@/components/kanban/KanbanView";
 import {
   CaseStage,
@@ -187,12 +186,8 @@ export default function CasosPage() {
   } = useMyDepartments();
   const { departments: allDepartments } = useDepartments(normalizedInstitutionId ?? undefined);
 
-  // Permissões para criação de caso
-  const authSignature = data.auth
-    ? `${data.auth.institutionId}:${data.auth.legacyUserId ?? ""}`
-    : null;
-  const { isSysAdmin: permSysAdmin, isOfficeAdmin: permOfficeAdmin, enabledActions } = usePermissionsStatus(authSignature);
-  const canCreateCase = permSysAdmin || permOfficeAdmin || isMyGlobalAdmin || isMyOfficeAdmin || enabledActions.includes("criar_caso");
+  // Todos os usuários autenticados podem criar casos
+  const canCreateCase = !!normalizedInstitutionId;
 
   // Estado do modal de criação
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);

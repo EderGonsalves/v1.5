@@ -2,8 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getRequestAuth, resolveLegacyIdentifier } from "@/lib/auth/session";
-import { fetchPermissionsStatus } from "@/services/permissions";
-import { createBaserowCase, getBaserowCases } from "@/services/api";
+import { findUserInInstitution } from "@/services/permissions";
+import { createBaserowCase, baserowGet } from "@/services/api";
+
+const BASEROW_API_URL =
+  process.env.BASEROW_API_URL || process.env.NEXT_PUBLIC_BASEROW_API_URL || "";
+const BASEROW_CASES_TABLE_ID =
+  Number(
+    process.env.NEXT_PUBLIC_BASEROW_CASES_TABLE_ID ||
+      process.env.BASEROW_CASES_TABLE_ID,
+  ) || 225;
 
 const createCaseSchema = z.object({
   customerName: z.string().min(1, "Nome é obrigatório").max(200),
@@ -17,25 +25,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
     }
 
+    // All authenticated users can create cases
     const legacyUserId = resolveLegacyIdentifier(auth);
-    if (!legacyUserId) {
-      return NextResponse.json(
-        { error: "Identificador do usuário ausente" },
-        { status: 401 },
-      );
-    }
+    const email = typeof auth.payload?.email === "string"
+      ? auth.payload.email
+      : undefined;
 
-    // Check permissions: admin always allowed, regular users need "criar_caso" action
-    const status = await fetchPermissionsStatus(auth.institutionId, legacyUserId);
-    const isAdmin = status.isSysAdmin || status.isGlobalAdmin || status.isOfficeAdmin;
-    const canCreateCase = isAdmin || (status.enabledActions ?? []).includes("criar_caso");
-
-    if (!canCreateCase) {
-      return NextResponse.json(
-        { error: "Sem permissão para criar casos" },
-        { status: 403 },
-      );
-    }
+    // Resolve current user for metadata (cached, non-blocking)
+    const currentUser = legacyUserId
+      ? await findUserInInstitution(auth.institutionId, legacyUserId, email)
+      : null;
 
     const body = await request.json();
     const parsed = createCaseSchema.safeParse(body);
@@ -49,34 +48,39 @@ export async function POST(request: NextRequest) {
     const phone = parsed.data.customerPhone.trim();
     const phoneDigits = phone.replace(/\D/g, "");
 
-    // Verificar se já existe caso com o mesmo telefone para esta instituição
+    // Duplicate check via server-side Baserow filter (fast, single filtered query)
     if (phoneDigits.length >= 8) {
-      const existing = await getBaserowCases({
-        institutionId: auth.institutionId,
-        pageSize: 1,
+      const params = new URLSearchParams({
+        user_field_names: "true",
+        size: "1",
+        filter__CustumerPhone__contains: phoneDigits.slice(-8),
       });
+      if (auth.institutionId !== 4) {
+        params.set("filter__InstitutionID__equal", String(auth.institutionId));
+      }
+      const dupUrl = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASES_TABLE_ID}/?${params.toString()}`;
 
-      const duplicate = existing.results.find((row) => {
-        const rowPhone = (row.CustumerPhone ?? "").replace(/\D/g, "");
-        return rowPhone.length >= 8 && (
-          rowPhone === phoneDigits ||
-          rowPhone.endsWith(phoneDigits) ||
-          phoneDigits.endsWith(rowPhone)
-        );
-      });
-
-      if (duplicate) {
-        return NextResponse.json(
-          {
-            error: "Já existe um caso com este telefone",
-            existingCase: { id: duplicate.id, customerName: duplicate.CustumerName },
-          },
-          { status: 409 },
-        );
+      try {
+        const dupResp = await baserowGet<{ results?: Array<{ id: number; CustumerName?: string }> }>(dupUrl, 10000);
+        const duplicate = dupResp.data?.results?.[0];
+        if (duplicate) {
+          return NextResponse.json(
+            {
+              error: "Já existe um caso com este telefone",
+              existingCase: { id: duplicate.id, customerName: duplicate.CustumerName },
+            },
+            { status: 409 },
+          );
+        }
+      } catch {
+        // If duplicate check fails, proceed with creation anyway
       }
     }
 
-    const userName = (typeof auth.payload?.name === "string" ? auth.payload.name : "") || legacyUserId;
+    const userName = currentUser?.name
+      || (typeof auth.payload?.name === "string" ? auth.payload.name : "")
+      || legacyUserId
+      || "Usuário";
 
     const newCase = await createBaserowCase({
       CustumerName: parsed.data.customerName.trim(),
@@ -84,9 +88,9 @@ export async function POST(request: NextRequest) {
       InstitutionID: auth.institutionId,
       Data: new Date().toISOString(),
       responsavel: userName,
-      assigned_to_user_id: status.userId || null,
+      assigned_to_user_id: currentUser?.id || null,
       case_source: "manual",
-      created_by_user_id: status.userId || null,
+      created_by_user_id: currentUser?.id || null,
       created_by_user_name: userName,
     });
 

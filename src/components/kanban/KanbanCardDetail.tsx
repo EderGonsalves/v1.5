@@ -107,6 +107,7 @@ export function KanbanCardDetail({
   const [isLoadingClient, setIsLoadingClient] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [responsavel, setResponsavel] = useState("");
   const [selectedDeptId, setSelectedDeptId] = useState<number | null>(null);
   const [deptUsers, setDeptUsers] = useState<UserPublicRow[] | null>(null);
@@ -221,6 +222,7 @@ export function KanbanCardDetail({
     if (!caseData) return;
 
     setIsSaving(true);
+    setSaveError(null);
     try {
       const institutionId = caseData.InstitutionID ||
         (typeof caseData["body.auth.institutionId"] === "number"
@@ -309,6 +311,9 @@ export function KanbanCardDetail({
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (error) {
       console.error("Erro ao salvar:", error);
+      setSaveError(
+        error instanceof Error ? error.message : "Erro ao salvar alterações",
+      );
     } finally {
       setIsSaving(false);
     }
@@ -563,7 +568,12 @@ export function KanbanCardDetail({
                 </div>
 
                 {/* Save Button */}
-                <div className="flex justify-end pt-6">
+                <div className="flex flex-col items-end gap-2 pt-6">
+                  {saveError && (
+                    <p className="text-sm text-red-600 dark:text-red-400">
+                      {saveError}
+                    </p>
+                  )}
                   <Button
                     onClick={handleSave}
                     disabled={isSaving}
@@ -765,7 +775,12 @@ export function KanbanCardDetail({
                   </div>
 
                   {/* Save Button */}
-                  <div className="flex justify-end pt-2 pb-2">
+                  <div className="flex flex-col items-end gap-2 pt-2 pb-2">
+                    {saveError && (
+                      <p className="text-sm text-red-600 dark:text-red-400">
+                        {saveError}
+                      </p>
+                    )}
                     <Button
                       onClick={handleSave}
                       disabled={isSaving}

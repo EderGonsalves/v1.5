@@ -18,9 +18,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const email = typeof auth.payload?.email === "string"
+      ? auth.payload.email
+      : undefined;
+
     const status = await fetchPermissionsStatus(
       auth.institutionId,
       legacyUserId,
+      email,
     );
 
     return NextResponse.json(status, { status: 200 });

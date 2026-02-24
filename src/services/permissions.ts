@@ -19,6 +19,16 @@ const GLOBAL_ADMIN_INSTITUTION_ID = 4;
 const isGlobalAdmin = (institutionId: number) =>
   institutionId === GLOBAL_ADMIN_INSTITUTION_ID;
 
+// ---------------------------------------------------------------------------
+// Server-side cache for raw user rows (shared across API routes)
+// ---------------------------------------------------------------------------
+
+const rawUsersCacheMap = new Map<
+  number,
+  { rows: BaserowUserRow[]; ts: number }
+>();
+const RAW_USERS_CACHE_TTL = 600_000; // 10 minutes
+
 const DEFAULT_TABLES = {
   users: 236,
   roles: 237,
@@ -294,6 +304,85 @@ const extractLinkIds = (value: unknown): number[] => {
   return [];
 };
 
+// ---------------------------------------------------------------------------
+// Cached raw user fetch + robust finder
+// ---------------------------------------------------------------------------
+
+const fetchInstitutionUsersRaw = async (
+  institutionId: number,
+): Promise<BaserowUserRow[]> => {
+  const cached = rawUsersCacheMap.get(institutionId);
+  if (cached && Date.now() - cached.ts < RAW_USERS_CACHE_TTL) {
+    return cached.rows;
+  }
+  const params = new URLSearchParams({
+    user_field_names: "true",
+    size: "200",
+  });
+  withInstitutionFilter(params, institutionId);
+  const rows = await fetchTableRows<BaserowUserRow>(TABLE_IDS.users, params);
+  rawUsersCacheMap.set(institutionId, { rows, ts: Date.now() });
+  return rows;
+};
+
+/**
+ * Robust user finder with triple matching.
+ * Priority: legacy_user_id field → Baserow row.id → email → legacyId-as-email.
+ */
+export const findUserInInstitution = async (
+  institutionId: number,
+  legacyUserId: string,
+  email?: string,
+): Promise<BaserowUserRow | null> => {
+  const users = await fetchInstitutionUsersRaw(institutionId);
+  const legacyLower = legacyUserId.toLowerCase();
+  const emailLower = email?.trim().toLowerCase();
+
+  // 1. Match by legacy_user_id column
+  const byLegacy = users.find(
+    (u) =>
+      u.legacy_user_id &&
+      u.legacy_user_id.toLowerCase() === legacyLower,
+  );
+  if (byLegacy) return byLegacy;
+
+  // 2. Match by Baserow row ID (legacyUserId is often String(row.id))
+  const numericId = Number(legacyUserId);
+  if (Number.isFinite(numericId) && numericId > 0) {
+    const byId = users.find((u) => u.id === numericId);
+    if (byId) return byId;
+  }
+
+  // 3. Match by email from auth payload
+  if (emailLower) {
+    const byEmail = users.find(
+      (u) => u.email && u.email.toLowerCase() === emailLower,
+    );
+    if (byEmail) return byEmail;
+  }
+
+  // 4. legacyUserId might itself be an email
+  if (legacyLower.includes("@")) {
+    const byLegacyEmail = users.find(
+      (u) => u.email && u.email.toLowerCase() === legacyLower,
+    );
+    if (byLegacyEmail) return byLegacyEmail;
+  }
+
+  return null;
+};
+
+/**
+ * Invalidate the server-side users cache (call after user CRUD).
+ */
+export const invalidateUsersCache = (institutionId?: number): void => {
+  if (institutionId !== undefined) {
+    rawUsersCacheMap.delete(institutionId);
+  } else {
+    rawUsersCacheMap.clear();
+  }
+};
+
 const buildUserPayload = (params: SyncUserParams) => {
   const payload: Record<string, unknown> = {
     [INSTITUTION_FIELD]: params.institutionId,
@@ -401,8 +490,9 @@ const fetchRolePermissionRows = async (institutionId: number) => {
 const loadCurrentUserContext = async (
   institutionId: number,
   legacyUserId: string,
+  email?: string,
 ) => {
-  const user = await findUserByLegacy(institutionId, legacyUserId);
+  const user = await findUserInInstitution(institutionId, legacyUserId, email);
   if (!user) {
     throw new Error("Usuário não encontrado na base de permissões");
   }
@@ -599,10 +689,62 @@ const getEnabledPagesForInstitution = async (
     .map((row) => row.path as string);
 };
 
+// ---------------------------------------------------------------------------
+// Server-side cache for full permissions status result
+// ---------------------------------------------------------------------------
+
+type PermissionsStatusResult = {
+  isSysAdmin: boolean;
+  isGlobalAdmin: boolean;
+  isOfficeAdmin: boolean;
+  userId: number;
+  enabledPages: string[];
+  enabledActions: string[];
+};
+
+const permissionsStatusCacheMap = new Map<
+  string,
+  { result: PermissionsStatusResult; ts: number }
+>();
+const PERMISSIONS_STATUS_CACHE_TTL = 600_000; // 10 minutes
+
+export const invalidatePermissionsStatusCache = (
+  institutionId?: number,
+  legacyUserId?: string,
+): void => {
+  if (institutionId !== undefined && legacyUserId) {
+    permissionsStatusCacheMap.delete(`${institutionId}:${legacyUserId}`);
+  } else {
+    permissionsStatusCacheMap.clear();
+  }
+};
+
 export const fetchPermissionsStatus = async (
   institutionId: number,
   legacyUserId: string,
-) => {
+  email?: string,
+): Promise<PermissionsStatusResult> => {
+  const cacheKey = `${institutionId}:${legacyUserId}`;
+  const cached = permissionsStatusCacheMap.get(cacheKey);
+  if (cached && Date.now() - cached.ts < PERMISSIONS_STATUS_CACHE_TTL) {
+    return cached.result;
+  }
+
+  const result = await _fetchPermissionsStatusUncached(
+    institutionId,
+    legacyUserId,
+    email,
+  );
+
+  permissionsStatusCacheMap.set(cacheKey, { result, ts: Date.now() });
+  return result;
+};
+
+const _fetchPermissionsStatusUncached = async (
+  institutionId: number,
+  legacyUserId: string,
+  email?: string,
+): Promise<PermissionsStatusResult> => {
   const globalAdmin = isGlobalAdmin(institutionId);
 
   const allActionKeys = USER_ACTION_FEATURES.map((f) => f.key);
@@ -621,7 +763,7 @@ export const fetchPermissionsStatus = async (
   // Run institution pages + user context in parallel
   const [enabledPages, ctxResult] = await Promise.all([
     getEnabledPagesForInstitution(institutionId),
-    loadCurrentUserContext(institutionId, legacyUserId)
+    loadCurrentUserContext(institutionId, legacyUserId, email)
       .then((ctx) => ({
         isSysAdmin: ctx.isSysAdmin,
         isOfficeAdmin: isActiveValue(ctx.user.is_office_admin),
@@ -1077,12 +1219,7 @@ const toUserPublic = (row: BaserowUserRow): UserPublicRow => {
 export const fetchInstitutionUsers = async (
   institutionId: number,
 ): Promise<UserPublicRow[]> => {
-  const params = new URLSearchParams({
-    user_field_names: "true",
-    size: "200",
-  });
-  withInstitutionFilter(params, institutionId);
-  const rows = await fetchTableRows<BaserowUserRow>(TABLE_IDS.users, params);
+  const rows = await fetchInstitutionUsersRaw(institutionId);
   return rows.map(toUserPublic);
 };
 
@@ -1162,6 +1299,18 @@ export const createInstitutionUser = async (
   if (data.oab) payload.OAB = data.oab.trim();
 
   const row = await createRow<BaserowUserRow>(TABLE_IDS.users, payload);
+
+  // Set legacy_user_id to row ID so findUserByLegacy works after login
+  if (!row.legacy_user_id) {
+    const client = baserowClient();
+    await client.patch(
+      `/database/rows/table/${TABLE_IDS.users}/${row.id}/?user_field_names=true`,
+      { legacy_user_id: String(row.id) },
+    );
+    row.legacy_user_id = String(row.id);
+  }
+
+  invalidateUsersCache(institutionId);
   return toUserPublic(row);
 };
 
@@ -1222,6 +1371,7 @@ export const updateInstitutionUser = async (
     `/database/rows/table/${TABLE_IDS.users}/${userId}/?user_field_names=true`,
     payload,
   );
+  invalidateUsersCache(institutionId);
   return toUserPublic(response.data);
 };
 
@@ -1241,6 +1391,7 @@ export const deleteInstitutionUser = async (
     throw new Error("Usuário não encontrado nesta instituição.");
   }
   await deleteRow(TABLE_IDS.users, userId);
+  invalidateUsersCache(institutionId);
 };
 
 export const authenticateViaUsersTable = async (
@@ -1285,4 +1436,41 @@ export const authenticateViaUsersTable = async (
   }
 
   return null;
+};
+
+// ---------------------------------------------------------------------------
+// Backfill: set legacy_user_id = String(row.id) for users missing it
+// ---------------------------------------------------------------------------
+
+export const backfillLegacyUserIds = async (): Promise<{
+  updated: number;
+  skipped: number;
+}> => {
+  const client = baserowClient();
+  const params = new URLSearchParams({
+    user_field_names: "true",
+    size: "200",
+  });
+
+  const rows = await fetchTableRows<BaserowUserRow>(TABLE_IDS.users, params);
+
+  let updated = 0;
+  let skipped = 0;
+
+  for (const row of rows) {
+    const current = (row.legacy_user_id ?? "").trim();
+    if (current) {
+      skipped++;
+      continue;
+    }
+
+    await client.patch(
+      `/database/rows/table/${TABLE_IDS.users}/${row.id}/?user_field_names=true`,
+      { legacy_user_id: String(row.id) },
+    );
+    updated++;
+  }
+
+  invalidateUsersCache();
+  return { updated, skipped };
 };

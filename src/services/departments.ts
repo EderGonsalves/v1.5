@@ -181,19 +181,49 @@ const toUserDepartmentPublic = (
 };
 
 // ---------------------------------------------------------------------------
+// Server-side cache for departments (2 min TTL)
+// ---------------------------------------------------------------------------
+
+const deptCacheMap = new Map<number, { rows: DepartmentPublicRow[]; ts: number }>();
+const userDeptCacheMap = new Map<string, { ids: number[]; ts: number }>();
+const DEPT_CACHE_TTL = 600_000; // 10 minutes
+
+export const invalidateDepartmentsCache = (institutionId?: number): void => {
+  if (institutionId !== undefined) {
+    deptCacheMap.delete(institutionId);
+    // Clear user-department entries for this institution
+    for (const key of userDeptCacheMap.keys()) {
+      if (key.endsWith(`:${institutionId}`)) {
+        userDeptCacheMap.delete(key);
+      }
+    }
+  } else {
+    deptCacheMap.clear();
+    userDeptCacheMap.clear();
+  }
+};
+
+// ---------------------------------------------------------------------------
 // Department CRUD
 // ---------------------------------------------------------------------------
 
 export const fetchInstitutionDepartments = async (
   institutionId: number,
 ): Promise<DepartmentPublicRow[]> => {
+  const cached = deptCacheMap.get(institutionId);
+  if (cached && Date.now() - cached.ts < DEPT_CACHE_TTL) {
+    return cached.rows;
+  }
+
   const params = new URLSearchParams();
   withInstitutionFilter(params, institutionId);
   const rows = await fetchTableRows<BaserowDepartmentRow>(
     TABLE_IDS.departments,
     params,
   );
-  return rows.filter((r) => isActiveValue(r.is_active)).map(toDepartmentPublic);
+  const result = rows.filter((r) => isActiveValue(r.is_active)).map(toDepartmentPublic);
+  deptCacheMap.set(institutionId, { rows: result, ts: Date.now() });
+  return result;
 };
 
 export const fetchAllDepartments = async (): Promise<DepartmentPublicRow[]> => {
@@ -253,6 +283,7 @@ export const createInstitutionDepartment = async (
     TABLE_IDS.departments,
     payload,
   );
+  invalidateDepartmentsCache(institutionId);
   return toDepartmentPublic(row);
 };
 
@@ -303,6 +334,7 @@ export const updateInstitutionDepartment = async (
     `/database/rows/table/${TABLE_IDS.departments}/${departmentId}/?user_field_names=true`,
     payload,
   );
+  invalidateDepartmentsCache(institutionId);
   return toDepartmentPublic(response.data);
 };
 
@@ -328,6 +360,7 @@ export const deleteInstitutionDepartment = async (
     `/database/rows/table/${TABLE_IDS.departments}/${departmentId}/?user_field_names=true`,
     { is_active: false, updated_at: new Date().toISOString() },
   );
+  invalidateDepartmentsCache(institutionId);
 };
 
 // ---------------------------------------------------------------------------
@@ -362,6 +395,12 @@ export const getUserDepartmentIds = async (
   userId: number,
   institutionId: number,
 ): Promise<number[]> => {
+  const cacheKey = `${userId}:${institutionId}`;
+  const cached = userDeptCacheMap.get(cacheKey);
+  if (cached && Date.now() - cached.ts < DEPT_CACHE_TTL) {
+    return cached.ids;
+  }
+
   const params = new URLSearchParams();
   params.append("filter__user_id__equal", String(userId));
   withInstitutionFilter(params, institutionId);
@@ -369,7 +408,9 @@ export const getUserDepartmentIds = async (
     TABLE_IDS.userDepartments,
     params,
   );
-  return rows.map((r) => Number(r.department_id)).filter((id) => id > 0);
+  const ids = rows.map((r) => Number(r.department_id)).filter((id) => id > 0);
+  userDeptCacheMap.set(cacheKey, { ids, ts: Date.now() });
+  return ids;
 };
 
 export const setUserDepartments = async (
@@ -428,6 +469,8 @@ export const setUserDepartments = async (
       }
     }
   }
+
+  invalidateDepartmentsCache(institutionId);
 };
 
 export const setDepartmentUsers = async (
@@ -468,6 +511,8 @@ export const setDepartmentUsers = async (
       created_at: new Date().toISOString(),
     });
   }
+
+  invalidateDepartmentsCache(institutionId);
 };
 
 // ---------------------------------------------------------------------------
