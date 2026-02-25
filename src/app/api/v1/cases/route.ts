@@ -4,6 +4,10 @@ import { z } from "zod";
 import { getRequestAuth, resolveLegacyIdentifier } from "@/lib/auth/session";
 import { findUserInInstitution } from "@/services/permissions";
 import { createBaserowCase, baserowGet } from "@/services/api";
+import { db } from "@/lib/db";
+import { cases as casesTable } from "@/lib/db/schema/cases";
+import { like, eq, and } from "drizzle-orm";
+import { useDirectDb, tryDrizzle } from "@/lib/db/repository";
 
 const BASEROW_API_URL =
   process.env.BASEROW_API_URL || process.env.NEXT_PUBLIC_BASEROW_API_URL || "";
@@ -48,29 +52,52 @@ export async function POST(request: NextRequest) {
     const phone = parsed.data.customerPhone.trim();
     const phoneDigits = phone.replace(/\D/g, "");
 
-    // Duplicate check via server-side Baserow filter (fast, single filtered query)
+    // Duplicate check via server-side filter (fast, single filtered query)
     if (phoneDigits.length >= 8) {
-      const params = new URLSearchParams({
-        user_field_names: "true",
-        size: "1",
-        filter__CustumerPhone__contains: phoneDigits.slice(-8),
-      });
-      if (auth.institutionId !== 4) {
-        params.set("filter__InstitutionID__equal", String(auth.institutionId));
-      }
-      const dupUrl = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASES_TABLE_ID}/?${params.toString()}`;
-
       try {
-        const dupResp = await baserowGet<{ results?: Array<{ id: number; CustumerName?: string }> }>(dupUrl, 10000);
-        const duplicate = dupResp.data?.results?.[0];
-        if (duplicate) {
-          return NextResponse.json(
-            {
-              error: "Já existe um caso com este telefone",
-              existingCase: { id: duplicate.id, customerName: duplicate.CustumerName },
-            },
-            { status: 409 },
-          );
+        if (useDirectDb("api")) {
+          const _dr = await tryDrizzle(async () => {
+            const conditions = [like(casesTable.custumerPhone, `%${phoneDigits.slice(-8)}%`)];
+            if (auth.institutionId !== 4) {
+              conditions.push(eq(casesTable.institutionID, String(auth.institutionId)));
+            }
+            const [dup] = await db
+              .select({ id: casesTable.id, CustumerName: casesTable.custumerName })
+              .from(casesTable)
+              .where(and(...conditions))
+              .limit(1);
+            if (dup) {
+              return NextResponse.json(
+                {
+                  error: "Já existe um caso com este telefone",
+                  existingCase: { id: dup.id, customerName: dup.CustumerName },
+                },
+                { status: 409 },
+              );
+            }
+          });
+          if (_dr !== undefined) return _dr;
+        } else {
+          const params = new URLSearchParams({
+            user_field_names: "true",
+            size: "1",
+            filter__CustumerPhone__contains: phoneDigits.slice(-8),
+          });
+          if (auth.institutionId !== 4) {
+            params.set("filter__InstitutionID__equal", String(auth.institutionId));
+          }
+          const dupUrl = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASES_TABLE_ID}/?${params.toString()}`;
+          const dupResp = await baserowGet<{ results?: Array<{ id: number; CustumerName?: string }> }>(dupUrl, 10000);
+          const duplicate = dupResp.data?.results?.[0];
+          if (duplicate) {
+            return NextResponse.json(
+              {
+                error: "Já existe um caso com este telefone",
+                existingCase: { id: duplicate.id, customerName: duplicate.CustumerName },
+              },
+              { status: 409 },
+            );
+          }
         }
       } catch {
         // If duplicate check fails, proceed with creation anyway

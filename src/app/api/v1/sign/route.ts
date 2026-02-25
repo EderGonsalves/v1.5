@@ -14,11 +14,9 @@ import {
 } from "@/services/sign-envelopes";
 import { getTemplateById, readTemplateFile } from "@/services/doc-templates";
 import { convertDocxToHtml } from "@/services/docx-converter";
-import { baserowPatch, getBaserowConfigs } from "@/services/api";
+import { updateBaserowCase } from "@/services/api";
 
 const APP_URL = process.env.APP_URL ?? "";
-const BASEROW_API_URL = process.env.BASEROW_API_URL ?? "";
-const CASES_TABLE_ID = process.env.BASEROW_CASES_TABLE_ID ?? "225";
 
 // GET /api/v1/sign?caseId=123 — list envelopes for a case
 export async function GET(request: NextRequest) {
@@ -223,8 +221,7 @@ export async function POST(request: NextRequest) {
 
     // 7. Update case with sign info
     try {
-      const caseUrl = `${BASEROW_API_URL}/database/rows/table/${CASES_TABLE_ID}/${caseId}/?user_field_names=true`;
-      await baserowPatch(caseUrl, {
+      await updateBaserowCase(caseId, {
         sign_envelope_id: envelope.id,
         sign_status: "sent",
       });

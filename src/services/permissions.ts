@@ -1,4 +1,18 @@
 import axios from "axios";
+import { eq, and } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { prepared } from "@/lib/db/prepared";
+import { useDirectDb, tryDrizzle } from "@/lib/db/repository";
+import { users as usersTable } from "@/lib/db/schema/users";
+import { roles as rolesTable } from "@/lib/db/schema/roles";
+import { menu as menuTable } from "@/lib/db/schema/menu";
+import { permissions as permissionsTable } from "@/lib/db/schema/permissions";
+import { rolePermissions as rolePermissionsTable } from "@/lib/db/schema/rolePermissions";
+import { userRoles as userRolesTable } from "@/lib/db/schema/userRoles";
+import { userFeatures as userFeaturesTable } from "@/lib/db/schema/userFeatures";
+// auditPermissions import kept for future use if needed
+// import { auditPermissions as auditPermissionsTable } from "@/lib/db/schema/auditPermissions";
+import { config as configTable } from "@/lib/db/schema/config";
 
 import {
   SYSTEM_FEATURES,
@@ -305,12 +319,104 @@ const extractLinkIds = (value: unknown): number[] => {
 };
 
 // ---------------------------------------------------------------------------
+// Drizzle row mappers
+// ---------------------------------------------------------------------------
+
+function mapUserRow(r: typeof usersTable.$inferSelect): BaserowUserRow {
+  return {
+    id: r.id,
+    legacy_user_id: r.legacyUserId ?? undefined,
+    email: r.email ?? undefined,
+    name: r.name ?? undefined,
+    password: r.password ?? undefined,
+    phone: r.phone ?? undefined,
+    OAB: r.oab ?? undefined,
+    is_active: r.isActive ?? undefined,
+    is_office_admin: r.isOfficeAdmin ?? undefined,
+    receives_cases: r.receivesCases ?? undefined,
+    created_at: r.createdAt?.toISOString() ?? undefined,
+    updated_at: r.updatedAt?.toISOString() ?? undefined,
+    institution_id: r.institutionId ? Number(r.institutionId) : undefined,
+  };
+}
+
+function mapRoleRow(r: typeof rolesTable.$inferSelect): RoleRow {
+  return {
+    id: r.id,
+    name: r.name ?? undefined,
+    description: r.description ?? undefined,
+    is_system: r.isSystem ?? undefined,
+    institution_id: r.institutionId ? Number(r.institutionId) : undefined,
+  };
+}
+
+function mapPermissionRow(r: typeof permissionsTable.$inferSelect): PermissionRow {
+  return {
+    id: r.id,
+    code: r.code ?? undefined,
+    description: r.description ?? undefined,
+    // permissionsTable doesn't have menuId in PG schema — this field
+    // comes from a link_row that was skipped. For now return undefined.
+    menu_id: undefined,
+  };
+}
+
+function mapMenuRow(r: typeof menuTable.$inferSelect): MenuRow {
+  return {
+    id: r.id,
+    label: r.label ?? undefined,
+    path: r.path ?? undefined,
+    parent_id: r.parentId as LinkCell[] | null | undefined,
+    display_order: r.displayOrder ? Number(r.displayOrder) : undefined,
+    is_active: r.isActive ?? undefined,
+    institution_id: r.institutionId ? Number(r.institutionId) : undefined,
+  };
+}
+
+function mapRolePermissionRow(r: typeof rolePermissionsTable.$inferSelect): RolePermissionRow {
+  return {
+    id: r.id,
+    role_id: r.roleId as LinkCell[] | null | undefined,
+    permission_id: r.permissionId as LinkCell[] | null | undefined,
+  };
+}
+
+function mapUserRoleRow(r: typeof userRolesTable.$inferSelect): UserRoleRow {
+  return {
+    id: r.id,
+    user_id: r.userId as LinkCell[] | null | undefined,
+    role_id: r.roleId as LinkCell[] | null | undefined,
+  };
+}
+
+function mapUserFeatureRow(r: typeof userFeaturesTable.$inferSelect): UserFeatureRow {
+  return {
+    id: r.id,
+    user_id: r.userId ? Number(r.userId) : 0,
+    institution_id: r.institutionId ? Number(r.institutionId) : 0,
+    feature_key: r.featureKey ?? "",
+    is_enabled: r.isEnabled ?? false,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Cached raw user fetch + robust finder
 // ---------------------------------------------------------------------------
 
 const fetchInstitutionUsersRaw = async (
   institutionId: number,
 ): Promise<BaserowUserRow[]> => {
+  // --- Drizzle branch (prepared statement) ---
+  if (useDirectDb("permissions")) {
+    const _dr = await tryDrizzle(async () => {
+      const rows = await prepared.getUsersByInstitution.execute({
+        institutionId: String(institutionId),
+      });
+      return rows.map(mapUserRow);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+  // --- Baserow fallback ---
   const cached = rawUsersCacheMap.get(institutionId);
   if (cached && Date.now() - cached.ts < RAW_USERS_CACHE_TTL) {
     return cached.rows;
@@ -404,6 +510,27 @@ const buildUserPayload = (params: SyncUserParams) => {
 };
 
 const findExistingUser = async (params: SyncUserParams) => {
+  // --- Drizzle branch (prepared statements) ---
+  if (useDirectDb("permissions")) {
+    const _dr = await tryDrizzle(async () => {
+      const byLegacy = await prepared.getUserByLegacyAndInstitution.execute({
+        legacyUserId: params.legacyUserId,
+        institutionId: String(params.institutionId),
+      });
+      if (byLegacy.length > 0) return mapUserRow(byLegacy[0]);
+  
+      if (params.email) {
+        const byEmail = await prepared.getUserByEmailAndInstitution.execute({
+          email: params.email.trim().toLowerCase(),
+          institutionId: String(params.institutionId),
+        });
+        if (byEmail.length > 0) return mapUserRow(byEmail[0]);
+      }
+      return null;
+    });
+    if (_dr !== undefined) return _dr;
+  }
+  // --- Baserow fallback ---
   // 1. Buscar por legacy_user_id (prioridade)
   const legacyParams = new URLSearchParams({
     user_field_names: "true",
@@ -448,6 +575,41 @@ export const syncUserRecord = async (
   params: SyncUserParams,
 ): Promise<SyncUserResult> => {
   const existing = await findExistingUser(params);
+
+  // --- Drizzle branch ---
+  if (useDirectDb("permissions")) {
+    const _dr = await tryDrizzle(async () => {
+      const setFields: Partial<Record<string, unknown>> = {
+        institutionId: String(params.institutionId),
+        legacyUserId: params.legacyUserId,
+      };
+      if (params.email) setFields.email = params.email.trim().toLowerCase();
+      if (params.name) setFields.name = params.name.trim();
+      if (params.password) setFields.password = params.password;
+      if (typeof params.isActive === "boolean") setFields.isActive = params.isActive;
+  
+      if (existing) {
+        const updated = await db
+          .update(usersTable)
+          .set({ ...setFields, updatedAt: new Date() } as typeof usersTable.$inferInsert)
+          .where(eq(usersTable.id, existing.id))
+          .returning();
+        return { user: mapUserRow(updated[0]), created: false };
+      }
+  
+      const inserted = await db
+        .insert(usersTable)
+        .values({
+          ...setFields,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        } as typeof usersTable.$inferInsert)
+        .returning();
+      return { user: mapUserRow(inserted[0]), created: true };
+    });
+    if (_dr !== undefined) return _dr;
+  }
+  // --- Baserow fallback ---
   const payload = buildUserPayload(params);
 
   if (existing) {
@@ -465,6 +627,24 @@ const findUserByLegacy = async (
   institutionId: number,
   legacyUserId: string,
 ) => {
+  // --- Drizzle branch ---
+  if (useDirectDb("permissions")) {
+    const _dr = await tryDrizzle(async () => {
+      const rows = await db
+        .select()
+        .from(usersTable)
+        .where(
+          and(
+            eq(usersTable.legacyUserId, legacyUserId),
+            eq(usersTable.institutionId, String(institutionId)),
+          ),
+        )
+        .limit(1);
+      return rows.length > 0 ? mapUserRow(rows[0]) : null;
+    });
+    if (_dr !== undefined) return _dr;
+  }
+  // --- Baserow fallback ---
   const params = new URLSearchParams({
     user_field_names: "true",
     size: "1",
@@ -476,15 +656,77 @@ const findUserByLegacy = async (
 };
 
 const fetchUserRoleRows = async (institutionId: number) => {
+  // --- Drizzle branch ---
+  if (useDirectDb("permissions")) {
+    const _dr = await tryDrizzle(async () => {
+      // userRoles table (241) has no institution_id column in PG.
+      // Fetch all rows; calling code filters by user/role IDs.
+      const rows = await db.select().from(userRolesTable);
+      return rows.map(mapUserRoleRow);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+  // --- Baserow fallback ---
   const params = new URLSearchParams({ user_field_names: "true", size: "200" });
   withInstitutionFilter(params, institutionId);
   return fetchTableRows<UserRoleRow>(TABLE_IDS.userRoles, params);
 };
 
 const fetchRolePermissionRows = async (institutionId: number) => {
+  // --- Drizzle branch ---
+  if (useDirectDb("permissions")) {
+    const _dr = await tryDrizzle(async () => {
+      // rolePermissions table (240) has no institution_id column in PG.
+      // Fetch all rows; calling code filters by role/permission IDs.
+      const rows = await db.select().from(rolePermissionsTable);
+      return rows.map(mapRolePermissionRow);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+  // --- Baserow fallback ---
   const params = new URLSearchParams({ user_field_names: "true", size: "200" });
   withInstitutionFilter(params, institutionId);
   return fetchTableRows<RolePermissionRow>(TABLE_IDS.rolePermissions, params);
+};
+
+const fetchRoleRowsForInstitution = async (
+  institutionId: number,
+): Promise<RoleRow[]> => {
+  // --- Drizzle branch ---
+  if (useDirectDb("permissions")) {
+    const _dr = await tryDrizzle(async () => {
+      const rows = await db
+        .select()
+        .from(rolesTable)
+        .where(eq(rolesTable.institutionId, String(institutionId)));
+      return rows.map(mapRoleRow);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+  // --- Baserow fallback ---
+  const p = new URLSearchParams({ user_field_names: "true", size: "200" });
+  withInstitutionFilter(p, institutionId);
+  return fetchTableRows<RoleRow>(TABLE_IDS.roles, p);
+};
+
+const fetchPermissionRowsForInstitution = async (
+  institutionId: number,
+): Promise<PermissionRow[]> => {
+  // --- Drizzle branch ---
+  if (useDirectDb("permissions")) {
+    const _dr = await tryDrizzle(async () => {
+      const rows = await db
+        .select()
+        .from(permissionsTable)
+        .where(eq(permissionsTable.institutionId, String(institutionId)));
+      return rows.map(mapPermissionRow);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+  // --- Baserow fallback ---
+  const p = new URLSearchParams({ user_field_names: "true", size: "200" });
+  withInstitutionFilter(p, institutionId);
+  return fetchTableRows<PermissionRow>(TABLE_IDS.permissions, p);
 };
 
 const loadCurrentUserContext = async (
@@ -498,11 +740,7 @@ const loadCurrentUserContext = async (
   }
 
   const [roles, userRoleRows] = await Promise.all([
-    fetchTableRows<RoleRow>(TABLE_IDS.roles, (() => {
-      const p = new URLSearchParams({ user_field_names: "true", size: "200" });
-      withInstitutionFilter(p, institutionId);
-      return p;
-    })()),
+    fetchRoleRowsForInstitution(institutionId),
     fetchUserRoleRows(institutionId),
   ]);
 
@@ -568,11 +806,7 @@ export const fetchPermissionsOverview = async (
   // If global admin targeting another institution, load that institution's data
   if (globalAdmin) {
     const [r, ur] = await Promise.all([
-      fetchTableRows<RoleRow>(TABLE_IDS.roles, (() => {
-        const p = new URLSearchParams({ user_field_names: "true", size: "200" });
-        withInstitutionFilter(p, effectiveInstitutionId);
-        return p;
-      })()),
+      fetchRoleRowsForInstitution(effectiveInstitutionId),
       fetchUserRoleRows(effectiveInstitutionId),
     ]);
     roles = r;
@@ -580,22 +814,10 @@ export const fetchPermissionsOverview = async (
   }
 
   const [permissions, menus, rolePermissionRows, users] = await Promise.all([
-    fetchTableRows<PermissionRow>(TABLE_IDS.permissions, (() => {
-      const p = new URLSearchParams({ user_field_names: "true", size: "200" });
-      withInstitutionFilter(p, effectiveInstitutionId);
-      return p;
-    })()),
-    fetchTableRows<MenuRow>(TABLE_IDS.menus, (() => {
-      const p = new URLSearchParams({ user_field_names: "true", size: "200" });
-      withInstitutionFilter(p, effectiveInstitutionId);
-      return p;
-    })()),
+    fetchPermissionRowsForInstitution(effectiveInstitutionId),
+    fetchMenuRowsForInstitution(effectiveInstitutionId),
     fetchRolePermissionRows(effectiveInstitutionId),
-    fetchTableRows<BaserowUserRow>(TABLE_IDS.users, (() => {
-      const p = new URLSearchParams({ user_field_names: "true", size: "200" });
-      withInstitutionFilter(p, effectiveInstitutionId);
-      return p;
-    })()),
+    fetchInstitutionUsersRaw(effectiveInstitutionId),
   ]);
 
   const rolesFormatted = roles.map((role) => {
@@ -663,6 +885,18 @@ export const fetchPermissionsOverview = async (
 const fetchMenuRowsForInstitution = async (
   institutionId: number,
 ): Promise<MenuRow[]> => {
+  // --- Drizzle branch ---
+  if (useDirectDb("permissions")) {
+    const _dr = await tryDrizzle(async () => {
+      const rows = await db
+        .select()
+        .from(menuTable)
+        .where(eq(menuTable.institutionId, String(institutionId)));
+      return rows.map(mapMenuRow);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+  // --- Baserow fallback ---
   const params = new URLSearchParams({ user_field_names: "true", size: "200" });
   withInstitutionFilter(params, institutionId);
   return fetchTableRows<MenuRow>(TABLE_IDS.menus, params);
@@ -876,6 +1110,26 @@ const setRolePermissions = async (
     (id) => !currentPermissionIds.includes(id),
   );
 
+  // --- Drizzle branch (delete + create) ---
+  if (useDirectDb("permissions")) {
+    const _ok = await tryDrizzle(async () => {
+      await Promise.all(
+        toDelete.map((rowId) =>
+          db.delete(rolePermissionsTable).where(eq(rolePermissionsTable.id, rowId)),
+        ),
+      );
+      await Promise.all(
+        toAdd.map((permissionId) =>
+          db.insert(rolePermissionsTable).values({
+            roleId: [{ id: roleId }],
+            permissionId: [{ id: permissionId }],
+          }),
+        ),
+      );
+    });
+    if (_ok !== undefined) return;
+  }
+  // --- Baserow fallback ---
   await Promise.all(
     toDelete.map((rowId) => deleteRow(TABLE_IDS.rolePermissions, rowId)),
   );
@@ -917,6 +1171,26 @@ const setUserRoles = async (
 
   const toAdd = roleIds.filter((id) => !currentRoleIds.includes(id));
 
+  // --- Drizzle branch (delete + create) ---
+  if (useDirectDb("permissions")) {
+    const _ok = await tryDrizzle(async () => {
+      await Promise.all(
+        toDelete.map((rowId) =>
+          db.delete(userRolesTable).where(eq(userRolesTable.id, rowId)),
+        ),
+      );
+      await Promise.all(
+        toAdd.map((rId) =>
+          db.insert(userRolesTable).values({
+            userId: [{ id: userId }],
+            roleId: [{ id: rId }],
+          }),
+        ),
+      );
+    });
+    if (_ok !== undefined) return;
+  }
+  // --- Baserow fallback ---
   await Promise.all(
     toDelete.map((rowId) => deleteRow(TABLE_IDS.userRoles, rowId)),
   );
@@ -987,6 +1261,35 @@ type BaserowConfigRow = {
 export const listInstitutions = async (): Promise<
   Array<{ institutionId: number; companyName: string }>
 > => {
+  // --- Drizzle branch ---
+  if (useDirectDb("permissions")) {
+    const _dr = await tryDrizzle(async () => {
+      const rows = await db
+        .select({
+          instId: configTable.bodyAuthInstitutionId,
+          companyName: configTable.bodyTenantCompanyName,
+        })
+        .from(configTable);
+  
+      const seen = new Map<number, string>();
+      for (const row of rows) {
+        const instId = Number(row.instId);
+        if (!Number.isFinite(instId) || instId <= 0) continue;
+        if (seen.has(instId)) continue;
+        const name =
+          typeof row.companyName === "string" && row.companyName.trim()
+            ? row.companyName.trim()
+            : `Instituição ${instId}`;
+        seen.set(instId, name);
+      }
+  
+      return Array.from(seen.entries())
+        .map(([institutionId, companyName]) => ({ institutionId, companyName }))
+        .sort((a, b) => a.institutionId - b.institutionId);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+  // --- Baserow fallback ---
   const rows = await fetchTableRows<BaserowConfigRow>(
     CONFIG_TABLE_ID,
     new URLSearchParams({ user_field_names: "true", size: "200" }),
@@ -1049,28 +1352,87 @@ export const getInstitutionFeatures = async (
   }
 
   if (missingFeatures.length > 0) {
-    const created = await Promise.all(
-      missingFeatures.map((feature, index) =>
-        createRow<MenuRow>(TABLE_IDS.menus, {
-          label: feature.label,
-          path: feature.path,
-          is_active: true,
-          display_order: index + rows.length,
-          [INSTITUTION_FIELD]: institutionId,
-        }),
-      ),
-    );
+    // --- Drizzle branch (create missing menu rows) ---
+    if (useDirectDb("permissions")) {
+      const _ok = await tryDrizzle(async () => {
+        const created = await Promise.all(
+          missingFeatures.map((feature, index) =>
+            db
+              .insert(menuTable)
+              .values({
+                label: feature.label,
+                path: feature.path,
+                isActive: true,
+                displayOrder: String(index + rows.length),
+                institutionId: String(institutionId),
+              })
+              .returning(),
+          ),
+        );
 
-    for (let i = 0; i < missingFeatures.length; i++) {
-      const feature = missingFeatures[i];
-      const row = created[i];
-      result.push({
-        key: feature.key,
-        path: feature.path,
-        label: feature.label,
-        isEnabled: true,
-        menuRowId: row.id,
+        for (let i = 0; i < missingFeatures.length; i++) {
+          const feature = missingFeatures[i];
+          const row = created[i][0];
+          result.push({
+            key: feature.key,
+            path: feature.path,
+            label: feature.label,
+            isEnabled: true,
+            menuRowId: row.id,
+          });
+        }
       });
+      if (_ok === undefined) {
+        // Drizzle failed — Baserow fallback
+        const created = await Promise.all(
+          missingFeatures.map((feature, index) =>
+            createRow<MenuRow>(TABLE_IDS.menus, {
+              label: feature.label,
+              path: feature.path,
+              is_active: true,
+              display_order: index + rows.length,
+              [INSTITUTION_FIELD]: institutionId,
+            }),
+          ),
+        );
+
+        for (let i = 0; i < missingFeatures.length; i++) {
+          const feature = missingFeatures[i];
+          const row = created[i];
+          result.push({
+            key: feature.key,
+            path: feature.path,
+            label: feature.label,
+            isEnabled: true,
+            menuRowId: row.id,
+          });
+        }
+      }
+    } else {
+      // --- Baserow fallback ---
+      const created = await Promise.all(
+        missingFeatures.map((feature, index) =>
+          createRow<MenuRow>(TABLE_IDS.menus, {
+            label: feature.label,
+            path: feature.path,
+            is_active: true,
+            display_order: index + rows.length,
+            [INSTITUTION_FIELD]: institutionId,
+          }),
+        ),
+      );
+
+      for (let i = 0; i < missingFeatures.length; i++) {
+        const feature = missingFeatures[i];
+        const row = created[i];
+        result.push({
+          key: feature.key,
+          path: feature.path,
+          label: feature.label,
+          isEnabled: true,
+          menuRowId: row.id,
+        });
+      }
     }
   }
 
@@ -1106,6 +1468,21 @@ export const updateInstitutionFeatures = async ({
   }
 
   if (updates.length > 0) {
+    // --- Drizzle branch ---
+    if (useDirectDb("permissions")) {
+      const _ok = await tryDrizzle(async () => {
+        await Promise.all(
+          updates.map(({ rowId, isActive }) =>
+            db
+              .update(menuTable)
+              .set({ isActive })
+              .where(eq(menuTable.id, rowId)),
+          ),
+        );
+      });
+      if (_ok !== undefined) return;
+    }
+    // --- Baserow fallback ---
     const client = baserowClient();
     await Promise.all(
       updates.map(({ rowId, isActive }) =>
@@ -1132,6 +1509,23 @@ export const fetchUserFeatures = async (
   userId: number,
   institutionId: number,
 ): Promise<UserFeatureRow[]> => {
+  // --- Drizzle branch ---
+  if (useDirectDb("permissions")) {
+    const _dr = await tryDrizzle(async () => {
+      const rows = await db
+        .select()
+        .from(userFeaturesTable)
+        .where(
+          and(
+            eq(userFeaturesTable.userId, String(userId)),
+            eq(userFeaturesTable.institutionId, String(institutionId)),
+          ),
+        );
+      return rows.map(mapUserFeatureRow);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+  // --- Baserow fallback ---
   const params = new URLSearchParams({
     user_field_names: "true",
     size: "200",
@@ -1167,6 +1561,35 @@ export const updateUserFeatures = async (
     existingByKey.set(row.feature_key, row);
   }
 
+  // --- Drizzle branch ---
+  if (useDirectDb("permissions")) {
+    const _ok = await tryDrizzle(async () => {
+      const ops: Promise<unknown>[] = [];
+      for (const [key, enabled] of Object.entries(features)) {
+        const row = existingByKey.get(key);
+        if (row) {
+          ops.push(
+            db
+              .update(userFeaturesTable)
+              .set({ isEnabled: enabled })
+              .where(eq(userFeaturesTable.id, row.id)),
+          );
+        } else {
+          ops.push(
+            db.insert(userFeaturesTable).values({
+              userId: String(userId),
+              institutionId: String(institutionId),
+              featureKey: key,
+              isEnabled: enabled,
+            }),
+          );
+        }
+      }
+      await Promise.all(ops);
+    });
+    if (_ok !== undefined) return;
+  }
+  // --- Baserow fallback ---
   const client = baserowClient();
   const ops: Promise<unknown>[] = [];
 
@@ -1224,6 +1647,15 @@ export const fetchInstitutionUsers = async (
 };
 
 export const fetchAllUsers = async (): Promise<UserPublicRow[]> => {
+  // --- Drizzle branch ---
+  if (useDirectDb("permissions")) {
+    const _dr = await tryDrizzle(async () => {
+      const rows = await db.select().from(usersTable);
+      return rows.map(mapUserRow).map(toUserPublic);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+  // --- Baserow fallback ---
   const params = new URLSearchParams({
     user_field_names: "true",
     size: "200",
@@ -1237,6 +1669,19 @@ export const fetchAllUsers = async (): Promise<UserPublicRow[]> => {
  * Necessário porque Baserow boolean default = true para rows existentes.
  */
 export const resetAllOfficeAdminFlags = async (): Promise<number> => {
+  // --- Drizzle branch ---
+  if (useDirectDb("permissions")) {
+    const _dr = await tryDrizzle(async () => {
+      const result = await db
+        .update(usersTable)
+        .set({ isOfficeAdmin: false })
+        .where(eq(usersTable.isOfficeAdmin, true))
+        .returning({ id: usersTable.id });
+      return result.length;
+    });
+    if (_dr !== undefined) return _dr;
+  }
+  // --- Baserow fallback ---
   const params = new URLSearchParams({
     user_field_names: "true",
     size: "200",
@@ -1268,6 +1713,59 @@ export const createInstitutionUser = async (
 ): Promise<UserPublicRow> => {
   const normalizedEmail = data.email.trim().toLowerCase();
 
+  // --- Drizzle branch ---
+  if (useDirectDb("permissions")) {
+    const _dr = await tryDrizzle(async () => {
+      // Check duplicate
+      const dup = await db
+        .select({ id: usersTable.id })
+        .from(usersTable)
+        .where(
+          and(
+            eq(usersTable.email, normalizedEmail),
+            eq(usersTable.institutionId, String(institutionId)),
+          ),
+        )
+        .limit(1);
+      if (dup.length > 0) {
+        throw new Error("Já existe um usuário com este e-mail nesta instituição.");
+      }
+  
+      const now = new Date();
+      const inserted = await db
+        .insert(usersTable)
+        .values({
+          institutionId: String(institutionId),
+          name: data.name.trim(),
+          email: normalizedEmail,
+          password: data.password,
+          isActive: true,
+          isOfficeAdmin: data.isOfficeAdmin === true,
+          receivesCases: false,
+          phone: data.phone?.trim() ?? null,
+          oab: data.oab?.trim() ?? null,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
+  
+      const row = inserted[0];
+      // Set legacy_user_id to row ID
+      if (!row.legacyUserId) {
+        const updated = await db
+          .update(usersTable)
+          .set({ legacyUserId: String(row.id) })
+          .where(eq(usersTable.id, row.id))
+          .returning();
+        return toUserPublic(mapUserRow(updated[0]));
+      }
+  
+      invalidateUsersCache(institutionId);
+      return toUserPublic(mapUserRow(row));
+    });
+    if (_dr !== undefined) return _dr;
+  }
+  // --- Baserow fallback ---
   // Check for duplicate email in this institution
   const checkParams = new URLSearchParams({
     user_field_names: "true",
@@ -1328,6 +1826,65 @@ export const updateInstitutionUser = async (
     receivesCases?: boolean;
   },
 ): Promise<UserPublicRow> => {
+  // --- Drizzle branch ---
+  if (useDirectDb("permissions")) {
+    const _dr = await tryDrizzle(async () => {
+      // Verify the user belongs to this institution
+      const check = await db
+        .select({ id: usersTable.id })
+        .from(usersTable)
+        .where(
+          and(
+            eq(usersTable.id, userId),
+            eq(usersTable.institutionId, String(institutionId)),
+          ),
+        )
+        .limit(1);
+      if (check.length === 0) {
+        throw new Error("Usuário não encontrado nesta instituição.");
+      }
+  
+      const setFields: Partial<typeof usersTable.$inferInsert> = {
+        updatedAt: new Date(),
+      };
+      if (data.name !== undefined) setFields.name = data.name.trim();
+      if (data.email !== undefined) {
+        const normalizedEmail = data.email.trim().toLowerCase();
+        // Check duplicate email (excluding self)
+        const dups = await db
+          .select({ id: usersTable.id })
+          .from(usersTable)
+          .where(
+            and(
+              eq(usersTable.email, normalizedEmail),
+              eq(usersTable.institutionId, String(institutionId)),
+            ),
+          )
+          .limit(1);
+        if (dups.length > 0 && dups[0].id !== userId) {
+          throw new Error("Já existe outro usuário com este e-mail nesta instituição.");
+        }
+        setFields.email = normalizedEmail;
+      }
+      if (data.password !== undefined) setFields.password = data.password;
+      if (data.phone !== undefined) setFields.phone = data.phone.trim();
+      if (data.oab !== undefined) setFields.oab = data.oab.trim();
+      if (data.isActive !== undefined) setFields.isActive = data.isActive;
+      if (data.isOfficeAdmin !== undefined) setFields.isOfficeAdmin = data.isOfficeAdmin;
+      if (data.receivesCases !== undefined) setFields.receivesCases = data.receivesCases;
+  
+      const updated = await db
+        .update(usersTable)
+        .set(setFields)
+        .where(eq(usersTable.id, userId))
+        .returning();
+  
+      invalidateUsersCache(institutionId);
+      return toUserPublic(mapUserRow(updated[0]));
+    });
+    if (_dr !== undefined) return _dr;
+  }
+  // --- Baserow fallback ---
   // Verify the user belongs to this institution
   const checkParams = new URLSearchParams({
     user_field_names: "true",
@@ -1379,6 +1936,28 @@ export const deleteInstitutionUser = async (
   institutionId: number,
   userId: number,
 ): Promise<void> => {
+  // --- Drizzle branch ---
+  if (useDirectDb("permissions")) {
+    const _ok = await tryDrizzle(async () => {
+      const check = await db
+        .select({ id: usersTable.id })
+        .from(usersTable)
+        .where(
+          and(
+            eq(usersTable.id, userId),
+            eq(usersTable.institutionId, String(institutionId)),
+          ),
+        )
+        .limit(1);
+      if (check.length === 0) {
+        throw new Error("Usuário não encontrado nesta instituição.");
+      }
+      await db.delete(usersTable).where(eq(usersTable.id, userId));
+      invalidateUsersCache(institutionId);
+    });
+    if (_ok !== undefined) return;
+  }
+  // --- Baserow fallback ---
   // Verify the user belongs to this institution
   const checkParams = new URLSearchParams({
     user_field_names: "true",
@@ -1404,6 +1983,33 @@ export const authenticateViaUsersTable = async (
   email: string;
 } | null> => {
   const normalizedEmail = email.trim().toLowerCase();
+
+  // --- Drizzle branch (prepared statement) ---
+  if (useDirectDb("permissions")) {
+    const _dr = await tryDrizzle(async () => {
+      const rows = await prepared.getUsersByEmail.execute({
+        email: normalizedEmail,
+      });
+  
+      for (const row of rows) {
+        if (!row.password) continue;
+        if (row.password !== password) continue;
+        const instId = row.institutionId ? Number(row.institutionId) : 0;
+        if (!Number.isFinite(instId) || instId <= 0) continue;
+        if (row.isActive === false) continue;
+  
+        return {
+          institutionId: instId,
+          userId: row.id,
+          name: (row.name ?? "").trim(),
+          email: (row.email ?? normalizedEmail).trim(),
+        };
+      }
+      return null;
+    });
+    if (_dr !== undefined) return _dr;
+  }
+  // --- Baserow fallback ---
   const params = new URLSearchParams({
     user_field_names: "true",
     size: "10",
@@ -1446,6 +2052,32 @@ export const backfillLegacyUserIds = async (): Promise<{
   updated: number;
   skipped: number;
 }> => {
+  // --- Drizzle branch ---
+  if (useDirectDb("permissions")) {
+    const _dr = await tryDrizzle(async () => {
+      const rows = await db.select().from(usersTable);
+      let updated = 0;
+      let skipped = 0;
+  
+      for (const row of rows) {
+        const current = (row.legacyUserId ?? "").trim();
+        if (current) {
+          skipped++;
+          continue;
+        }
+        await db
+          .update(usersTable)
+          .set({ legacyUserId: String(row.id) })
+          .where(eq(usersTable.id, row.id));
+        updated++;
+      }
+  
+      invalidateUsersCache();
+      return { updated, skipped };
+    });
+    if (_dr !== undefined) return _dr;
+  }
+  // --- Baserow fallback ---
   const client = baserowClient();
   const params = new URLSearchParams({
     user_field_names: "true",

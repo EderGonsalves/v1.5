@@ -1,0 +1,3025 @@
+[
+  {
+    "tableId": 219,
+    "tableName": "automation",
+    "pgTableName": "database_table_219",
+    "fields": [
+      {
+        "fieldId": 1528,
+        "pgColumnName": "field_1528",
+        "name": "arquivo",
+        "type": "file",
+        "primary": true,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 224,
+    "tableName": "config",
+    "pgTableName": "database_table_224",
+    "fields": [
+      {
+        "fieldId": 1607,
+        "pgColumnName": "field_1607",
+        "name": "body.auth.institutionId",
+        "type": "text",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1623,
+        "pgColumnName": "field_1623",
+        "name": "body.tenant.companyName",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1624,
+        "pgColumnName": "field_1624",
+        "name": "body.tenant.businessHours",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1625,
+        "pgColumnName": "field_1625",
+        "name": "body.tenant.address.street",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1626,
+        "pgColumnName": "field_1626",
+        "name": "body.tenant.address.city",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1627,
+        "pgColumnName": "field_1627",
+        "name": "body.tenant.address.state",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1628,
+        "pgColumnName": "field_1628",
+        "name": "body.tenant.address.zipCode",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1629,
+        "pgColumnName": "field_1629",
+        "name": "body.agentSettings.profile.agentName",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1630,
+        "pgColumnName": "field_1630",
+        "name": "body.agentSettings.profile.language",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1631,
+        "pgColumnName": "field_1631",
+        "name": "body.agentSettings.profile.personalityDescription",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1632,
+        "pgColumnName": "field_1632",
+        "name": "body.agentSettings.profile.expertiseArea",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1633,
+        "pgColumnName": "field_1633",
+        "name": "body.agentSettings.personality.greeting",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1634,
+        "pgColumnName": "field_1634",
+        "name": "body.agentSettings.personality.closing",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1635,
+        "pgColumnName": "field_1635",
+        "name": "body.agentSettings.personality.forbiddenWords.0",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1636,
+        "pgColumnName": "field_1636",
+        "name": "perguntas",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1637,
+        "pgColumnName": "field_1637",
+        "name": "quanditadePerguntas",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1638,
+        "pgColumnName": "field_1638",
+        "name": "body.agentSettings.stages.0.mission",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1639,
+        "pgColumnName": "field_1639",
+        "name": "body.agentSettings.stages.0.script",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1640,
+        "pgColumnName": "field_1640",
+        "name": "body.agentSettings.stages.1.stage",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1641,
+        "pgColumnName": "field_1641",
+        "name": "body.agentSettings.stages.1.agent",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1642,
+        "pgColumnName": "field_1642",
+        "name": "body.agentSettings.stages.1.mission",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1643,
+        "pgColumnName": "field_1643",
+        "name": "body.agentSettings.stages.1.script",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1644,
+        "pgColumnName": "field_1644",
+        "name": "body.agentSettings.stages.2.stage",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1645,
+        "pgColumnName": "field_1645",
+        "name": "body.agentSettings.stages.2.agent",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1646,
+        "pgColumnName": "field_1646",
+        "name": "body.agentSettings.stages.2.mission",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1647,
+        "pgColumnName": "field_1647",
+        "name": "body.agentSettings.stages.2.script",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1648,
+        "pgColumnName": "field_1648",
+        "name": "body.agentSettings.stages.3.stage",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1649,
+        "pgColumnName": "field_1649",
+        "name": "body.agentSettings.stages.3.agent",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1650,
+        "pgColumnName": "field_1650",
+        "name": "body.agentSettings.stages.3.mission",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1651,
+        "pgColumnName": "field_1651",
+        "name": "body.agentSettings.stages.3.script",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1652,
+        "pgColumnName": "field_1652",
+        "name": "body.agentSettings.flow.greetingsScript",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1653,
+        "pgColumnName": "field_1653",
+        "name": "body.agentSettings.flow.companyOfferings",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1654,
+        "pgColumnName": "field_1654",
+        "name": "body.agentSettings.flow.qualificationPrompt",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1655,
+        "pgColumnName": "field_1655",
+        "name": "body.agentSettings.flow.qualificationFallback",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1656,
+        "pgColumnName": "field_1656",
+        "name": "body.agentSettings.flow.viabilityQuestions.0.prompt",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1657,
+        "pgColumnName": "field_1657",
+        "name": "body.agentSettings.flow.viabilityQuestions.0.objective",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1658,
+        "pgColumnName": "field_1658",
+        "name": "body.agentSettings.flow.viabilityQuestions.1.prompt",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1659,
+        "pgColumnName": "field_1659",
+        "name": "body.agentSettings.flow.viabilityQuestions.1.objective",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1660,
+        "pgColumnName": "field_1660",
+        "name": "body.agentSettings.flow.disqualificationRules",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1661,
+        "pgColumnName": "field_1661",
+        "name": "body.agentSettings.flow.commitmentType",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1662,
+        "pgColumnName": "field_1662",
+        "name": "body.agentSettings.flow.commitmentScript",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1663,
+        "pgColumnName": "field_1663",
+        "name": "body.agentSettings.flow.documentsChecklist.0",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1664,
+        "pgColumnName": "field_1664",
+        "name": "body.agentSettings.flow.documentsChecklist.1",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1665,
+        "pgColumnName": "field_1665",
+        "name": "body.agentSettings.flow.documentsChecklist.2",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1666,
+        "pgColumnName": "field_1666",
+        "name": "body.agentSettings.flow.documentConfirmationMessage",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1667,
+        "pgColumnName": "field_1667",
+        "name": "body.agentSettings.flow.closingMessage",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1668,
+        "pgColumnName": "field_1668",
+        "name": "body.agentSettings.flow.followUpRules",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1682,
+        "pgColumnName": "field_1682",
+        "name": "waba_phone_number",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1698,
+        "pgColumnName": "field_1698",
+        "name": "ia_ativada",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1708,
+        "pgColumnName": "field_1708",
+        "name": "waba_phone_id",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1907,
+        "pgColumnName": "field_1907",
+        "name": "phone_department_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1908,
+        "pgColumnName": "field_1908",
+        "name": "phone_department_name",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1927,
+        "pgColumnName": "field_1927",
+        "name": "waba_business_account_id",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1975,
+        "pgColumnName": "field_1975",
+        "name": "queue_mode",
+        "type": "multiple_select",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 2005,
+        "pgColumnName": "field_2005",
+        "name": "riasign_waba_config_id",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 225,
+    "tableName": "cases",
+    "pgTableName": "database_table_225",
+    "fields": [
+      {
+        "fieldId": 1683,
+        "pgColumnName": "field_1683",
+        "name": "CaseId",
+        "type": "autonumber",
+        "primary": true,
+        "readOnly": true
+      },
+      {
+        "fieldId": 1684,
+        "pgColumnName": "field_1684",
+        "name": "CustumerPhone",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1685,
+        "pgColumnName": "field_1685",
+        "name": "CustumerName",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1686,
+        "pgColumnName": "field_1686",
+        "name": "DepoimentoInicial",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1687,
+        "pgColumnName": "field_1687",
+        "name": "EtapaPerguntas",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1688,
+        "pgColumnName": "field_1688",
+        "name": "EtapaFinal",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1689,
+        "pgColumnName": "field_1689",
+        "name": "Resumo",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1690,
+        "pgColumnName": "field_1690",
+        "name": "Conversa",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1691,
+        "pgColumnName": "field_1691",
+        "name": "BJCaseId",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1692,
+        "pgColumnName": "field_1692",
+        "name": "InstitutionID",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1693,
+        "pgColumnName": "field_1693",
+        "name": "IApause",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1694,
+        "pgColumnName": "field_1694",
+        "name": "image",
+        "type": "file",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1699,
+        "pgColumnName": "field_1699",
+        "name": "Data",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1700,
+        "pgColumnName": "field_1700",
+        "name": "CustumeId",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1713,
+        "pgColumnName": "field_1713",
+        "name": "last_alert_stage",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1735,
+        "pgColumnName": "field_1735",
+        "name": "message_order",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1752,
+        "pgColumnName": "field_1752",
+        "name": "valor",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1753,
+        "pgColumnName": "field_1753",
+        "name": "resultado",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1769,
+        "pgColumnName": "field_1769",
+        "name": "cliente",
+        "type": "link_row",
+        "primary": false,
+        "readOnly": false,
+        "linkRowTableId": 233
+      },
+      {
+        "fieldId": 1771,
+        "pgColumnName": "field_1771",
+        "name": "responsavel",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1772,
+        "pgColumnName": "field_1772",
+        "name": "status_caso",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1901,
+        "pgColumnName": "field_1901",
+        "name": "department_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1902,
+        "pgColumnName": "field_1902",
+        "name": "department_name",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1903,
+        "pgColumnName": "field_1903",
+        "name": "assigned_to_user_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1914,
+        "pgColumnName": "field_1914",
+        "name": "stats",
+        "type": "link_row",
+        "primary": false,
+        "readOnly": false,
+        "linkRowTableId": 249
+      },
+      {
+        "fieldId": 1924,
+        "pgColumnName": "field_1924",
+        "name": "case_source",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1925,
+        "pgColumnName": "field_1925",
+        "name": "created_by_user_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1926,
+        "pgColumnName": "field_1926",
+        "name": "created_by_user_name",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1928,
+        "pgColumnName": "field_1928",
+        "name": "cnj_number",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1929,
+        "pgColumnName": "field_1929",
+        "name": "lawsuit_tracking_active",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1930,
+        "pgColumnName": "field_1930",
+        "name": "lawsuit_summary",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1931,
+        "pgColumnName": "field_1931",
+        "name": "lawsuit_last_update",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1953,
+        "pgColumnName": "field_1953",
+        "name": "notas_caso",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 2000,
+        "pgColumnName": "field_2000",
+        "name": "sign_envelope_id",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 2001,
+        "pgColumnName": "field_2001",
+        "name": "sign_status",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 227,
+    "tableName": "caseMessages",
+    "pgTableName": "database_table_227",
+    "fields": [
+      {
+        "fieldId": 1701,
+        "pgColumnName": "field_1701",
+        "name": "CaseId",
+        "type": "text",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1702,
+        "pgColumnName": "field_1702",
+        "name": "Sender",
+        "type": "multiple_select",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1703,
+        "pgColumnName": "field_1703",
+        "name": "DataHora",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1704,
+        "pgColumnName": "field_1704",
+        "name": "Message",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1705,
+        "pgColumnName": "field_1705",
+        "name": "file",
+        "type": "file",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1706,
+        "pgColumnName": "field_1706",
+        "name": "from",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1707,
+        "pgColumnName": "field_1707",
+        "name": "to",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 2006,
+        "pgColumnName": "field_2006",
+        "name": "SenderName",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 228,
+    "tableName": "webhooks",
+    "pgTableName": "database_table_228",
+    "fields": [
+      {
+        "fieldId": 1709,
+        "pgColumnName": "field_1709",
+        "name": "webhook_url",
+        "type": "text",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1710,
+        "pgColumnName": "field_1710",
+        "name": "webhook_secret",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1711,
+        "pgColumnName": "field_1711",
+        "name": "webhook_active",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1712,
+        "pgColumnName": "field_1712",
+        "name": "webhook_alerts",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1714,
+        "pgColumnName": "field_1714",
+        "name": "webhoock_institution_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 229,
+    "tableName": "followUpConfig",
+    "pgTableName": "database_table_229",
+    "fields": [
+      {
+        "fieldId": 1715,
+        "pgColumnName": "field_1715",
+        "name": "institution_id",
+        "type": "number",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1716,
+        "pgColumnName": "field_1716",
+        "name": "message_order",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1717,
+        "pgColumnName": "field_1717",
+        "name": "delay_minutes",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1718,
+        "pgColumnName": "field_1718",
+        "name": "message_content",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1719,
+        "pgColumnName": "field_1719",
+        "name": "is_active",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1720,
+        "pgColumnName": "field_1720",
+        "name": "allowed_days",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1721,
+        "pgColumnName": "field_1721",
+        "name": "allowed_start_time",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1722,
+        "pgColumnName": "field_1722",
+        "name": "allowed_end_time",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1723,
+        "pgColumnName": "field_1723",
+        "name": "created_at",
+        "type": "date",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1724,
+        "pgColumnName": "field_1724",
+        "name": "updated_at",
+        "type": "date",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 230,
+    "tableName": "followUpHistory",
+    "pgTableName": "database_table_230",
+    "fields": [
+      {
+        "fieldId": 1725,
+        "pgColumnName": "field_1725",
+        "name": "case_id",
+        "type": "number",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1726,
+        "pgColumnName": "field_1726",
+        "name": "institution_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1727,
+        "pgColumnName": "field_1727",
+        "name": "config_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1728,
+        "pgColumnName": "field_1728",
+        "name": "message_order",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1729,
+        "pgColumnName": "field_1729",
+        "name": "customer_phone",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1730,
+        "pgColumnName": "field_1730",
+        "name": "message_sent",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1731,
+        "pgColumnName": "field_1731",
+        "name": "sent_at",
+        "type": "date",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1732,
+        "pgColumnName": "field_1732",
+        "name": "status",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1733,
+        "pgColumnName": "field_1733",
+        "name": "error_message",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1734,
+        "pgColumnName": "field_1734",
+        "name": "last_client_message_at",
+        "type": "date",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 231,
+    "tableName": "kanbanColumns",
+    "pgTableName": "database_table_231",
+    "fields": [
+      {
+        "fieldId": 1738,
+        "pgColumnName": "field_1738",
+        "name": "institution_id",
+        "type": "number",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1739,
+        "pgColumnName": "field_1739",
+        "name": "name",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1740,
+        "pgColumnName": "field_1740",
+        "name": "ordem",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1741,
+        "pgColumnName": "field_1741",
+        "name": "color",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1742,
+        "pgColumnName": "field_1742",
+        "name": "is_default",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1743,
+        "pgColumnName": "field_1743",
+        "name": "auto_rule",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1744,
+        "pgColumnName": "field_1744",
+        "name": "created_at",
+        "type": "date",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1745,
+        "pgColumnName": "field_1745",
+        "name": "updated_at",
+        "type": "date",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1910,
+        "pgColumnName": "field_1910",
+        "name": "department_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 232,
+    "tableName": "caseKanbanStatus",
+    "pgTableName": "database_table_232",
+    "fields": [
+      {
+        "fieldId": 1746,
+        "pgColumnName": "field_1746",
+        "name": "case_id",
+        "type": "number",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1747,
+        "pgColumnName": "field_1747",
+        "name": "institution_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1748,
+        "pgColumnName": "field_1748",
+        "name": "column_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1749,
+        "pgColumnName": "field_1749",
+        "name": "moved_at",
+        "type": "date",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1750,
+        "pgColumnName": "field_1750",
+        "name": "moved_by",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1751,
+        "pgColumnName": "field_1751",
+        "name": "notes",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 234,
+    "tableName": "events",
+    "pgTableName": "database_table_234",
+    "fields": [
+      {
+        "fieldId": 1773,
+        "pgColumnName": "field_1773",
+        "name": "InstitutionID",
+        "type": "number",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1774,
+        "pgColumnName": "field_1774",
+        "name": "title",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1775,
+        "pgColumnName": "field_1775",
+        "name": "start_datetime",
+        "type": "date",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1776,
+        "pgColumnName": "field_1776",
+        "name": "end_datetime",
+        "type": "date",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1777,
+        "pgColumnName": "field_1777",
+        "name": "timezone",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1778,
+        "pgColumnName": "field_1778",
+        "name": "location",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1779,
+        "pgColumnName": "field_1779",
+        "name": "meeting_link",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1780,
+        "pgColumnName": "field_1780",
+        "name": "google_event_id",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1781,
+        "pgColumnName": "field_1781",
+        "name": "sync_status",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1782,
+        "pgColumnName": "field_1782",
+        "name": "created_at",
+        "type": "date",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1783,
+        "pgColumnName": "field_1783",
+        "name": "updated_at",
+        "type": "date",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1784,
+        "pgColumnName": "field_1784",
+        "name": "description",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1785,
+        "pgColumnName": "field_1785",
+        "name": "user_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1786,
+        "pgColumnName": "field_1786",
+        "name": "reminder_minutes_before",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1787,
+        "pgColumnName": "field_1787",
+        "name": "notify_by_email",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1788,
+        "pgColumnName": "field_1788",
+        "name": "notify_by_phone",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1792,
+        "pgColumnName": "field_1792",
+        "name": "event_guests",
+        "type": "link_row",
+        "primary": false,
+        "readOnly": false,
+        "linkRowTableId": 235
+      }
+    ]
+  },
+  {
+    "tableId": 235,
+    "tableName": "eventGuests",
+    "pgTableName": "database_table_235",
+    "fields": [
+      {
+        "fieldId": 1789,
+        "pgColumnName": "field_1789",
+        "name": "name",
+        "type": "text",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1790,
+        "pgColumnName": "field_1790",
+        "name": "event_id",
+        "type": "link_row",
+        "primary": false,
+        "readOnly": false,
+        "linkRowTableId": 234
+      },
+      {
+        "fieldId": 1791,
+        "pgColumnName": "field_1791",
+        "name": "email",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1793,
+        "pgColumnName": "field_1793",
+        "name": "phone",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1794,
+        "pgColumnName": "field_1794",
+        "name": "notification_status",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1795,
+        "pgColumnName": "field_1795",
+        "name": "created_at",
+        "type": "date",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1796,
+        "pgColumnName": "field_1796",
+        "name": "updated_at",
+        "type": "date",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 236,
+    "tableName": "users",
+    "pgTableName": "database_table_236",
+    "fields": [
+      {
+        "fieldId": 1797,
+        "pgColumnName": "field_1797",
+        "name": "legacy_user_id",
+        "type": "text",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1798,
+        "pgColumnName": "field_1798",
+        "name": "institution_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1799,
+        "pgColumnName": "field_1799",
+        "name": "name",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1800,
+        "pgColumnName": "field_1800",
+        "name": "email",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1801,
+        "pgColumnName": "field_1801",
+        "name": "is_active",
+        "type": "boolean",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1802,
+        "pgColumnName": "field_1802",
+        "name": "created_at",
+        "type": "date",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1803,
+        "pgColumnName": "field_1803",
+        "name": "updated_at",
+        "type": "date",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1838,
+        "pgColumnName": "field_1838",
+        "name": "user_role",
+        "type": "link_row",
+        "primary": false,
+        "readOnly": false,
+        "linkRowTableId": 241
+      },
+      {
+        "fieldId": 1840,
+        "pgColumnName": "field_1840",
+        "name": "phone",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1841,
+        "pgColumnName": "field_1841",
+        "name": "oab",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1842,
+        "pgColumnName": "field_1842",
+        "name": "password",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1909,
+        "pgColumnName": "field_1909",
+        "name": "is_office_admin",
+        "type": "boolean",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1923,
+        "pgColumnName": "field_1923",
+        "name": "receives_cases",
+        "type": "boolean",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 237,
+    "tableName": "roles",
+    "pgTableName": "database_table_237",
+    "fields": [
+      {
+        "fieldId": 1804,
+        "pgColumnName": "field_1804",
+        "name": "institution_id",
+        "type": "number",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1805,
+        "pgColumnName": "field_1805",
+        "name": "users.institution_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1806,
+        "pgColumnName": "field_1806",
+        "name": "name",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1807,
+        "pgColumnName": "field_1807",
+        "name": "description",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1808,
+        "pgColumnName": "field_1808",
+        "name": "is_system",
+        "type": "boolean",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1809,
+        "pgColumnName": "field_1809",
+        "name": "created_at",
+        "type": "date",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1810,
+        "pgColumnName": "field_1810",
+        "name": "updated_at",
+        "type": "date",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1835,
+        "pgColumnName": "field_1835",
+        "name": "role_permission",
+        "type": "link_row",
+        "primary": false,
+        "readOnly": false,
+        "linkRowTableId": 240
+      },
+      {
+        "fieldId": 1839,
+        "pgColumnName": "field_1839",
+        "name": "user_role",
+        "type": "link_row",
+        "primary": false,
+        "readOnly": false,
+        "linkRowTableId": 241
+      }
+    ]
+  },
+  {
+    "tableId": 238,
+    "tableName": "menu",
+    "pgTableName": "database_table_238",
+    "fields": [
+      {
+        "fieldId": 1811,
+        "pgColumnName": "field_1811",
+        "name": "institution_id",
+        "type": "number",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1812,
+        "pgColumnName": "field_1812",
+        "name": "label",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1813,
+        "pgColumnName": "field_1813",
+        "name": "path",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1814,
+        "pgColumnName": "field_1814",
+        "name": "permission_code",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1815,
+        "pgColumnName": "field_1815",
+        "name": "parent_id",
+        "type": "link_row",
+        "primary": false,
+        "readOnly": false,
+        "linkRowTableId": 238
+      },
+      {
+        "fieldId": 1816,
+        "pgColumnName": "field_1816",
+        "name": "display_order",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1817,
+        "pgColumnName": "field_1817",
+        "name": "is_active",
+        "type": "boolean",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1834,
+        "pgColumnName": "field_1834",
+        "name": "permission",
+        "type": "link_row",
+        "primary": false,
+        "readOnly": false,
+        "linkRowTableId": 239
+      }
+    ]
+  },
+  {
+    "tableId": 239,
+    "tableName": "permissions",
+    "pgTableName": "database_table_239",
+    "fields": [
+      {
+        "fieldId": 1818,
+        "pgColumnName": "field_1818",
+        "name": "institution_id",
+        "type": "number",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1819,
+        "pgColumnName": "field_1819",
+        "name": "code",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1820,
+        "pgColumnName": "field_1820",
+        "name": "Active",
+        "type": "boolean",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1821,
+        "pgColumnName": "field_1821",
+        "name": "description",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1822,
+        "pgColumnName": "field_1822",
+        "name": "menu_id",
+        "type": "link_row",
+        "primary": false,
+        "readOnly": false,
+        "linkRowTableId": 238
+      },
+      {
+        "fieldId": 1836,
+        "pgColumnName": "field_1836",
+        "name": "role_permission",
+        "type": "link_row",
+        "primary": false,
+        "readOnly": false,
+        "linkRowTableId": 240
+      }
+    ]
+  },
+  {
+    "tableId": 240,
+    "tableName": "rolePermissions",
+    "pgTableName": "database_table_240",
+    "fields": [
+      {
+        "fieldId": 1823,
+        "pgColumnName": "field_1823",
+        "name": "pk_composta",
+        "type": "number",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1824,
+        "pgColumnName": "field_1824",
+        "name": "permission_id",
+        "type": "link_row",
+        "primary": false,
+        "readOnly": false,
+        "linkRowTableId": 239
+      },
+      {
+        "fieldId": 1825,
+        "pgColumnName": "field_1825",
+        "name": "role_id",
+        "type": "link_row",
+        "primary": false,
+        "readOnly": false,
+        "linkRowTableId": 237
+      }
+    ]
+  },
+  {
+    "tableId": 241,
+    "tableName": "userRoles",
+    "pgTableName": "database_table_241",
+    "fields": [
+      {
+        "fieldId": 1826,
+        "pgColumnName": "field_1826",
+        "name": "nome",
+        "type": "number",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1827,
+        "pgColumnName": "field_1827",
+        "name": "role_id",
+        "type": "link_row",
+        "primary": false,
+        "readOnly": false,
+        "linkRowTableId": 237
+      },
+      {
+        "fieldId": 1837,
+        "pgColumnName": "field_1837",
+        "name": "user_id",
+        "type": "link_row",
+        "primary": false,
+        "readOnly": false,
+        "linkRowTableId": 236
+      }
+    ]
+  },
+  {
+    "tableId": 242,
+    "tableName": "auditPermissions",
+    "pgTableName": "database_table_242",
+    "fields": [
+      {
+        "fieldId": 1829,
+        "pgColumnName": "field_1829",
+        "name": "acted_by_user_id",
+        "type": "number",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1830,
+        "pgColumnName": "field_1830",
+        "name": "target_type",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1831,
+        "pgColumnName": "field_1831",
+        "name": "target_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1832,
+        "pgColumnName": "field_1832",
+        "name": "change_summary",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1833,
+        "pgColumnName": "field_1833",
+        "name": "created_at",
+        "type": "date",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 243,
+    "tableName": "supportTickets",
+    "pgTableName": "database_table_243",
+    "fields": [
+      {
+        "fieldId": 1843,
+        "pgColumnName": "field_1843",
+        "name": "protocol",
+        "type": "text",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1844,
+        "pgColumnName": "field_1844",
+        "name": "institution_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1845,
+        "pgColumnName": "field_1845",
+        "name": "created_by_name",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1846,
+        "pgColumnName": "field_1846",
+        "name": "created_by_email",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1847,
+        "pgColumnName": "field_1847",
+        "name": "category",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1848,
+        "pgColumnName": "field_1848",
+        "name": "subject",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1849,
+        "pgColumnName": "field_1849",
+        "name": "description",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1850,
+        "pgColumnName": "field_1850",
+        "name": "status",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1851,
+        "pgColumnName": "field_1851",
+        "name": "sector",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1852,
+        "pgColumnName": "field_1852",
+        "name": "assigned_to",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1853,
+        "pgColumnName": "field_1853",
+        "name": "created_at",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1854,
+        "pgColumnName": "field_1854",
+        "name": "updated_at",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1855,
+        "pgColumnName": "field_1855",
+        "name": "created_by_phone",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1904,
+        "pgColumnName": "field_1904",
+        "name": "department_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1905,
+        "pgColumnName": "field_1905",
+        "name": "department_name",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1906,
+        "pgColumnName": "field_1906",
+        "name": "assigned_to_user_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 244,
+    "tableName": "supportMessages",
+    "pgTableName": "database_table_244",
+    "fields": [
+      {
+        "fieldId": 1856,
+        "pgColumnName": "field_1856",
+        "name": "ticket_id",
+        "type": "number",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1857,
+        "pgColumnName": "field_1857",
+        "name": "institution_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1858,
+        "pgColumnName": "field_1858",
+        "name": "author_name",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1859,
+        "pgColumnName": "field_1859",
+        "name": "author_role",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1860,
+        "pgColumnName": "field_1860",
+        "name": "content",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1861,
+        "pgColumnName": "field_1861",
+        "name": "created_at",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1867,
+        "pgColumnName": "field_1867",
+        "name": "author_email",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1868,
+        "pgColumnName": "field_1868",
+        "name": "author_phone",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 245,
+    "tableName": "supportKb",
+    "pgTableName": "database_table_245",
+    "fields": [
+      {
+        "fieldId": 1862,
+        "pgColumnName": "field_1862",
+        "name": "title",
+        "type": "text",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1863,
+        "pgColumnName": "field_1863",
+        "name": "content",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1864,
+        "pgColumnName": "field_1864",
+        "name": "category",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1865,
+        "pgColumnName": "field_1865",
+        "name": "tags",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1866,
+        "pgColumnName": "field_1866",
+        "name": "created_at",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 246,
+    "tableName": "calendarSettings",
+    "pgTableName": "database_table_246",
+    "fields": [
+      {
+        "fieldId": 1869,
+        "pgColumnName": "field_1869",
+        "name": "institution_id",
+        "type": "number",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1870,
+        "pgColumnName": "field_1870",
+        "name": "slot_duration_minutes",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1871,
+        "pgColumnName": "field_1871",
+        "name": "advance_days",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1872,
+        "pgColumnName": "field_1872",
+        "name": "buffer_minutes",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1873,
+        "pgColumnName": "field_1873",
+        "name": "mon_start",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1874,
+        "pgColumnName": "field_1874",
+        "name": "mon_end",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1875,
+        "pgColumnName": "field_1875",
+        "name": "tue_start",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1876,
+        "pgColumnName": "field_1876",
+        "name": "tue_end",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1877,
+        "pgColumnName": "field_1877",
+        "name": "wed_start",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1878,
+        "pgColumnName": "field_1878",
+        "name": "wed_end",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1879,
+        "pgColumnName": "field_1879",
+        "name": "thu_start",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1880,
+        "pgColumnName": "field_1880",
+        "name": "thu_end",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1881,
+        "pgColumnName": "field_1881",
+        "name": "fri_start",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1882,
+        "pgColumnName": "field_1882",
+        "name": "fri_end",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1883,
+        "pgColumnName": "field_1883",
+        "name": "sat_start",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1884,
+        "pgColumnName": "field_1884",
+        "name": "sat_end",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1885,
+        "pgColumnName": "field_1885",
+        "name": "sun_start",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1886,
+        "pgColumnName": "field_1886",
+        "name": "sun_end",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1887,
+        "pgColumnName": "field_1887",
+        "name": "created_at",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1888,
+        "pgColumnName": "field_1888",
+        "name": "updated_at",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1889,
+        "pgColumnName": "field_1889",
+        "name": "meet_link",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1890,
+        "pgColumnName": "field_1890",
+        "name": "scheduling_enabled",
+        "type": "boolean",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 247,
+    "tableName": "departments",
+    "pgTableName": "database_table_247",
+    "fields": [
+      {
+        "fieldId": 1891,
+        "pgColumnName": "field_1891",
+        "name": "institution_id",
+        "type": "number",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1892,
+        "pgColumnName": "field_1892",
+        "name": "name",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1893,
+        "pgColumnName": "field_1893",
+        "name": "description",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1894,
+        "pgColumnName": "field_1894",
+        "name": "is_active",
+        "type": "boolean",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1895,
+        "pgColumnName": "field_1895",
+        "name": "created_at",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1896,
+        "pgColumnName": "field_1896",
+        "name": "updated_at",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 248,
+    "tableName": "userDepartments",
+    "pgTableName": "database_table_248",
+    "fields": [
+      {
+        "fieldId": 1897,
+        "pgColumnName": "field_1897",
+        "name": "institution_id",
+        "type": "number",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1898,
+        "pgColumnName": "field_1898",
+        "name": "user_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1899,
+        "pgColumnName": "field_1899",
+        "name": "department_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1900,
+        "pgColumnName": "field_1900",
+        "name": "is_primary",
+        "type": "boolean",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 250,
+    "tableName": "userFeatures",
+    "pgTableName": "database_table_250",
+    "fields": [
+      {
+        "fieldId": 1915,
+        "pgColumnName": "field_1915",
+        "name": "user_id",
+        "type": "number",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1916,
+        "pgColumnName": "field_1916",
+        "name": "institution_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1917,
+        "pgColumnName": "field_1917",
+        "name": "feature_key",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1918,
+        "pgColumnName": "field_1918",
+        "name": "is_enabled",
+        "type": "boolean",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 251,
+    "tableName": "assignmentQueue",
+    "pgTableName": "database_table_251",
+    "fields": [
+      {
+        "fieldId": 1919,
+        "pgColumnName": "field_1919",
+        "name": "user_id",
+        "type": "number",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1920,
+        "pgColumnName": "field_1920",
+        "name": "institution_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1921,
+        "pgColumnName": "field_1921",
+        "name": "last_assigned_at",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1922,
+        "pgColumnName": "field_1922",
+        "name": "assignment_count",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 252,
+    "tableName": "lawsuitTracking",
+    "pgTableName": "database_table_252",
+    "fields": [
+      {
+        "fieldId": 1932,
+        "pgColumnName": "field_1932",
+        "name": "case_id",
+        "type": "number",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1933,
+        "pgColumnName": "field_1933",
+        "name": "institution_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1934,
+        "pgColumnName": "field_1934",
+        "name": "cnj",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1935,
+        "pgColumnName": "field_1935",
+        "name": "is_active",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1936,
+        "pgColumnName": "field_1936",
+        "name": "codilo_process_id",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1937,
+        "pgColumnName": "field_1937",
+        "name": "status",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1938,
+        "pgColumnName": "field_1938",
+        "name": "error_message",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1939,
+        "pgColumnName": "field_1939",
+        "name": "movements_count",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1940,
+        "pgColumnName": "field_1940",
+        "name": "last_update_at",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1941,
+        "pgColumnName": "field_1941",
+        "name": "created_at",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1942,
+        "pgColumnName": "field_1942",
+        "name": "updated_at",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 253,
+    "tableName": "lawsuitMovements",
+    "pgTableName": "database_table_253",
+    "fields": [
+      {
+        "fieldId": 1943,
+        "pgColumnName": "field_1943",
+        "name": "tracking_id",
+        "type": "number",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1944,
+        "pgColumnName": "field_1944",
+        "name": "case_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1945,
+        "pgColumnName": "field_1945",
+        "name": "institution_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1946,
+        "pgColumnName": "field_1946",
+        "name": "movement_date",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1947,
+        "pgColumnName": "field_1947",
+        "name": "movement_type",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1948,
+        "pgColumnName": "field_1948",
+        "name": "title",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1949,
+        "pgColumnName": "field_1949",
+        "name": "content",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1950,
+        "pgColumnName": "field_1950",
+        "name": "source_court",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1951,
+        "pgColumnName": "field_1951",
+        "name": "raw_payload",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1952,
+        "pgColumnName": "field_1952",
+        "name": "created_at",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 254,
+    "tableName": "pushSubscriptions",
+    "pgTableName": "database_table_254",
+    "fields": [
+      {
+        "fieldId": 1954,
+        "pgColumnName": "field_1954",
+        "name": "endpoint",
+        "type": "text",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1955,
+        "pgColumnName": "field_1955",
+        "name": "p256dh",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1956,
+        "pgColumnName": "field_1956",
+        "name": "auth",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1957,
+        "pgColumnName": "field_1957",
+        "name": "user_email",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1958,
+        "pgColumnName": "field_1958",
+        "name": "user_name",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1959,
+        "pgColumnName": "field_1959",
+        "name": "legacy_user_id",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1960,
+        "pgColumnName": "field_1960",
+        "name": "institution_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1961,
+        "pgColumnName": "field_1961",
+        "name": "user_agent",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1962,
+        "pgColumnName": "field_1962",
+        "name": "created_at",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1963,
+        "pgColumnName": "field_1963",
+        "name": "updated_at",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 255,
+    "tableName": "pushNotifications",
+    "pgTableName": "database_table_255",
+    "fields": [
+      {
+        "fieldId": 1964,
+        "pgColumnName": "field_1964",
+        "name": "title",
+        "type": "text",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1965,
+        "pgColumnName": "field_1965",
+        "name": "body",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1966,
+        "pgColumnName": "field_1966",
+        "name": "url",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1967,
+        "pgColumnName": "field_1967",
+        "name": "icon",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1968,
+        "pgColumnName": "field_1968",
+        "name": "institution_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1969,
+        "pgColumnName": "field_1969",
+        "name": "sent_by_email",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1970,
+        "pgColumnName": "field_1970",
+        "name": "sent_by_name",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1971,
+        "pgColumnName": "field_1971",
+        "name": "sent_at",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1972,
+        "pgColumnName": "field_1972",
+        "name": "recipients_count",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1973,
+        "pgColumnName": "field_1973",
+        "name": "status",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1974,
+        "pgColumnName": "field_1974",
+        "name": "error_log",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 256,
+    "tableName": "signEnvelopes",
+    "pgTableName": "database_table_256",
+    "fields": [
+      {
+        "fieldId": 1976,
+        "pgColumnName": "field_1976",
+        "name": "case_id",
+        "type": "number",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1977,
+        "pgColumnName": "field_1977",
+        "name": "envelope_id",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1978,
+        "pgColumnName": "field_1978",
+        "name": "document_id",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1979,
+        "pgColumnName": "field_1979",
+        "name": "subject",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1980,
+        "pgColumnName": "field_1980",
+        "name": "status",
+        "type": "single_select",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1981,
+        "pgColumnName": "field_1981",
+        "name": "signer_name",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1982,
+        "pgColumnName": "field_1982",
+        "name": "signer_phone",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1983,
+        "pgColumnName": "field_1983",
+        "name": "signer_email",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1984,
+        "pgColumnName": "field_1984",
+        "name": "sign_url",
+        "type": "url",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1985,
+        "pgColumnName": "field_1985",
+        "name": "signed_at",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1986,
+        "pgColumnName": "field_1986",
+        "name": "institution_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1987,
+        "pgColumnName": "field_1987",
+        "name": "created_by_user_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1988,
+        "pgColumnName": "field_1988",
+        "name": "created_at",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1989,
+        "pgColumnName": "field_1989",
+        "name": "updated_at",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 2004,
+        "pgColumnName": "field_2004",
+        "name": "signers_json",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  },
+  {
+    "tableId": 257,
+    "tableName": "documentTemplates",
+    "pgTableName": "database_table_257",
+    "fields": [
+      {
+        "fieldId": 1990,
+        "pgColumnName": "field_1990",
+        "name": "name",
+        "type": "text",
+        "primary": true,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1991,
+        "pgColumnName": "field_1991",
+        "name": "description",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1992,
+        "pgColumnName": "field_1992",
+        "name": "category",
+        "type": "single_select",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1993,
+        "pgColumnName": "field_1993",
+        "name": "institution_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1994,
+        "pgColumnName": "field_1994",
+        "name": "created_by_user_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1995,
+        "pgColumnName": "field_1995",
+        "name": "file_path",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1996,
+        "pgColumnName": "field_1996",
+        "name": "variables",
+        "type": "long_text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1997,
+        "pgColumnName": "field_1997",
+        "name": "is_active",
+        "type": "boolean",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1998,
+        "pgColumnName": "field_1998",
+        "name": "created_at",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 1999,
+        "pgColumnName": "field_1999",
+        "name": "updated_at",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 2002,
+        "pgColumnName": "field_2002",
+        "name": "template_type",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      },
+      {
+        "fieldId": 2003,
+        "pgColumnName": "field_2003",
+        "name": "original_filename",
+        "type": "text",
+        "primary": false,
+        "readOnly": false
+      }
+    ]
+  }
+]

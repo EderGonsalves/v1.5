@@ -1,4 +1,18 @@
 import axios from "axios";
+import { eq, and, asc, desc, like, sql } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { prepared } from "@/lib/db/prepared";
+import { kanbanColumns as kcTable } from "@/lib/db/schema/kanbanColumns";
+import { caseKanbanStatus as cksTable } from "@/lib/db/schema/caseKanbanStatus";
+import { webhooks as whTable } from "@/lib/db/schema/webhooks";
+import { followUpConfig as fucTable } from "@/lib/db/schema/followUpConfig";
+import { followUpHistory as fuhTable } from "@/lib/db/schema/followUpHistory";
+import { cases as casesTable } from "@/lib/db/schema/cases";
+import { config as cfgTable } from "@/lib/db/schema/config";
+import { events as eventsTable } from "@/lib/db/schema/events";
+import { eventGuests as eventGuestsTable } from "@/lib/db/schema/eventGuests";
+import { clients as clientsTable } from "@/lib/db/schema/clients";
+import { useDirectDb, tryDrizzle } from "@/lib/db/repository";
 
 import type {
   AuthInfo,
@@ -643,7 +657,115 @@ type BaserowListResponse<T> = {
   results?: T[];
 };
 
+/* ──────────────────────────── Config helpers (Drizzle) ──────────────────────────── */
+
+/** Bidirectional mapping: Baserow user_field_name → Drizzle column key */
+const CONFIG_FIELD_MAP: Record<string, keyof typeof cfgTable.$inferInsert> = {
+  "body.auth.institutionId": "bodyAuthInstitutionId",
+  "body.tenant.companyName": "bodyTenantCompanyName",
+  "body.tenant.businessHours": "bodyTenantBusinessHours",
+  "body.tenant.address.street": "bodyTenantAddressStreet",
+  "body.tenant.address.city": "bodyTenantAddressCity",
+  "body.tenant.address.state": "bodyTenantAddressState",
+  "body.tenant.address.zipCode": "bodyTenantAddressZipCode",
+  "body.agentSettings.profile.agentName": "bodyAgentSettingsProfileAgentName",
+  "body.agentSettings.profile.language": "bodyAgentSettingsProfileLanguage",
+  "body.agentSettings.profile.personalityDescription": "bodyAgentSettingsProfilePersonalityDescription",
+  "body.agentSettings.profile.expertiseArea": "bodyAgentSettingsProfileExpertiseArea",
+  "body.agentSettings.personality.greeting": "bodyAgentSettingsPersonalityGreeting",
+  "body.agentSettings.personality.closing": "bodyAgentSettingsPersonalityClosing",
+  "body.agentSettings.personality.forbiddenWords.0": "bodyAgentSettingsPersonalityForbiddenWords_0",
+  "perguntas": "perguntas",
+  "quanditadePerguntas": "quanditadePerguntas",
+  "body.agentSettings.stages.0.mission": "bodyAgentSettingsStages_0Mission",
+  "body.agentSettings.stages.0.script": "bodyAgentSettingsStages_0Script",
+  "body.agentSettings.stages.1.stage": "bodyAgentSettingsStages_1Stage",
+  "body.agentSettings.stages.1.agent": "bodyAgentSettingsStages_1Agent",
+  "body.agentSettings.stages.1.mission": "bodyAgentSettingsStages_1Mission",
+  "body.agentSettings.stages.1.script": "bodyAgentSettingsStages_1Script",
+  "body.agentSettings.stages.2.stage": "bodyAgentSettingsStages_2Stage",
+  "body.agentSettings.stages.2.agent": "bodyAgentSettingsStages_2Agent",
+  "body.agentSettings.stages.2.mission": "bodyAgentSettingsStages_2Mission",
+  "body.agentSettings.stages.2.script": "bodyAgentSettingsStages_2Script",
+  "body.agentSettings.stages.3.stage": "bodyAgentSettingsStages_3Stage",
+  "body.agentSettings.stages.3.agent": "bodyAgentSettingsStages_3Agent",
+  "body.agentSettings.stages.3.mission": "bodyAgentSettingsStages_3Mission",
+  "body.agentSettings.stages.3.script": "bodyAgentSettingsStages_3Script",
+  "body.agentSettings.flow.greetingsScript": "bodyAgentSettingsFlowGreetingsScript",
+  "body.agentSettings.flow.companyOfferings": "bodyAgentSettingsFlowCompanyOfferings",
+  "body.agentSettings.flow.qualificationPrompt": "bodyAgentSettingsFlowQualificationPrompt",
+  "body.agentSettings.flow.qualificationFallback": "bodyAgentSettingsFlowQualificationFallback",
+  "body.agentSettings.flow.viabilityQuestions.0.prompt": "bodyAgentSettingsFlowViabilityQuestions_0Prompt",
+  "body.agentSettings.flow.viabilityQuestions.0.objective": "bodyAgentSettingsFlowViabilityQuestions_0Objective",
+  "body.agentSettings.flow.viabilityQuestions.1.prompt": "bodyAgentSettingsFlowViabilityQuestions_1Prompt",
+  "body.agentSettings.flow.viabilityQuestions.1.objective": "bodyAgentSettingsFlowViabilityQuestions_1Objective",
+  "body.agentSettings.flow.disqualificationRules": "bodyAgentSettingsFlowDisqualificationRules",
+  "body.agentSettings.flow.commitmentType": "bodyAgentSettingsFlowCommitmentType",
+  "body.agentSettings.flow.commitmentScript": "bodyAgentSettingsFlowCommitmentScript",
+  "body.agentSettings.flow.documentsChecklist.0": "bodyAgentSettingsFlowDocumentsChecklist_0",
+  "body.agentSettings.flow.documentsChecklist.1": "bodyAgentSettingsFlowDocumentsChecklist_1",
+  "body.agentSettings.flow.documentsChecklist.2": "bodyAgentSettingsFlowDocumentsChecklist_2",
+  "body.agentSettings.flow.documentConfirmationMessage": "bodyAgentSettingsFlowDocumentConfirmationMessage",
+  "body.agentSettings.flow.closingMessage": "bodyAgentSettingsFlowClosingMessage",
+  "body.agentSettings.flow.followUpRules": "bodyAgentSettingsFlowFollowUpRules",
+  "waba_phone_number": "wabaPhoneNumber",
+  "ia_ativada": "iaAtivada",
+  "waba_phone_id": "wabaPhoneId",
+  "phone_department_id": "phoneDepartmentId",
+  "phone_department_name": "phoneDepartmentName",
+  "waba_business_account_id": "wabaBusinessAccountId",
+  "queue_mode": "queueMode",
+  "riasign_waba_config_id": "riasignWabaConfigId",
+};
+
+/** Reverse map: Drizzle column key → Baserow field name */
+const CONFIG_DRIZZLE_TO_BASEROW: Record<string, string> = Object.fromEntries(
+  Object.entries(CONFIG_FIELD_MAP).map(([br, dz]) => [dz, br]),
+);
+
+/** Convert a Drizzle config row to BaserowConfigRow (user_field_names format) */
+function mapConfigRow(row: typeof cfgTable.$inferSelect): BaserowConfigRow {
+  const result: BaserowConfigRow = { id: row.id };
+  for (const [drizzleKey, baserowName] of Object.entries(CONFIG_DRIZZLE_TO_BASEROW)) {
+    const val = (row as Record<string, unknown>)[drizzleKey];
+    result[baserowName] = val ?? null;
+  }
+  return result;
+}
+
+/** Convert BaserowConfigRow data (user_field_names) → Drizzle set object */
+function buildConfigSetObj(data: Record<string, unknown>): Record<string, unknown> {
+  const setObj: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (key === "id") continue;
+    const drizzleKey = CONFIG_FIELD_MAP[key];
+    if (drizzleKey) {
+      // queueMode is jsonb — pass as-is; all others become strings
+      if (drizzleKey === "queueMode") {
+        setObj[drizzleKey] = value ?? null;
+      } else {
+        setObj[drizzleKey] = value != null ? String(value) : null;
+      }
+    }
+  }
+  return setObj;
+}
+
+/* ──────────────────────────── Config functions ──────────────────────────── */
+
 export const getBaserowConfigs = async (institutionId?: number): Promise<BaserowConfigRow[]> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const shouldFilter = typeof institutionId === "number" && institutionId !== 4;
+      const rows = shouldFilter
+        ? await db.select().from(cfgTable).where(eq(cfgTable.bodyAuthInstitutionId, String(institutionId)))
+        : await db.select().from(cfgTable);
+      return rows.map(mapConfigRow);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_TABLE_ID}/?user_field_names=true`;
 
@@ -688,6 +810,21 @@ export const updateBaserowConfig = async (
   rowId: number,
   data: Partial<BaserowConfigRow>,
 ): Promise<BaserowConfigRow> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const setObj = buildConfigSetObj(data as Record<string, unknown>);
+      const [row] = await db
+        .update(cfgTable)
+        .set(setObj)
+        .where(eq(cfgTable.id, rowId))
+        .returning();
+      if (!row) throw new Error(`Config row ${rowId} not found`);
+      return mapConfigRow(row);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_TABLE_ID}/${rowId}/?user_field_names=true`;
 
@@ -743,6 +880,19 @@ export const updateIaAtivada = async (
 export const createBaserowConfig = async (
   data: Partial<BaserowConfigRow>,
 ): Promise<BaserowConfigRow> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const insertObj = buildConfigSetObj(data as Record<string, unknown>);
+      const [row] = await db
+        .insert(cfgTable)
+        .values(insertObj as typeof cfgTable.$inferInsert)
+        .returning();
+      return mapConfigRow(row);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_TABLE_ID}/?user_field_names=true`;
 
@@ -913,6 +1063,91 @@ export type BaserowCaseRow = {
   [key: string]: unknown;
 };
 
+/** Map a Drizzle `cases` row to the Baserow-compatible `BaserowCaseRow` shape */
+function mapCaseRow(row: typeof casesTable.$inferSelect): BaserowCaseRow {
+  return {
+    id: row.id,
+    CaseId: row.caseId ?? undefined,
+    CustumerPhone: row.custumerPhone ?? undefined,
+    CustumerName: row.custumerName ?? undefined,
+    DepoimentoInicial: row.depoimentoInicial ?? undefined,
+    EtapaPerguntas: row.etapaPerguntas ?? undefined,
+    EtapaFinal: row.etapaFinal ?? undefined,
+    Resumo: row.resumo ?? undefined,
+    Conversa: row.conversa ?? undefined,
+    BJCaseId: row.bJCaseId ?? undefined,
+    InstitutionID: row.institutionID ? Number(row.institutionID) : undefined,
+    IApause: row.iApause ?? undefined,
+    image: row.image as BaserowCaseRow["image"],
+    Data: row.data ?? undefined,
+    CustumeId: row.custumeId ?? undefined,
+    last_alert_stage: row.lastAlertStage ?? undefined,
+    message_order: row.messageOrder ?? undefined,
+    valor: row.valor != null ? Number(row.valor) : undefined,
+    resultado: row.resultado ?? undefined,
+    responsavel: row.responsavel ?? undefined,
+    status_caso: row.statusCaso ?? undefined,
+    department_id: row.departmentId != null ? Number(row.departmentId) : undefined,
+    department_name: row.departmentName ?? undefined,
+    assigned_to_user_id: row.assignedToUserId != null ? Number(row.assignedToUserId) : undefined,
+    case_source: row.caseSource ?? undefined,
+    created_by_user_id: row.createdByUserId != null ? Number(row.createdByUserId) : undefined,
+    created_by_user_name: row.createdByUserName ?? undefined,
+    cnj_number: row.cnjNumber ?? undefined,
+    lawsuit_tracking_active: row.lawsuitTrackingActive ?? undefined,
+    lawsuit_summary: row.lawsuitSummary ?? undefined,
+    lawsuit_last_update: row.lawsuitLastUpdate ?? undefined,
+    notas_caso: row.notasCaso ?? undefined,
+    sign_envelope_id: row.signEnvelopeId ?? undefined,
+    sign_status: row.signStatus ?? undefined,
+  };
+}
+
+/** Build a Drizzle-compatible set object from a Baserow-shaped partial case row */
+function buildCaseSetObj(data: Partial<BaserowCaseRow>): Record<string, unknown> {
+  const set: Record<string, unknown> = {};
+
+  if (data.CustumerPhone !== undefined) set.custumerPhone = data.CustumerPhone;
+  if (data.CustumerName !== undefined) set.custumerName = data.CustumerName;
+  if (data.DepoimentoInicial !== undefined) set.depoimentoInicial = data.DepoimentoInicial;
+  if (data.EtapaPerguntas !== undefined) set.etapaPerguntas = data.EtapaPerguntas;
+  if (data.EtapaFinal !== undefined) set.etapaFinal = data.EtapaFinal;
+  if (data.Resumo !== undefined) set.resumo = data.Resumo;
+  if (data.Conversa !== undefined) set.conversa = data.Conversa;
+  if (data.BJCaseId !== undefined) set.bJCaseId = data.BJCaseId != null ? String(data.BJCaseId) : null;
+  if (data.InstitutionID !== undefined) set.institutionID = data.InstitutionID != null ? String(data.InstitutionID) : null;
+  if (data.IApause !== undefined) set.iApause = data.IApause;
+  if (data.image !== undefined) set.image = data.image;
+  if (data.Data !== undefined) set.data = data.Data;
+  if ((data as Record<string, unknown>).data !== undefined && data.Data === undefined) set.data = (data as Record<string, unknown>).data as string;
+  if (data.CustumeId !== undefined) set.custumeId = data.CustumeId;
+  if (data.last_alert_stage !== undefined) set.lastAlertStage = data.last_alert_stage;
+  if (data.valor !== undefined) set.valor = data.valor != null ? String(data.valor) : null;
+  if (data.resultado !== undefined) set.resultado = data.resultado;
+  if (data.responsavel !== undefined) set.responsavel = data.responsavel;
+  if (data.status_caso !== undefined) {
+    // Baserow Single Select can be string or object { id, value, color }
+    set.statusCaso = typeof data.status_caso === "object" && data.status_caso !== null
+      ? (data.status_caso as { value: string }).value
+      : data.status_caso;
+  }
+  if (data.department_id !== undefined) set.departmentId = data.department_id != null ? String(data.department_id) : null;
+  if (data.department_name !== undefined) set.departmentName = data.department_name;
+  if (data.assigned_to_user_id !== undefined) set.assignedToUserId = data.assigned_to_user_id != null ? String(data.assigned_to_user_id) : null;
+  if (data.case_source !== undefined) set.caseSource = data.case_source;
+  if (data.created_by_user_id !== undefined) set.createdByUserId = data.created_by_user_id != null ? String(data.created_by_user_id) : null;
+  if (data.created_by_user_name !== undefined) set.createdByUserName = data.created_by_user_name;
+  if (data.cnj_number !== undefined) set.cnjNumber = data.cnj_number;
+  if (data.lawsuit_tracking_active !== undefined) set.lawsuitTrackingActive = data.lawsuit_tracking_active;
+  if (data.lawsuit_summary !== undefined) set.lawsuitSummary = data.lawsuit_summary;
+  if (data.lawsuit_last_update !== undefined) set.lawsuitLastUpdate = data.lawsuit_last_update;
+  if (data.notas_caso !== undefined) set.notasCaso = data.notas_caso;
+  if (data.sign_envelope_id !== undefined) set.signEnvelopeId = data.sign_envelope_id;
+  if (data.sign_status !== undefined) set.signStatus = data.sign_status;
+
+  return set;
+}
+
 export type GetBaserowCasesParams = {
   institutionId?: number;
   page?: number;
@@ -937,6 +1172,16 @@ export type BaserowCasesResponse = {
 export const getBaserowCaseById = async (
   rowId: number,
 ): Promise<BaserowCaseRow | null> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      if (!rowId) return null;
+      const [row] = await prepared.getCaseById.execute({ id: rowId });
+      return row ? mapCaseRow(row) : null;
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     if (!rowId) {
       return null;
@@ -990,6 +1235,84 @@ const normalizeNextUrl = (value: unknown): string | null => {
   }
 };
 
+/* ────────────── Aggregated case statistics (SQL) ────────────── */
+
+const FALSY_VALUES = "('não','nao','false','0','off','')";
+
+/**
+ * Compute case statistics via a single SQL aggregate query.
+ * Returns per-institution breakdown (GROUP BY) for SysAdmin,
+ * or a single-institution result for regular users.
+ *
+ * Falls back to null so the caller can use getBaserowCases + computeCaseStatistics.
+ */
+export const getCaseStatisticsSQL = async (
+  institutionId?: number,
+): Promise<{
+  total: CaseStatsSQLRow[];
+} | null> => {
+  if (!useDirectDb("api")) return null;
+
+  const result = await tryDrizzle(async () => {
+    const isSysAdmin = institutionId === 4 || institutionId === undefined;
+    const whereClause = isSysAdmin
+      ? sql``
+      : sql`WHERE field_1692 = ${String(institutionId)}`;
+
+    const result = await db.execute(sql`
+      SELECT
+        COALESCE(field_1692, '') AS institution_id,
+        CAST(COUNT(*) AS integer) AS total,
+        CAST(COUNT(*) FILTER (WHERE lower(trim(COALESCE(field_1693,'')))
+          IN ('sim','pausado','true','1','yes')) AS integer) AS paused,
+        CAST(COUNT(*) FILTER (WHERE
+          COALESCE(trim(field_1688),'') != ''
+          AND lower(trim(field_1688)) NOT IN ${sql.raw(FALSY_VALUES)}
+        ) AS integer) AS etapa_final,
+        CAST(COUNT(*) FILTER (WHERE
+          (COALESCE(trim(field_1688),'') = '' OR lower(trim(field_1688)) IN ${sql.raw(FALSY_VALUES)})
+          AND COALESCE(trim(field_1687),'') != ''
+          AND lower(trim(field_1687)) NOT IN ${sql.raw(FALSY_VALUES)}
+        ) AS integer) AS etapa_perguntas,
+        CAST(COUNT(*) FILTER (WHERE
+          (COALESCE(trim(field_1688),'') = '' OR lower(trim(field_1688)) IN ${sql.raw(FALSY_VALUES)})
+          AND (COALESCE(trim(field_1687),'') = '' OR lower(trim(field_1687)) IN ${sql.raw(FALSY_VALUES)})
+          AND COALESCE(trim(field_1686),'') != ''
+          AND lower(trim(field_1686)) NOT IN ${sql.raw(FALSY_VALUES)}
+        ) AS integer) AS depoimento_inicial,
+        CAST(COUNT(*) FILTER (WHERE
+          field_1699 IS NOT NULL AND field_1699 != ''
+          AND field_1699 ~ '^\\d{4}-'
+          AND field_1699::timestamptz >= NOW() - INTERVAL '7 days'
+        ) AS integer) AS last_7_days,
+        CAST(COUNT(*) FILTER (WHERE
+          field_1699 IS NOT NULL AND field_1699 != ''
+          AND field_1699 ~ '^\\d{4}-'
+          AND field_1699::timestamptz >= NOW() - INTERVAL '30 days'
+        ) AS integer) AS last_30_days
+      FROM database_table_225
+      ${whereClause}
+      GROUP BY field_1692
+    `);
+
+    return { total: result.rows as CaseStatsSQLRow[] };
+  });
+
+  if (result === undefined) return null;
+  return result as { total: CaseStatsSQLRow[] };
+};
+
+type CaseStatsSQLRow = {
+  institution_id: string;
+  total: number;
+  paused: number;
+  etapa_final: number;
+  etapa_perguntas: number;
+  depoimento_inicial: number;
+  last_7_days: number;
+  last_30_days: number;
+};
+
 export const getBaserowCases = async ({
   institutionId,
   page = 1,
@@ -1000,6 +1323,63 @@ export const getBaserowCases = async ({
   onPageLoaded,
   includeFields,
 }: GetBaserowCasesParams = {}): Promise<BaserowCasesResponse> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      // Build WHERE conditions
+      const conditions = [];
+      const useInstFilter = typeof institutionId === "number" && institutionId !== 4;
+      if (useInstFilter) {
+        conditions.push(eq(casesTable.institutionID, String(institutionId)));
+      }
+      const whereClause = conditions.length ? and(...conditions) : undefined;
+  
+      if (fetchAll) {
+        // Fetch everything in one query (no pagination needed with direct DB)
+        const rows = await db
+          .select()
+          .from(casesTable)
+          .where(whereClause)
+          .orderBy(newestFirst ? desc(casesTable.id) : asc(casesTable.id));
+  
+        const results = rows.map(mapCaseRow);
+        const totalCount = results.length;
+  
+        if (onPageLoaded) {
+          onPageLoaded([...results], totalCount);
+        }
+  
+        return { results, totalCount, hasNextPage: false };
+      }
+  
+      // Paginated query
+      const [countResult] = await db
+        .select({ total: sql<number>`cast(count(*) as integer)` })
+        .from(casesTable)
+        .where(whereClause);
+      const totalCount = countResult?.total ?? 0;
+  
+      const offset = (page - 1) * pageSize;
+      const rows = await db
+        .select()
+        .from(casesTable)
+        .where(whereClause)
+        .orderBy(newestFirst ? desc(casesTable.id) : asc(casesTable.id))
+        .limit(pageSize)
+        .offset(offset);
+  
+      const results = rows.map(mapCaseRow);
+      const hasNextPage = offset + results.length < totalCount;
+  
+      if (onPageLoaded) {
+        onPageLoaded([...results], totalCount);
+      }
+  
+      return { results, totalCount, hasNextPage };
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     // Usar filtro server-side do Baserow para instituições não-admin
     const useServerFilter =
@@ -1152,6 +1532,20 @@ export const updateBaserowCase = async (
   rowId: number,
   data: Partial<BaserowCaseRow>,
 ): Promise<BaserowCaseRow> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const setObj = buildCaseSetObj(data);
+      const [updated] = await db
+        .update(casesTable)
+        .set(setObj)
+        .where(eq(casesTable.id, rowId))
+        .returning();
+      return mapCaseRow(updated);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASES_TABLE_ID}/${rowId}/?user_field_names=true`;
 
@@ -1176,6 +1570,19 @@ export const updateBaserowCase = async (
 export const createBaserowCase = async (
   data: Partial<BaserowCaseRow>,
 ): Promise<BaserowCaseRow> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const values = buildCaseSetObj(data);
+      const [created] = await db
+        .insert(casesTable)
+        .values(values)
+        .returning();
+      return mapCaseRow(created);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASES_TABLE_ID}/?user_field_names=true`;
     const response = await baserowPost(url, data);
@@ -1235,7 +1642,35 @@ export type CreateWebhookPayload = {
 
 export type UpdateWebhookPayload = Partial<Omit<WebhookRow, "id">>;
 
+/** Map Drizzle row → WebhookRow */
+function mapWhRow(row: typeof whTable.$inferSelect): WebhookRow {
+  return {
+    id: row.id,
+    webhoock_institution_id: Number(row.webhoockInstitutionId) || 0,
+    webhook_url: row.webhookUrl || "",
+    webhook_secret: row.webhookSecret || "",
+    webhook_active: row.webhookActive || "",
+    webhook_alerts: row.webhookAlerts || "",
+  };
+}
+
 export const getWebhooks = async (institutionId?: number): Promise<WebhookRow[]> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const conditions = [];
+      if (typeof institutionId === "number") {
+        conditions.push(eq(whTable.webhoockInstitutionId, String(institutionId)));
+      }
+      const rows = await db
+        .select()
+        .from(whTable)
+        .where(conditions.length ? and(...conditions) : undefined);
+      return rows.map(mapWhRow);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_WEBHOOKS_TABLE_ID}/?user_field_names=true`;
 
@@ -1268,6 +1703,24 @@ export const getWebhooks = async (institutionId?: number): Promise<WebhookRow[]>
 };
 
 export const createWebhook = async (data: CreateWebhookPayload): Promise<WebhookRow> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const [created] = await db
+        .insert(whTable)
+        .values({
+          webhoockInstitutionId: String(data.webhoock_institution_id),
+          webhookUrl: data.webhook_url,
+          webhookSecret: data.webhook_secret ?? "",
+          webhookActive: data.webhook_active ?? "sim",
+          webhookAlerts: "",
+        })
+        .returning();
+      return mapWhRow(created);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_WEBHOOKS_TABLE_ID}/?user_field_names=true`;
 
@@ -1303,6 +1756,25 @@ export const updateWebhook = async (
   rowId: number,
   data: UpdateWebhookPayload,
 ): Promise<WebhookRow> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const setObj: Record<string, unknown> = {};
+      if (data.webhook_url !== undefined) setObj.webhookUrl = data.webhook_url;
+      if (data.webhook_secret !== undefined) setObj.webhookSecret = data.webhook_secret;
+      if (data.webhook_active !== undefined) setObj.webhookActive = data.webhook_active;
+      if (data.webhoock_institution_id !== undefined) setObj.webhoockInstitutionId = String(data.webhoock_institution_id);
+  
+      const [updated] = await db
+        .update(whTable)
+        .set(setObj)
+        .where(eq(whTable.id, rowId))
+        .returning();
+      return mapWhRow(updated);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_WEBHOOKS_TABLE_ID}/${rowId}/?user_field_names=true`;
 
@@ -1330,6 +1802,14 @@ export const updateWebhook = async (
 };
 
 export const deleteWebhook = async (rowId: number): Promise<void> => {
+  if (useDirectDb("api")) {
+    const _ok = await tryDrizzle(async () => {
+      await db.delete(whTable).where(eq(whTable.id, rowId));
+    });
+    if (_ok !== undefined) return;
+  }
+
+  // --- Baserow fallback ---
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_WEBHOOKS_TABLE_ID}/${rowId}/`;
 
@@ -1421,8 +1901,59 @@ export type CreateFollowUpHistoryPayload = {
   last_client_message_at?: string;
 };
 
+/** Map Drizzle row → FollowUpConfigRow */
+function mapFucRow(row: typeof fucTable.$inferSelect): FollowUpConfigRow {
+  return {
+    id: row.id,
+    institution_id: Number(row.institutionId) || 0,
+    message_order: Number(row.messageOrder) || 0,
+    delay_minutes: Number(row.delayMinutes) || 0,
+    message_content: row.messageContent || "",
+    is_active: row.isActive || "",
+    allowed_days: row.allowedDays || "",
+    allowed_start_time: row.allowedStartTime || "",
+    allowed_end_time: row.allowedEndTime || "",
+    created_at: row.createdAt ? row.createdAt.toISOString() : undefined,
+    updated_at: row.updatedAt ? row.updatedAt.toISOString() : undefined,
+  };
+}
+
+/** Map Drizzle row → FollowUpHistoryRow */
+function mapFuhRow(row: typeof fuhTable.$inferSelect): FollowUpHistoryRow {
+  return {
+    id: row.id,
+    case_id: Number(row.caseId) || 0,
+    institution_id: Number(row.institutionId) || 0,
+    config_id: Number(row.configId) || 0,
+    message_order: Number(row.messageOrder) || 0,
+    customer_phone: row.customerPhone || "",
+    message_sent: row.messageSent || "",
+    sent_at: row.sentAt ? row.sentAt.toISOString() : undefined,
+    status: row.status || "",
+    error_message: row.errorMessage || "",
+    last_client_message_at: row.lastClientMessageAt ? row.lastClientMessageAt.toISOString() : undefined,
+  };
+}
+
 // Follow-up Config CRUD
 export const getFollowUpConfigs = async (institutionId?: number): Promise<FollowUpConfigRow[]> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const conditions = [];
+      if (typeof institutionId === "number") {
+        conditions.push(eq(fucTable.institutionId, String(institutionId)));
+      }
+      const rows = await db
+        .select()
+        .from(fucTable)
+        .where(conditions.length ? and(...conditions) : undefined)
+        .orderBy(asc(fucTable.messageOrder));
+      return rows.map(mapFucRow);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_FOLLOW_UP_CONFIG_TABLE_ID}/?user_field_names=true&size=200`;
 
@@ -1458,6 +1989,30 @@ export const getFollowUpConfigs = async (institutionId?: number): Promise<Follow
 };
 
 export const createFollowUpConfig = async (data: CreateFollowUpConfigPayload): Promise<FollowUpConfigRow> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const now = new Date();
+      const [created] = await db
+        .insert(fucTable)
+        .values({
+          institutionId: String(data.institution_id),
+          messageOrder: String(data.message_order),
+          delayMinutes: String(data.delay_minutes),
+          messageContent: data.message_content,
+          isActive: data.is_active ?? "sim",
+          allowedDays: data.allowed_days ?? "seg,ter,qua,qui,sex",
+          allowedStartTime: data.allowed_start_time ?? "08:00",
+          allowedEndTime: data.allowed_end_time ?? "18:00",
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
+      return mapFucRow(created);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_FOLLOW_UP_CONFIG_TABLE_ID}/?user_field_names=true`;
 
@@ -1493,6 +2048,29 @@ export const updateFollowUpConfig = async (
   rowId: number,
   data: UpdateFollowUpConfigPayload,
 ): Promise<FollowUpConfigRow> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const setObj: Record<string, unknown> = { updatedAt: new Date() };
+      if (data.institution_id !== undefined) setObj.institutionId = String(data.institution_id);
+      if (data.message_order !== undefined) setObj.messageOrder = String(data.message_order);
+      if (data.delay_minutes !== undefined) setObj.delayMinutes = String(data.delay_minutes);
+      if (data.message_content !== undefined) setObj.messageContent = data.message_content;
+      if (data.is_active !== undefined) setObj.isActive = data.is_active;
+      if (data.allowed_days !== undefined) setObj.allowedDays = data.allowed_days;
+      if (data.allowed_start_time !== undefined) setObj.allowedStartTime = data.allowed_start_time;
+      if (data.allowed_end_time !== undefined) setObj.allowedEndTime = data.allowed_end_time;
+  
+      const [updated] = await db
+        .update(fucTable)
+        .set(setObj)
+        .where(eq(fucTable.id, rowId))
+        .returning();
+      return mapFucRow(updated);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_FOLLOW_UP_CONFIG_TABLE_ID}/${rowId}/?user_field_names=true`;
 
@@ -1520,6 +2098,14 @@ export const updateFollowUpConfig = async (
 };
 
 export const deleteFollowUpConfig = async (rowId: number): Promise<void> => {
+  if (useDirectDb("api")) {
+    const _ok = await tryDrizzle(async () => {
+      await db.delete(fucTable).where(eq(fucTable.id, rowId));
+    });
+    if (_ok !== undefined) return;
+  }
+
+  // --- Baserow fallback ---
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_FOLLOW_UP_CONFIG_TABLE_ID}/${rowId}/`;
 
@@ -1541,6 +2127,25 @@ export const deleteFollowUpConfig = async (rowId: number): Promise<void> => {
 
 // Follow-up History
 export const getFollowUpHistory = async (caseId?: number, institutionId?: number): Promise<FollowUpHistoryRow[]> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const conditions = [];
+      if (typeof caseId === "number") {
+        conditions.push(eq(fuhTable.caseId, String(caseId)));
+      }
+      if (typeof institutionId === "number") {
+        conditions.push(eq(fuhTable.institutionId, String(institutionId)));
+      }
+      const rows = await db
+        .select()
+        .from(fuhTable)
+        .where(conditions.length ? and(...conditions) : undefined);
+      return rows.map(mapFuhRow);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     const pageSize = 200;
     const collected: FollowUpHistoryRow[] = [];
@@ -1603,6 +2208,30 @@ export const getFollowUpHistory = async (caseId?: number, institutionId?: number
 };
 
 export const createFollowUpHistory = async (data: CreateFollowUpHistoryPayload): Promise<FollowUpHistoryRow> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const sentAt = data.sent_at ? new Date(data.sent_at) : new Date();
+      const [created] = await db
+        .insert(fuhTable)
+        .values({
+          caseId: String(data.case_id),
+          institutionId: String(data.institution_id),
+          configId: String(data.config_id),
+          messageOrder: String(data.message_order),
+          customerPhone: data.customer_phone ?? "",
+          messageSent: data.message_sent,
+          sentAt: sentAt,
+          status: data.status,
+          errorMessage: data.error_message ?? "",
+          lastClientMessageAt: data.last_client_message_at ? new Date(data.last_client_message_at) : null,
+        })
+        .returning();
+      return mapFuhRow(created);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_FOLLOW_UP_HISTORY_TABLE_ID}/?user_field_names=true`;
 
@@ -1633,6 +2262,31 @@ export const updateFollowUpHistory = async (
   rowId: number,
   data: Partial<FollowUpHistoryRow>,
 ): Promise<FollowUpHistoryRow> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const setObj: Record<string, unknown> = {};
+      if (data.case_id !== undefined) setObj.caseId = String(data.case_id);
+      if (data.institution_id !== undefined) setObj.institutionId = String(data.institution_id);
+      if (data.config_id !== undefined) setObj.configId = String(data.config_id);
+      if (data.message_order !== undefined) setObj.messageOrder = String(data.message_order);
+      if (data.customer_phone !== undefined) setObj.customerPhone = data.customer_phone;
+      if (data.message_sent !== undefined) setObj.messageSent = data.message_sent;
+      if (data.sent_at !== undefined) setObj.sentAt = data.sent_at ? new Date(data.sent_at) : null;
+      if (data.status !== undefined) setObj.status = data.status;
+      if (data.error_message !== undefined) setObj.errorMessage = data.error_message;
+      if (data.last_client_message_at !== undefined) setObj.lastClientMessageAt = data.last_client_message_at ? new Date(data.last_client_message_at) : null;
+  
+      const [updated] = await db
+        .update(fuhTable)
+        .set(setObj)
+        .where(eq(fuhTable.id, rowId))
+        .returning();
+      return mapFuhRow(updated);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_FOLLOW_UP_HISTORY_TABLE_ID}/${rowId}/?user_field_names=true`;
 
@@ -1718,11 +2372,78 @@ export type CreateCaseKanbanStatusPayload = {
   notes?: string;
 };
 
+/** Map Drizzle row → KanbanColumnRow (camelCase → snake_case for API compat) */
+function mapKcRow(row: typeof kcTable.$inferSelect): KanbanColumnRow {
+  return {
+    id: row.id,
+    institution_id: Number(row.institutionId) || 0,
+    name: row.name || "",
+    ordem: Number(row.ordem) || 0,
+    color: row.color || "",
+    is_default: row.isDefault || "",
+    auto_rule: row.autoRule || null,
+    created_at: row.createdAt ? row.createdAt.toISOString() : undefined,
+    updated_at: row.updatedAt ? row.updatedAt.toISOString() : undefined,
+    department_id: row.departmentId ? Number(row.departmentId) : null,
+  };
+}
+
+/** Map Drizzle row → CaseKanbanStatusRow */
+function mapCksRow(row: typeof cksTable.$inferSelect): CaseKanbanStatusRow {
+  return {
+    id: row.id,
+    case_id: Number(row.caseId) || 0,
+    institution_id: Number(row.institutionId) || 0,
+    column_id: Number(row.columnId) || 0,
+    moved_at: row.movedAt ? row.movedAt.toISOString() : undefined,
+    moved_by: row.movedBy || "",
+    notes: row.notes || "",
+  };
+}
+
 // Kanban Columns CRUD
 export const getKanbanColumns = async (
   institutionId?: number,
   departmentId?: number | null,
 ): Promise<KanbanColumnRow[]> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const conditions = [];
+      if (typeof institutionId === "number") {
+        conditions.push(eq(kcTable.institutionId, String(institutionId)));
+      }
+      const rows = await db
+        .select()
+        .from(kcTable)
+        .where(conditions.length ? and(...conditions) : undefined);
+  
+      let results = rows.map(mapKcRow);
+  
+      // Department-scoped columns — strict isolation (no fallback)
+      if (departmentId !== undefined && departmentId !== null) {
+        results = results.filter((row) => Number(row.department_id) === departmentId);
+      } else {
+        results = results.filter((row) => !row.department_id);
+      }
+  
+      // Remove duplicates by name within scope, keeping the one with the lowest ID
+      const seenNames = new Map<string, KanbanColumnRow>();
+      for (const row of results) {
+        const name = (row.name || "").toLowerCase().trim();
+        const existing = seenNames.get(name);
+        if (!existing || row.id < existing.id) {
+          seenNames.set(name, row);
+        }
+      }
+      results = Array.from(seenNames.values());
+  
+      results.sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
+      return results;
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     const params = new URLSearchParams({
       user_field_names: "true",
@@ -1783,6 +2504,29 @@ export const getKanbanColumns = async (
 };
 
 export const createKanbanColumn = async (data: CreateKanbanColumnPayload): Promise<KanbanColumnRow> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const now = new Date();
+      const [created] = await db
+        .insert(kcTable)
+        .values({
+          institutionId: String(data.institution_id),
+          name: data.name,
+          ordem: String(data.ordem),
+          color: data.color ?? "",
+          isDefault: data.is_default ?? "não",
+          autoRule: data.auto_rule ?? null,
+          departmentId: data.department_id != null ? String(data.department_id) : null,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
+      return mapKcRow(created);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_KANBAN_COLUMNS_TABLE_ID}/?user_field_names=true`;
 
@@ -1816,6 +2560,28 @@ export const updateKanbanColumn = async (
   rowId: number,
   data: UpdateKanbanColumnPayload,
 ): Promise<KanbanColumnRow> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const setObj: Record<string, unknown> = { updatedAt: new Date() };
+      if (data.name !== undefined) setObj.name = data.name;
+      if (data.ordem !== undefined) setObj.ordem = String(data.ordem);
+      if (data.color !== undefined) setObj.color = data.color;
+      if (data.is_default !== undefined) setObj.isDefault = data.is_default;
+      if (data.auto_rule !== undefined) setObj.autoRule = data.auto_rule;
+      if (data.institution_id !== undefined) setObj.institutionId = String(data.institution_id);
+      if (data.department_id !== undefined) setObj.departmentId = data.department_id != null ? String(data.department_id) : null;
+  
+      const [updated] = await db
+        .update(kcTable)
+        .set(setObj)
+        .where(eq(kcTable.id, rowId))
+        .returning();
+      return mapKcRow(updated);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_KANBAN_COLUMNS_TABLE_ID}/${rowId}/?user_field_names=true`;
 
@@ -1843,6 +2609,14 @@ export const updateKanbanColumn = async (
 };
 
 export const deleteKanbanColumn = async (rowId: number): Promise<void> => {
+  if (useDirectDb("api")) {
+    const _ok = await tryDrizzle(async () => {
+      await db.delete(kcTable).where(eq(kcTable.id, rowId));
+    });
+    if (_ok !== undefined) return;
+  }
+
+  // --- Baserow fallback ---
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_KANBAN_COLUMNS_TABLE_ID}/${rowId}/`;
 
@@ -1867,6 +2641,25 @@ export const getCaseKanbanStatus = async (
   caseId?: number,
   institutionId?: number,
 ): Promise<CaseKanbanStatusRow[]> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const conditions = [];
+      if (typeof caseId === "number") {
+        conditions.push(eq(cksTable.caseId, String(caseId)));
+      }
+      if (typeof institutionId === "number") {
+        conditions.push(eq(cksTable.institutionId, String(institutionId)));
+      }
+      const rows = await db
+        .select()
+        .from(cksTable)
+        .where(conditions.length ? and(...conditions) : undefined);
+      return rows.map(mapCksRow);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     const collected: CaseKanbanStatusRow[] = [];
     let page = 1;
@@ -1916,6 +2709,26 @@ export const getCaseKanbanStatus = async (
 export const createCaseKanbanStatus = async (
   data: CreateCaseKanbanStatusPayload,
 ): Promise<CaseKanbanStatusRow> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const now = data.moved_at ? new Date(data.moved_at) : new Date();
+      const [created] = await db
+        .insert(cksTable)
+        .values({
+          caseId: String(data.case_id),
+          institutionId: String(data.institution_id),
+          columnId: String(data.column_id),
+          movedAt: now,
+          movedBy: data.moved_by ?? "",
+          notes: data.notes ?? "",
+        })
+        .returning();
+      return mapCksRow(created);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASE_KANBAN_STATUS_TABLE_ID}/?user_field_names=true`;
 
@@ -1946,6 +2759,26 @@ export const updateCaseKanbanStatus = async (
   rowId: number,
   data: Partial<CaseKanbanStatusRow>,
 ): Promise<CaseKanbanStatusRow> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const setObj: Record<string, unknown> = { movedAt: new Date() };
+      if (data.case_id !== undefined) setObj.caseId = String(data.case_id);
+      if (data.institution_id !== undefined) setObj.institutionId = String(data.institution_id);
+      if (data.column_id !== undefined) setObj.columnId = String(data.column_id);
+      if (data.moved_by !== undefined) setObj.movedBy = data.moved_by;
+      if (data.notes !== undefined) setObj.notes = data.notes;
+  
+      const [updated] = await db
+        .update(cksTable)
+        .set(setObj)
+        .where(eq(cksTable.id, rowId))
+        .returning();
+      return mapCksRow(updated);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASE_KANBAN_STATUS_TABLE_ID}/${rowId}/?user_field_names=true`;
 
@@ -1973,6 +2806,14 @@ export const updateCaseKanbanStatus = async (
 };
 
 export const deleteCaseKanbanStatus = async (rowId: number): Promise<void> => {
+  if (useDirectDb("api")) {
+    const _ok = await tryDrizzle(async () => {
+      await db.delete(cksTable).where(eq(cksTable.id, rowId));
+    });
+    if (_ok !== undefined) return;
+  }
+
+  // --- Baserow fallback ---
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASE_KANBAN_STATUS_TABLE_ID}/${rowId}/`;
 
@@ -2121,9 +2962,81 @@ export type ClientRow = {
 export type CreateClientPayload = Omit<ClientRow, "id">;
 export type UpdateClientPayload = Partial<Omit<ClientRow, "id">>;
 
+// Mapping: Baserow field name → Drizzle column key for clients table
+const CLIENT_FIELD_MAP: Record<string, keyof typeof clientsTable.$inferInsert> = {
+  nome_completo: "nomeCompleto",
+  cpf: "cpf",
+  rg: "rg",
+  celular: "celular",
+  email: "email",
+  estado_civil: "estadoCivil",
+  profissao: "profissao",
+  data_nascimento: "dataNascimento",
+  nacionalidade: "nacionalidade",
+  endereco_rua: "enderecoRua",
+  endereco_numero: "enderecoNumero",
+  endereco_complemento: "enderecoComplemento",
+  endereco_estado: "enderecoEstado",
+  endereco_cidade: "enderecoCidade",
+  institution_id: "institutionId",
+};
+
+/** Convert Drizzle client row → ClientRow (user_field_names format) */
+function mapClientRow(row: typeof clientsTable.$inferSelect): ClientRow {
+  return {
+    id: row.id,
+    nome_completo: row.nomeCompleto ?? undefined,
+    cpf: row.cpf ?? undefined,
+    rg: row.rg ?? undefined,
+    celular: row.celular ?? undefined,
+    email: row.email ?? undefined,
+    estado_civil: row.estadoCivil ?? undefined,
+    profissao: row.profissao ?? undefined,
+    data_nascimento: row.dataNascimento?.toISOString().split("T")[0] ?? undefined,
+    nacionalidade: row.nacionalidade ?? undefined,
+    endereco_rua: row.enderecoRua ?? undefined,
+    endereco_numero: row.enderecoNumero ?? undefined,
+    endereco_complemento: row.enderecoComplemento ?? undefined,
+    endereco_estado: row.enderecoEstado ?? undefined,
+    endereco_cidade: row.enderecoCidade ?? undefined,
+    institution_id: row.institutionId ? Number(row.institutionId) : undefined,
+  };
+}
+
+/** Convert ClientRow payload (user_field_names) → Drizzle set/insert object */
+function buildClientSetObj(data: Record<string, unknown>): Record<string, unknown> {
+  const setObj: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (key === "id" || value === undefined || value === null || value === "") continue;
+    const drizzleKey = CLIENT_FIELD_MAP[key];
+    if (!drizzleKey) continue;
+    // Handle estado_civil — normalize object {value} to string
+    if (key === "estado_civil" && typeof value === "object" && value !== null && "value" in value) {
+      setObj[drizzleKey] = (value as { value: string }).value;
+    } else if (drizzleKey === "institutionId") {
+      setObj[drizzleKey] = String(value);
+    } else if (drizzleKey === "dataNascimento") {
+      setObj[drizzleKey] = value ? new Date(value as string) : null;
+    } else {
+      setObj[drizzleKey] = value;
+    }
+  }
+  return setObj;
+}
+
 export const getClientById = async (
   rowId: number,
 ): Promise<ClientRow | null> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      if (!rowId) return null;
+      const [row] = await db.select().from(clientsTable).where(eq(clientsTable.id, rowId)).limit(1);
+      return row ? mapClientRow(row) : null;
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     if (!rowId) {
       return null;
@@ -2148,6 +3061,16 @@ export const getClientById = async (
 export const getClientsByInstitution = async (
   institutionId: number,
 ): Promise<ClientRow[]> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const rows = await db.select().from(clientsTable)
+        .where(eq(clientsTable.institutionId, String(institutionId)));
+      return rows.map(mapClientRow);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CLIENTS_TABLE_ID}/?user_field_names=true&size=200&filter__institution_id__equal=${institutionId}`;
     const response = await baserowGet(url);
@@ -2162,6 +3085,18 @@ export const getClientsByInstitution = async (
 export const createClient = async (
   payload: CreateClientPayload,
 ): Promise<ClientRow> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const insertObj = buildClientSetObj(payload as unknown as Record<string, unknown>);
+      const [row] = await db.insert(clientsTable)
+        .values(insertObj as typeof clientsTable.$inferInsert)
+        .returning();
+      return mapClientRow(row);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     // Clean payload - remove empty/undefined values and format fields correctly
     const cleanPayload: Record<string, unknown> = {};
@@ -2202,6 +3137,20 @@ export const updateClient = async (
   rowId: number,
   payload: UpdateClientPayload,
 ): Promise<ClientRow> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const setObj = buildClientSetObj(payload as unknown as Record<string, unknown>);
+      if (Object.keys(setObj).length > 0) {
+        await db.update(clientsTable).set(setObj).where(eq(clientsTable.id, rowId));
+      }
+      const [updated] = await db.select().from(clientsTable).where(eq(clientsTable.id, rowId)).limit(1);
+      if (!updated) throw new Error(`Client row ${rowId} not found`);
+      return mapClientRow(updated);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     // Clean payload - remove empty/undefined values and format fields correctly
     const cleanPayload: Record<string, unknown> = {};
@@ -2242,6 +3191,23 @@ export const searchClientByPhone = async (
   phone: string,
   institutionId: number,
 ): Promise<ClientRow | null> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const cleanPhone = phone.replace(/\D/g, "");
+      const rows = await db.select().from(clientsTable)
+        .where(
+          and(
+            like(clientsTable.celular, `%${cleanPhone}%`),
+            eq(clientsTable.institutionId, String(institutionId)),
+          ),
+        )
+        .limit(1);
+      return rows.length > 0 ? mapClientRow(rows[0]) : null;
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     // Clean phone number for search
     const cleanPhone = phone.replace(/\D/g, "");
@@ -2403,9 +3369,104 @@ const sortEvents = (
   });
 };
 
+/** Map Drizzle events row → CalendarEventRow */
+function mapEventRow(row: typeof eventsTable.$inferSelect): CalendarEventRow {
+  return {
+    id: row.id,
+    InstitutionID: row.institutionID ? Number(row.institutionID) : null,
+    user_id: row.userId ? Number(row.userId) : null,
+    title: row.title,
+    description: row.description,
+    start_datetime: row.startDatetime?.toISOString() ?? null,
+    end_datetime: row.endDatetime?.toISOString() ?? null,
+    timezone: row.timezone,
+    location: row.location,
+    meeting_link: row.meetingLink,
+    reminder_minutes_before: row.reminderMinutesBefore ? Number(row.reminderMinutesBefore) : null,
+    notify_by_email: row.notifyByEmail,
+    notify_by_phone: row.notifyByPhone,
+    google_event_id: row.googleEventId,
+    sync_status: row.syncStatus,
+    created_at: row.createdAt?.toISOString() ?? null,
+    updated_at: row.updatedAt?.toISOString() ?? null,
+    deleted_at: null, // field not in schema-map — will always be null via Drizzle
+    event_guests: Array.isArray(row.eventGuests) ? row.eventGuests as { id: number; value: string }[] : [],
+  };
+}
+
+/** Map Drizzle eventGuests row → CalendarEventGuestRow */
+function mapGuestRow(row: typeof eventGuestsTable.$inferSelect): CalendarEventGuestRow {
+  return {
+    id: row.id,
+    event_id: Array.isArray(row.eventId) ? row.eventId as { id: number; value: string }[] : [],
+    name: row.name,
+    email: row.email,
+    phone: row.phone,
+    notification_status: row.notificationStatus,
+    created_at: row.createdAt?.toISOString() ?? null,
+    updated_at: row.updatedAt?.toISOString() ?? null,
+  };
+}
+
+/** Build Drizzle set object from CreateCalendarEventPayload */
+function buildEventSetObj(payload: Record<string, unknown>): Record<string, unknown> {
+  const setObj: Record<string, unknown> = {};
+  const map: Record<string, string> = {
+    InstitutionID: "institutionID",
+    user_id: "userId",
+    title: "title",
+    description: "description",
+    start_datetime: "startDatetime",
+    end_datetime: "endDatetime",
+    timezone: "timezone",
+    location: "location",
+    meeting_link: "meetingLink",
+    reminder_minutes_before: "reminderMinutesBefore",
+    notify_by_email: "notifyByEmail",
+    notify_by_phone: "notifyByPhone",
+    google_event_id: "googleEventId",
+    sync_status: "syncStatus",
+    created_at: "createdAt",
+    updated_at: "updatedAt",
+  };
+  for (const [key, value] of Object.entries(payload)) {
+    if (value === undefined) continue;
+    const drizzleKey = map[key];
+    if (!drizzleKey) continue;
+    // Handle type conversions
+    if (drizzleKey === "institutionID" || drizzleKey === "userId" || drizzleKey === "reminderMinutesBefore") {
+      setObj[drizzleKey] = value != null ? String(value) : null;
+    } else if (drizzleKey === "startDatetime" || drizzleKey === "endDatetime" || drizzleKey === "createdAt" || drizzleKey === "updatedAt") {
+      setObj[drizzleKey] = value ? new Date(value as string) : null;
+    } else {
+      setObj[drizzleKey] = value;
+    }
+  }
+  return setObj;
+}
+
 export const listCalendarEvents = async (
   params: ListCalendarEventsParams = {},
 ): Promise<CalendarEventRow[]> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const conditions = [];
+      if (params.institutionId) {
+        conditions.push(eq(eventsTable.institutionID, String(params.institutionId)));
+      }
+      const rows = await db
+        .select()
+        .from(eventsTable)
+        .where(conditions.length ? and(...conditions) : undefined);
+      const mapped = rows.map(mapEventRow);
+      // deleted_at is always null from Drizzle, so all events pass !row.deleted_at
+      const active = params.includeDeleted ? mapped : mapped.filter((row) => !row.deleted_at);
+      return sortEvents(active, params.start, params.end);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     ensureCalendarTablesConfigured();
 
@@ -2452,6 +3513,16 @@ export const listCalendarEvents = async (
 export const getCalendarEventById = async (
   eventId: number,
 ): Promise<CalendarEventRow | null> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      if (!eventId) return null;
+      const [row] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId)).limit(1);
+      return row ? mapEventRow(row) : null;
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     ensureCalendarTablesConfigured();
     if (!eventId) {
@@ -2477,6 +3548,16 @@ export const getCalendarEventById = async (
 export const createCalendarEvent = async (
   payload: CreateCalendarEventPayload,
 ): Promise<CalendarEventRow> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const insertObj = buildEventSetObj(payload as unknown as Record<string, unknown>);
+      const [row] = await db.insert(eventsTable).values(insertObj as typeof eventsTable.$inferInsert).returning();
+      return mapEventRow(row);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     ensureCalendarTablesConfigured();
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_EVENTS_TABLE_ID}/?user_field_names=true`;
@@ -2502,6 +3583,21 @@ export const updateCalendarEvent = async (
   eventId: number,
   payload: UpdateCalendarEventPayload,
 ): Promise<CalendarEventRow> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const setObj = buildEventSetObj(payload as unknown as Record<string, unknown>);
+      // If setObj is empty (e.g., only deleted_at was passed which isn't in schema), fall through to Baserow
+      if (Object.keys(setObj).length > 0) {
+        await db.update(eventsTable).set(setObj as Partial<typeof eventsTable.$inferInsert>).where(eq(eventsTable.id, eventId));
+        const [updated] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId)).limit(1);
+        return mapEventRow(updated);
+      }
+      return undefined;
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     ensureCalendarTablesConfigured();
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_EVENTS_TABLE_ID}/${eventId}/?user_field_names=true`;
@@ -2524,6 +3620,14 @@ export const softDeleteCalendarEvent = async (
 export const deleteCalendarEvent = async (
   eventId: number,
 ): Promise<void> => {
+  if (useDirectDb("api")) {
+    const _ok = await tryDrizzle(async () => {
+      await db.delete(eventsTable).where(eq(eventsTable.id, eventId));
+    });
+    if (_ok !== undefined) return;
+  }
+
+  // --- Baserow fallback ---
   try {
     ensureCalendarTablesConfigured();
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_EVENTS_TABLE_ID}/${eventId}/`;
@@ -2537,6 +3641,24 @@ export const deleteCalendarEvent = async (
 export const createCalendarEventGuest = async (
   payload: CreateCalendarEventGuestPayload,
 ): Promise<CalendarEventGuestRow> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const insertObj: typeof eventGuestsTable.$inferInsert = {
+        name: payload.name,
+        eventId: [{ id: payload.event_id }],
+        email: payload.email ?? null,
+        phone: payload.phone ?? null,
+        notificationStatus: payload.notification_status ?? "pending",
+        createdAt: payload.created_at ? new Date(payload.created_at) : new Date(),
+        updatedAt: payload.updated_at ? new Date(payload.updated_at) : new Date(),
+      };
+      const [row] = await db.insert(eventGuestsTable).values(insertObj).returning();
+      return mapGuestRow(row);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     ensureCalendarTablesConfigured(true);
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_EVENT_GUESTS_TABLE_ID}/?user_field_names=true`;
@@ -2558,6 +3680,16 @@ export const createCalendarEventGuest = async (
 export const getCalendarEventGuestById = async (
   guestId: number,
 ): Promise<CalendarEventGuestRow | null> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      if (!guestId) return null;
+      const [row] = await db.select().from(eventGuestsTable).where(eq(eventGuestsTable.id, guestId)).limit(1);
+      return row ? mapGuestRow(row) : null;
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     ensureCalendarTablesConfigured(true);
     if (!guestId) {
@@ -2581,6 +3713,14 @@ export const getCalendarEventGuestById = async (
 };
 
 export const deleteCalendarEventGuest = async (guestId: number): Promise<void> => {
+  if (useDirectDb("api")) {
+    const _ok = await tryDrizzle(async () => {
+      await db.delete(eventGuestsTable).where(eq(eventGuestsTable.id, guestId));
+    });
+    if (_ok !== undefined) return;
+  }
+
+  // --- Baserow fallback ---
   try {
     ensureCalendarTablesConfigured(true);
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_EVENT_GUESTS_TABLE_ID}/${guestId}/`;
@@ -2594,6 +3734,18 @@ export const deleteCalendarEventGuest = async (guestId: number): Promise<void> =
 export const listCalendarEventGuests = async (
   eventId: number,
 ): Promise<CalendarEventGuestRow[]> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const rows = await db
+        .select()
+        .from(eventGuestsTable)
+        .where(sql`${eventGuestsTable.eventId}::jsonb @> ${JSON.stringify([{ id: eventId }])}::jsonb`);
+      return rows.map(mapGuestRow);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   try {
     ensureCalendarTablesConfigured(true);
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_EVENT_GUESTS_TABLE_ID}/?user_field_names=true&filter__event_id__link_row_has=${eventId}`;

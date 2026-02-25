@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
   CalendarDays,
@@ -10,11 +10,8 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { LoadingScreen } from "@/components/ui/loading-screen";
-import { getBaserowCases, type BaserowCaseRow } from "@/services/api";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import {
-  computeCaseStatistics,
-  getCaseInstitutionId,
   stageLabels,
   stageOrder,
   type CaseStage,
@@ -151,118 +148,53 @@ const PausedCasesDonut = ({ stats }: { stats: CaseStatistics }) => {
 
 export default function EstatisticasPage() {
   const { data } = useOnboarding();
-  const [cases, setCases] = useState<BaserowCaseRow[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedInstitution, setSelectedInstitution] = useState("all");
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-
   const isSysAdmin = data.auth?.institutionId === 4;
+  const [selectedInstitution, setSelectedInstitution] = useState("all");
 
   const {
-    stats: quickStats,
-    refresh: refreshQuickStats,
-    isRefreshing: quickStatsRefreshing,
+    stats: aggregatedStats,
+    institutionBreakdown,
+    isLoading,
+    isRefreshing,
+    error,
+    lastUpdated,
+    refresh,
   } = useStatistics(data.auth?.institutionId ?? undefined);
 
-  const fetchStatistics = useCallback(
-    async (options: { silent?: boolean } = {}) => {
-      if (!data.auth?.institutionId) {
-        setError("ID da instituição não encontrado.");
-        setIsLoading(false);
-        return;
-      }
-
-      const { silent } = options;
-      if (silent) {
-        setIsRefreshing(true);
-      } else {
-        setIsLoading(true);
-      }
-
-      setError(null);
-      try {
-        const response = await getBaserowCases({
-          institutionId: data.auth.institutionId,
-          pageSize: 200,
-          fetchAll: true,
-        });
-        setCases(response.results);
-        setLastUpdated(new Date());
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Erro ao carregar estatísticas",
-        );
-      } finally {
-        if (silent) {
-          setIsRefreshing(false);
-        } else {
-          setIsLoading(false);
-        }
-      }
-    },
-    [data.auth?.institutionId],
-  );
-
-  useEffect(() => {
-    fetchStatistics();
-  }, [fetchStatistics]);
-
+  // Institution filter for SysAdmin
   const institutionOptions = useMemo(() => {
-    if (!cases.length) return [];
-    const unique = new Set<string>();
-    cases.forEach((row) => {
-      const id = getCaseInstitutionId(row);
-      if (id) unique.add(id);
-    });
-    return Array.from(unique).sort((a, b) => {
+    if (!institutionBreakdown) return [];
+    return Object.keys(institutionBreakdown).sort((a, b) => {
       const numA = Number(a);
       const numB = Number(b);
-      const hasNumA = Number.isFinite(numA);
-      const hasNumB = Number.isFinite(numB);
-      if (hasNumA && hasNumB) return numA - numB;
-      if (hasNumA) return -1;
-      if (hasNumB) return 1;
+      if (Number.isFinite(numA) && Number.isFinite(numB)) return numA - numB;
+      if (Number.isFinite(numA)) return -1;
+      if (Number.isFinite(numB)) return 1;
       return a.localeCompare(b);
     });
-  }, [cases]);
+  }, [institutionBreakdown]);
 
+  // Reset selection if institution is no longer available
   useEffect(() => {
     if (!isSysAdmin) {
       setSelectedInstitution("all");
       return;
     }
-    if (
-      selectedInstitution !== "all" &&
-      !institutionOptions.includes(selectedInstitution)
-    ) {
+    if (selectedInstitution !== "all" && !institutionOptions.includes(selectedInstitution)) {
       setSelectedInstitution("all");
     }
   }, [institutionOptions, isSysAdmin, selectedInstitution]);
 
-  const visibleCases = useMemo(() => {
-    if (!isSysAdmin || selectedInstitution === "all") {
-      return cases;
-    }
-    return cases.filter(
-      (row) => getCaseInstitutionId(row) === selectedInstitution,
-    );
-  }, [cases, isSysAdmin, selectedInstitution]);
-
-  const computedStats = useMemo(
-    () => computeCaseStatistics(visibleCases),
-    [visibleCases],
-  );
-
+  // Select stats based on filter
   const stats = useMemo(() => {
-    if (isLoading && !isSysAdmin && quickStats.totalCases > 0) {
-      return quickStats;
+    if (!isSysAdmin || selectedInstitution === "all") {
+      return aggregatedStats;
     }
-    return computedStats;
-  }, [isLoading, isSysAdmin, quickStats, computedStats]);
+    if (institutionBreakdown?.[selectedInstitution]) {
+      return institutionBreakdown[selectedInstitution];
+    }
+    return aggregatedStats;
+  }, [isSysAdmin, selectedInstitution, aggregatedStats, institutionBreakdown]);
 
   const lastUpdatedLabel = useMemo(() => {
     if (!lastUpdated) return null;
@@ -272,7 +204,7 @@ export default function EstatisticasPage() {
     });
   }, [lastUpdated]);
 
-  if (isLoading && !cases.length) {
+  if (isLoading && stats.totalCases === 0) {
     return <LoadingScreen message="Carregando estatísticas..." />;
   }
 
@@ -313,13 +245,10 @@ export default function EstatisticasPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => {
-                fetchStatistics({ silent: true });
-                refreshQuickStats();
-              }}
-              disabled={isRefreshing || quickStatsRefreshing}
+              onClick={() => refresh()}
+              disabled={isRefreshing}
             >
-              {(isRefreshing || quickStatsRefreshing) ? (
+              {isRefreshing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <RefreshCw className="h-4 w-4" />
@@ -332,7 +261,7 @@ export default function EstatisticasPage() {
           <div className="mx-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
             {error}
             <button
-              onClick={() => fetchStatistics()}
+              onClick={() => refresh()}
               className="ml-2 underline"
             >
               Tentar novamente
@@ -342,12 +271,10 @@ export default function EstatisticasPage() {
 
         {/* KPIs */}
         <div className="grid grid-cols-2 gap-2 sm:gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          {/* Total */}
           <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 sm:px-4 sm:py-3">
             <p className="text-xs text-muted-foreground">Casos totais</p>
             <p className="text-lg sm:text-2xl font-bold text-foreground">{stats.totalCases}</p>
           </div>
-          {/* Últimos 7 dias */}
           <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 sm:px-4 sm:py-3">
             <p className="text-xs text-muted-foreground flex items-center gap-1">
               <CalendarDays className="h-3 w-3" />
@@ -355,7 +282,6 @@ export default function EstatisticasPage() {
             </p>
             <p className="text-lg sm:text-2xl font-bold text-foreground">{stats.casesLast7Days}</p>
           </div>
-          {/* Últimos 30 dias */}
           <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 sm:px-4 sm:py-3">
             <p className="text-xs text-muted-foreground flex items-center gap-1">
               <CalendarDays className="h-3 w-3" />
@@ -363,7 +289,6 @@ export default function EstatisticasPage() {
             </p>
             <p className="text-lg sm:text-2xl font-bold text-foreground">{stats.casesLast30Days}</p>
           </div>
-          {/* Etapas */}
           {stageOrder.map((stage) => (
             <div key={stage} className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 sm:px-4 sm:py-3">
               <p className="text-xs text-muted-foreground">{stageLabels[stage]}</p>
@@ -386,7 +311,6 @@ export default function EstatisticasPage() {
 
         {/* IA pausada + Volume */}
         <div className="grid gap-3 sm:gap-4 lg:grid-cols-2">
-          {/* IA pausada */}
           <div>
             <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-3 border-b border-[#7E99B5] dark:border-border/60">
               <span className="text-sm font-semibold">IA pausada</span>
@@ -399,7 +323,6 @@ export default function EstatisticasPage() {
             </div>
           </div>
 
-          {/* Volume por etapa */}
           <div>
             <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-3 border-b border-[#7E99B5] dark:border-border/60">
               <span className="text-sm font-semibold">Volume por etapa</span>

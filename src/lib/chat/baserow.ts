@@ -1,4 +1,8 @@
 import axios from "axios";
+import { or, like, inArray } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { useDirectDb, tryDrizzle } from "@/lib/db/repository";
+import { caseMessages } from "@/lib/db/schema/caseMessages";
 
 import type {
   CaseMessage,
@@ -401,6 +405,33 @@ const toCaseMessage = (
   return message;
 };
 
+// ---------------------------------------------------------------------------
+// Drizzle row → BaserowCaseMessageRow mapper
+// ---------------------------------------------------------------------------
+
+type DrizzleCaseMessageRow = typeof caseMessages.$inferSelect;
+
+function mapDrizzleToBaserowRow(r: DrizzleCaseMessageRow): BaserowCaseMessageRow {
+  return {
+    id: r.id,
+    CaseId: r.caseId,
+    Sender: extractSenderValue(r.sender),
+    SenderName: r.senderName,
+    DataHora: r.dataHora,
+    Message: r.message,
+    file: r.file as BaserowFileValue[] | null,
+    from: r.from,
+    to: r.to,
+    created_on: r.createdOn?.toISOString() ?? null,
+    updated_on: r.updatedOn?.toISOString() ?? null,
+    // Fields not present as PG columns (Baserow never stored them):
+    messages_type: null,
+    audioid: null,
+    imageId: null,
+    documentId: null,
+  };
+}
+
 type FetchMessagesOptions = {
   caseIdentifiers?: Array<string | number>;
   customerPhone?: string;
@@ -412,11 +443,62 @@ export type FetchMessagesResult = {
   wabaPhoneNumber: string | null;
 };
 
+// ---------------------------------------------------------------------------
+// Shared sort/dedup/WABA helpers (used by both Drizzle and Baserow paths)
+// ---------------------------------------------------------------------------
+
+const parseDateForSort = (value: string | null | undefined): number => {
+  if (!value) return 0;
+  const trimmed = value.trim();
+  const brazilianDate = parseBrazilianDate(trimmed);
+  if (brazilianDate && !Number.isNaN(brazilianDate.getTime())) {
+    return brazilianDate.getTime();
+  }
+  const parsed = new Date(trimmed);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.getTime();
+  }
+  return 0;
+};
+
+const deduplicateAndSort = (collected: BaserowCaseMessageRow[]): BaserowCaseMessageRow[] => {
+  const uniqueMap = new Map<number, BaserowCaseMessageRow>();
+  for (const row of collected) {
+    if (!uniqueMap.has(row.id)) {
+      uniqueMap.set(row.id, row);
+    }
+  }
+  const unique = Array.from(uniqueMap.values());
+  unique.sort((a, b) => {
+    const dateA = parseDateForSort(a.DataHora || a.created_on);
+    const dateB = parseDateForSort(b.DataHora || b.created_on);
+    if (dateA !== dateB) return dateA - dateB;
+    return a.id - b.id;
+  });
+  return unique;
+};
+
+const buildFetchResult = (
+  unique: BaserowCaseMessageRow[],
+  fallbackCaseId: number,
+  normalizedPhone: string,
+): FetchMessagesResult => {
+  const wabaPhoneNumber = determineWabaNumberFromMessages(unique, normalizedPhone);
+  return {
+    messages: unique.map((row) =>
+      toCaseMessage(row, fallbackCaseId, { customerPhone: normalizedPhone }),
+    ),
+    wabaPhoneNumber,
+  };
+};
+
+// ---------------------------------------------------------------------------
+// fetchCaseMessagesFromBaserow
+// ---------------------------------------------------------------------------
+
 export const fetchCaseMessagesFromBaserow = async (
   options: FetchMessagesOptions,
 ): Promise<FetchMessagesResult> => {
-  ensureBaserowConfig();
-
   const { caseIdentifiers = [], customerPhone, fallbackCaseId } = options;
 
   // Normalize customer phone (remove non-digits)
@@ -432,6 +514,43 @@ export const fetchCaseMessagesFromBaserow = async (
   if (!normalizedPhone && !normalizedIdentifiers.length) {
     return { messages: [], wabaPhoneNumber: null };
   }
+
+  // ── Drizzle (direct PostgreSQL) ──────────────────────────────────────
+  if (useDirectDb("chat")) {
+    const _dr = await tryDrizzle(async () => {
+      const collected: BaserowCaseMessageRow[] = [];
+  
+      // Search by phone (from/to) first
+      if (normalizedPhone) {
+        const rows = await db
+          .select()
+          .from(caseMessages)
+          .where(
+            or(
+              like(caseMessages.from, `%${normalizedPhone}%`),
+              like(caseMessages.to, `%${normalizedPhone}%`),
+            ),
+          );
+        collected.push(...rows.map(mapDrizzleToBaserowRow));
+      }
+  
+      // If no results from phone, fallback to CaseId search
+      if (!collected.length && normalizedIdentifiers.length) {
+        const rows = await db
+          .select()
+          .from(caseMessages)
+          .where(inArray(caseMessages.caseId, normalizedIdentifiers));
+        collected.push(...rows.map(mapDrizzleToBaserowRow));
+      }
+  
+      const unique = deduplicateAndSort(collected);
+      return buildFetchResult(unique, fallbackCaseId, normalizedPhone);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // ── Baserow REST API (fallback) ──────────────────────────────────────
+  ensureBaserowConfig();
 
   const pageSize = 200;
   const collected: BaserowCaseMessageRow[] = [];
@@ -495,51 +614,8 @@ export const fetchCaseMessagesFromBaserow = async (
     }
   }
 
-  // Remove duplicates by id
-  const uniqueMap = new Map<number, BaserowCaseMessageRow>();
-  for (const row of collected) {
-    if (!uniqueMap.has(row.id)) {
-      uniqueMap.set(row.id, row);
-    }
-  }
-  const unique = Array.from(uniqueMap.values());
-
-  const parseDateForSort = (value: string | null | undefined): number => {
-    if (!value) return 0;
-    const trimmed = value.trim();
-    // Try Brazilian format first
-    const brazilianDate = parseBrazilianDate(trimmed);
-    if (brazilianDate && !Number.isNaN(brazilianDate.getTime())) {
-      return brazilianDate.getTime();
-    }
-    // Fallback to standard parsing
-    const parsed = new Date(trimmed);
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed.getTime();
-    }
-    return 0;
-  };
-
-  unique.sort((a, b) => {
-    const dateA = parseDateForSort(a.DataHora || a.created_on);
-    const dateB = parseDateForSort(b.DataHora || b.created_on);
-
-    // First sort by date
-    if (dateA !== dateB) {
-      return dateA - dateB;
-    }
-
-    // If same date, sort by id (higher id = more recent)
-    return a.id - b.id;
-  });
-
-  // Determinar o número WABA da conversa
-  const wabaPhoneNumber = determineWabaNumberFromMessages(unique, normalizedPhone);
-
-  return {
-    messages: unique.map((row) => toCaseMessage(row, fallbackCaseId, { customerPhone: normalizedPhone })),
-    wabaPhoneNumber,
-  };
+  const unique = deduplicateAndSort(collected);
+  return buildFetchResult(unique, fallbackCaseId, normalizedPhone);
 };
 
 export const uploadAttachmentToBaserow = async (
@@ -608,6 +684,35 @@ const toBaserowSender = (sender: CaseMessageSender): string => {
 };
 
 export const createCaseMessageRow = async (input: CreateCaseMessageRowInput) => {
+  // ── Drizzle (direct PostgreSQL) ──────────────────────────────────────
+  if (useDirectDb("chat")) {
+    const _dr = await tryDrizzle(async () => {
+      const senderValue = toBaserowSender(input.sender);
+      // multiple_select stores JSONB array of {id, value} objects
+      const senderJsonb = [{ id: 0, value: senderValue }];
+  
+      const values: typeof caseMessages.$inferInsert = {
+        caseId: String(input.caseIdentifier),
+        sender: senderJsonb,
+        senderName: input.senderName ?? "",
+        message: input.content,
+        dataHora: input.timestamp ?? new Date().toISOString(),
+        from: input.from ?? null,
+        to: input.to ?? null,
+        file: input.attachments?.length ? input.attachments : null,
+      };
+  
+      const [created] = await db
+        .insert(caseMessages)
+        .values(values)
+        .returning();
+  
+      return mapDrizzleToBaserowRow(created);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // ── Baserow REST API (fallback) ──────────────────────────────────────
   ensureBaserowConfig();
 
   const payload: Record<string, unknown> = {

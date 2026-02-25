@@ -1,5 +1,11 @@
 import axios from "axios";
+import { eq, and, sql } from "drizzle-orm";
 
+import { db } from "@/lib/db";
+import { prepared } from "@/lib/db/prepared";
+import { assignmentQueue } from "@/lib/db/schema/assignmentQueue";
+import { cases } from "@/lib/db/schema/cases";
+import { useDirectDb, tryDrizzle } from "@/lib/db/repository";
 import type { UserPublicRow } from "@/services/permissions";
 
 // ---------------------------------------------------------------------------
@@ -61,12 +67,40 @@ export type QueueStats = {
 };
 
 // ---------------------------------------------------------------------------
+// Drizzle row mapper
+// ---------------------------------------------------------------------------
+
+/** Map Drizzle row → QueueRecord (snake_case fields for API compat) */
+function mapQueueRow(
+  row: typeof assignmentQueue.$inferSelect,
+): QueueRecord {
+  return {
+    id: row.id,
+    user_id: Number(row.userId) || 0,
+    institution_id: Number(row.institutionId) || 0,
+    last_assigned_at: row.lastAssignedAt || "",
+    assignment_count: Number(row.assignmentCount) || 0,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // CRUD
 // ---------------------------------------------------------------------------
 
 export const fetchQueueRecords = async (
   institutionId: number,
 ): Promise<QueueRecord[]> => {
+  if (useDirectDb("assignment")) {
+    const _dr = await tryDrizzle(async () => {
+      const rows = await prepared.getQueueByInstitution.execute({
+        institutionId: String(institutionId),
+      });
+      return rows.map(mapQueueRow);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   const params = new URLSearchParams({
     user_field_names: "true",
     size: "200",
@@ -83,7 +117,42 @@ export const recordAssignment = async (
 ): Promise<void> => {
   const now = new Date().toISOString();
 
-  // Check if record exists
+  if (useDirectDb("assignment")) {
+    const _ok = await tryDrizzle(async () => {
+      // Check if record exists
+      const [existing] = await db
+        .select()
+        .from(assignmentQueue)
+        .where(
+          and(
+            eq(assignmentQueue.userId, String(userId)),
+            eq(assignmentQueue.institutionId, String(institutionId)),
+          ),
+        )
+        .limit(1);
+  
+      if (existing) {
+        const count = Number(existing.assignmentCount) || 0;
+        await db
+          .update(assignmentQueue)
+          .set({
+            lastAssignedAt: now,
+            assignmentCount: String(count + 1),
+          })
+          .where(eq(assignmentQueue.id, existing.id));
+      } else {
+        await db.insert(assignmentQueue).values({
+          userId: String(userId),
+          institutionId: String(institutionId),
+          lastAssignedAt: now,
+          assignmentCount: String(1),
+        });
+      }
+    });
+    if (_ok !== undefined) return;
+  }
+
+  // --- Baserow fallback ---
   const params = new URLSearchParams({
     user_field_names: "true",
     size: "1",
@@ -143,6 +212,38 @@ export const recordAssignmentsBatch = async (
     recordMap.set(Number(rec.user_id), rec);
   }
 
+  if (useDirectDb("assignment")) {
+    const _ok = await tryDrizzle(async () => {
+      for (const [userId, increment] of countsByUser) {
+        try {
+          const existing = recordMap.get(userId);
+          if (existing) {
+            const currentCount = Number(existing.assignment_count) || 0;
+            await db
+              .update(assignmentQueue)
+              .set({
+                lastAssignedAt: now,
+                assignmentCount: String(currentCount + increment),
+              })
+              .where(eq(assignmentQueue.id, existing.id));
+          } else {
+            const instId = assignments.find((a) => a.userId === userId)!.institutionId;
+            await db.insert(assignmentQueue).values({
+              userId: String(userId),
+              institutionId: String(instId),
+              lastAssignedAt: now,
+              assignmentCount: String(increment),
+            });
+          }
+        } catch (err) {
+          console.error(`Erro ao registrar assignment batch para user ${userId}:`, err);
+        }
+      }
+    });
+    if (_ok !== undefined) return;
+  }
+
+  // --- Baserow fallback ---
   // Process each user SEQUENTIALLY to avoid lock contention
   for (const [userId, increment] of countsByUser) {
     try {
@@ -253,6 +354,18 @@ const countUserCases = async (
   userId: number,
   institutionId: number,
 ): Promise<number> => {
+  if (useDirectDb("assignment")) {
+    const _dr = await tryDrizzle(async () => {
+      const [result] = await prepared.countUserCases.execute({
+        userId: String(userId),
+        institutionId: String(institutionId),
+      });
+      return Number(result?.count ?? 0);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   const params = new URLSearchParams({
     user_field_names: "true",
     size: "1",

@@ -8,6 +8,7 @@ import { getEmptyCaseStatistics } from "@/lib/case-stats";
 export type StatisticsResponse = CaseStatistics & {
   cached: boolean;
   cachedAt: string | null;
+  institutionBreakdown?: Record<string, CaseStatistics>;
 };
 
 type FetchOptions = {
@@ -17,6 +18,7 @@ type FetchOptions = {
 
 type CachedStats = {
   stats: CaseStatistics;
+  institutionBreakdown?: Record<string, CaseStatistics>;
   timestamp: number;
   institutionId: number;
 };
@@ -38,11 +40,16 @@ const getSessionCache = (institutionId: number): CachedStats | null => {
   }
 };
 
-const setSessionCache = (institutionId: number, stats: CaseStatistics): void => {
+const setSessionCache = (
+  institutionId: number,
+  stats: CaseStatistics,
+  institutionBreakdown?: Record<string, CaseStatistics>,
+): void => {
   if (typeof window === "undefined") return;
   try {
     const cached: CachedStats = {
       stats,
+      institutionBreakdown,
       timestamp: Date.now(),
       institutionId,
     };
@@ -54,6 +61,9 @@ const setSessionCache = (institutionId: number, stats: CaseStatistics): void => 
 
 export const useStatistics = (institutionId: number | undefined) => {
   const [stats, setStats] = useState<CaseStatistics>(getEmptyCaseStatistics());
+  const [institutionBreakdown, setInstitutionBreakdown] = useState<
+    Record<string, CaseStatistics> | undefined
+  >();
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,7 +102,7 @@ export const useStatistics = (institutionId: number | undefined) => {
 
         const response = await fetch(`/api/cases/stats?${params.toString()}`, {
           cache: "no-store",
-          credentials: "include", // Enviar cookies de autenticação
+          credentials: "include",
         });
 
         if (!response.ok) {
@@ -117,12 +127,13 @@ export const useStatistics = (institutionId: number | undefined) => {
         };
 
         setStats(newStats);
+        setInstitutionBreakdown(data.institutionBreakdown);
         setIsCached(data.cached);
         const updatedAt = data.cachedAt ? new Date(data.cachedAt) : new Date();
         setLastUpdated(updatedAt);
 
         // Salvar no sessionStorage
-        setSessionCache(institutionId, newStats);
+        setSessionCache(institutionId, newStats, data.institutionBreakdown);
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "Erro desconhecido ao carregar estatísticas",
@@ -151,6 +162,7 @@ export const useStatistics = (institutionId: number | undefined) => {
     if (cached) {
       // Carregar do cache imediatamente
       setStats(cached.stats);
+      setInstitutionBreakdown(cached.institutionBreakdown);
       setLastUpdated(new Date(cached.timestamp));
       setIsCached(true);
       setIsLoading(false);
@@ -169,6 +181,7 @@ export const useStatistics = (institutionId: number | undefined) => {
 
   return {
     stats,
+    institutionBreakdown,
     isLoading,
     isRefreshing,
     error,

@@ -1,7 +1,13 @@
 import axios from "axios";
+import { eq, desc, sql, or, ilike } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { supportTickets } from "@/lib/db/schema/supportTickets";
+import { supportMessages } from "@/lib/db/schema/supportMessages";
+import { supportKb } from "@/lib/db/schema/supportKb";
+import { useDirectDb, tryDrizzle } from "@/lib/db/repository";
 
 // ---------------------------------------------------------------------------
-// Baserow config
+// Baserow config (fallback)
 // ---------------------------------------------------------------------------
 
 const BASEROW_API_URL =
@@ -111,7 +117,58 @@ export type CreateMessageData = {
 };
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Drizzle mappers
+// ---------------------------------------------------------------------------
+
+function mapTicketRow(r: typeof supportTickets.$inferSelect): SupportTicketRow {
+  return {
+    id: r.id,
+    protocol: r.protocol || "",
+    institution_id: Number(r.institutionId) || 0,
+    created_by_name: r.createdByName || "",
+    created_by_email: r.createdByEmail || "",
+    created_by_phone: r.createdByPhone || "",
+    category: r.category || "",
+    subject: r.subject || "",
+    description: r.description || "",
+    status: r.status || "",
+    sector: r.sector || "",
+    assigned_to: r.assignedTo || "",
+    department_id: r.departmentId ? Number(r.departmentId) : null,
+    department_name: r.departmentName || null,
+    assigned_to_user_id: r.assignedToUserId ? Number(r.assignedToUserId) : null,
+    created_at: r.createdAt || "",
+    updated_at: r.updatedAt || "",
+  };
+}
+
+function mapMessageRow(r: typeof supportMessages.$inferSelect): SupportMessageRow {
+  return {
+    id: r.id,
+    ticket_id: Number(r.ticketId) || 0,
+    institution_id: Number(r.institutionId) || 0,
+    author_name: r.authorName || "",
+    author_email: r.authorEmail || "",
+    author_phone: r.authorPhone || "",
+    author_role: r.authorRole || "",
+    content: r.content || "",
+    created_at: r.createdAt || "",
+  };
+}
+
+function mapKbRow(r: typeof supportKb.$inferSelect): SupportKBRow {
+  return {
+    id: r.id,
+    title: r.title || "",
+    content: r.content || "",
+    category: r.category || "",
+    tags: r.tags || "",
+    created_at: r.createdAt || "",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Baserow helpers (fallback)
 // ---------------------------------------------------------------------------
 
 type BaserowListResponse<T> = { results?: T[] };
@@ -190,21 +247,46 @@ export function generateProtocol(): string {
 export async function fetchTickets(
   institutionId?: number,
 ): Promise<SupportTicketRow[]> {
-  const params = new URLSearchParams({
-    user_field_names: "true",
-    size: "200",
-  });
+  if (useDirectDb("support")) {
+    const _dr = await tryDrizzle(async () => {
+      const condition = institutionId
+        ? eq(supportTickets.institutionId, String(institutionId))
+        : undefined;
+      const rows = await db
+        .select()
+        .from(supportTickets)
+        .where(condition)
+        .orderBy(desc(supportTickets.id));
+      return rows.map(mapTicketRow);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // Baserow fallback
+  const params = new URLSearchParams({ user_field_names: "true", size: "200" });
   if (institutionId) {
     params.append("filter__institution_id__equal", String(institutionId));
   }
   const rows = await fetchTableRows<SupportTicketRow>(TABLE_IDS.tickets, params);
-  // Sort by id descending (most recent first)
   return rows.sort((a, b) => b.id - a.id);
 }
 
 export async function fetchTicketById(
   ticketId: number,
 ): Promise<SupportTicketRow | null> {
+  if (useDirectDb("support")) {
+    const _dr = await tryDrizzle(async () => {
+      const [row] = await db
+        .select()
+        .from(supportTickets)
+        .where(eq(supportTickets.id, ticketId))
+        .limit(1);
+      return row ? mapTicketRow(row) : null;
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // Baserow fallback
   try {
     const client = baserowClient();
     const url = `/database/rows/table/${TABLE_IDS.tickets}/${ticketId}/?user_field_names=true`;
@@ -220,7 +302,34 @@ export async function createTicket(
 ): Promise<SupportTicketRow> {
   const now = new Date().toISOString();
   const protocol = generateProtocol();
+  const sector = categoryToSector(data.category);
 
+  if (useDirectDb("support")) {
+    const _dr = await tryDrizzle(async () => {
+      const [created] = await db
+        .insert(supportTickets)
+        .values({
+          protocol,
+          institutionId: String(data.institution_id),
+          createdByName: data.created_by_name,
+          createdByEmail: data.created_by_email,
+          createdByPhone: data.created_by_phone,
+          category: data.category,
+          subject: data.subject,
+          description: data.description,
+          status: "aberto",
+          sector,
+          assignedTo: sector,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
+      return mapTicketRow(created);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // Baserow fallback
   const payload: Record<string, unknown> = {
     protocol,
     institution_id: data.institution_id,
@@ -231,12 +340,11 @@ export async function createTicket(
     subject: data.subject,
     description: data.description,
     status: "aberto",
-    sector: categoryToSector(data.category),
-    assigned_to: categoryToSector(data.category),
+    sector,
+    assigned_to: sector,
     created_at: now,
     updated_at: now,
   };
-
   return createRow<SupportTicketRow>(TABLE_IDS.tickets, payload);
 }
 
@@ -244,6 +352,32 @@ export async function updateTicket(
   ticketId: number,
   data: UpdateTicketData,
 ): Promise<SupportTicketRow> {
+  if (useDirectDb("support")) {
+    const _dr = await tryDrizzle(async () => {
+      const setValues: Partial<typeof supportTickets.$inferInsert> = {
+        updatedAt: new Date().toISOString(),
+      };
+      if (data.status !== undefined) setValues.status = data.status;
+      if (data.sector !== undefined) setValues.sector = data.sector;
+      if (data.assigned_to !== undefined) setValues.assignedTo = data.assigned_to;
+      if (data.department_id !== undefined)
+        setValues.departmentId = data.department_id != null ? String(data.department_id) : null;
+      if (data.department_name !== undefined)
+        setValues.departmentName = data.department_name;
+      if (data.assigned_to_user_id !== undefined)
+        setValues.assignedToUserId = data.assigned_to_user_id != null ? String(data.assigned_to_user_id) : null;
+  
+      const [updated] = await db
+        .update(supportTickets)
+        .set(setValues)
+        .where(eq(supportTickets.id, ticketId))
+        .returning();
+      return mapTicketRow(updated);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // Baserow fallback
   const payload: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
   };
@@ -253,7 +387,6 @@ export async function updateTicket(
   if (data.department_id !== undefined) payload.department_id = data.department_id;
   if (data.department_name !== undefined) payload.department_name = data.department_name;
   if (data.assigned_to_user_id !== undefined) payload.assigned_to_user_id = data.assigned_to_user_id;
-
   return updateRow<SupportTicketRow>(TABLE_IDS.tickets, ticketId, payload);
 }
 
@@ -264,10 +397,19 @@ export async function updateTicket(
 export async function fetchTicketMessages(
   ticketId: number,
 ): Promise<SupportMessageRow[]> {
-  const params = new URLSearchParams({
-    user_field_names: "true",
-    size: "200",
-  });
+  if (useDirectDb("support")) {
+    const _dr = await tryDrizzle(async () => {
+      const rows = await db
+        .select()
+        .from(supportMessages)
+        .where(eq(supportMessages.ticketId, String(ticketId)));
+      return rows.map(mapMessageRow);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // Baserow fallback
+  const params = new URLSearchParams({ user_field_names: "true", size: "200" });
   params.append("filter__ticket_id__equal", String(ticketId));
   return fetchTableRows<SupportMessageRow>(TABLE_IDS.messages, params);
 }
@@ -276,6 +418,28 @@ export async function createTicketMessage(
   data: CreateMessageData,
 ): Promise<SupportMessageRow> {
   const now = new Date().toISOString();
+
+  if (useDirectDb("support")) {
+    const _dr = await tryDrizzle(async () => {
+      const [created] = await db
+        .insert(supportMessages)
+        .values({
+          ticketId: String(data.ticket_id),
+          institutionId: String(data.institution_id),
+          authorName: data.author_name,
+          authorEmail: data.author_email,
+          authorPhone: data.author_phone,
+          authorRole: data.author_role,
+          content: data.content,
+          createdAt: now,
+        })
+        .returning();
+      return mapMessageRow(created);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // Baserow fallback
   const payload: Record<string, unknown> = {
     ticket_id: data.ticket_id,
     institution_id: data.institution_id,
@@ -295,17 +459,29 @@ export async function createTicketMessage(
 
 export async function searchKB(query: string): Promise<SupportKBRow[]> {
   if (!query.trim()) return [];
-
   const term = query.trim().toLowerCase();
 
-  // Fetch all KB articles and filter client-side (Baserow contains filter
-  // doesn't support OR across multiple fields in a single request)
-  const params = new URLSearchParams({
-    user_field_names: "true",
-    size: "200",
-  });
-  const rows = await fetchTableRows<SupportKBRow>(TABLE_IDS.kb, params);
+  if (useDirectDb("support")) {
+    const _dr = await tryDrizzle(async () => {
+      const pattern = `%${term}%`;
+      const rows = await db
+        .select()
+        .from(supportKb)
+        .where(
+          or(
+            ilike(supportKb.title, pattern),
+            ilike(supportKb.tags, pattern),
+            ilike(supportKb.content, pattern),
+          ),
+        );
+      return rows.map(mapKbRow);
+    });
+    if (_dr !== undefined) return _dr;
+  }
 
+  // Baserow fallback (fetch all + filter client-side)
+  const params = new URLSearchParams({ user_field_names: "true", size: "200" });
+  const rows = await fetchTableRows<SupportKBRow>(TABLE_IDS.kb, params);
   return rows.filter((row) => {
     const title = (row.title ?? "").toLowerCase();
     const tags = (row.tags ?? "").toLowerCase();

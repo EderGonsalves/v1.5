@@ -8,10 +8,7 @@ import {
   getMovementsByTrackingId,
   buildLawsuitSummary,
 } from "@/services/lawsuit";
-import { baserowPatch } from "@/services/api";
-
-const BASEROW_API_URL = process.env.BASEROW_API_URL ?? "";
-const CASES_TABLE_ID = process.env.BASEROW_CASES_TABLE_ID ?? "225";
+import { updateBaserowCase } from "@/services/api";
 
 // ---------------------------------------------------------------------------
 // POST /api/v1/lawsuit/webhook — Codilo callback (CSRF exempt)
@@ -226,8 +223,7 @@ export async function POST(request: NextRequest) {
         allMovements.results,
       );
 
-      const caseUrl = `${BASEROW_API_URL}/database/rows/table/${CASES_TABLE_ID}/${caseId}/?user_field_names=true`;
-      await baserowPatch(caseUrl, {
+      await updateBaserowCase(caseId, {
         lawsuit_summary: summary,
         lawsuit_last_update: now,
         lawsuit_tracking_active: "true",

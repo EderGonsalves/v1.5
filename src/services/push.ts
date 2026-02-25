@@ -1,8 +1,14 @@
 /**
- * Push Notifications — Server-side service (web-push + Baserow)
+ * Push Notifications — Server-side service (web-push + PostgreSQL/Baserow)
  */
 
 import webpush from "web-push";
+import { eq, and, like, sql, desc } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { prepared } from "@/lib/db/prepared";
+import { pushSubscriptions } from "@/lib/db/schema/pushSubscriptions";
+import { pushNotifications } from "@/lib/db/schema/pushNotifications";
+import { useDirectDb, tryDrizzle } from "@/lib/db/repository";
 import { baserowGet, baserowPost, baserowPatch, baserowDelete } from "./api";
 
 // ---------------------------------------------------------------------------
@@ -68,11 +74,42 @@ type BaserowList<T> = {
   results: T[];
 };
 
-/**
- * Legacy GCM endpoints don't support VAPID — they always fail with 401.
- */
 function isLegacyEndpoint(endpoint: string): boolean {
   return endpoint.includes("/fcm/send/");
+}
+
+/** Map Drizzle row → PushSubscriptionRecord (snake_case fields for API compat) */
+function mapSubRow(row: typeof pushSubscriptions.$inferSelect): PushSubscriptionRecord {
+  return {
+    id: row.id,
+    endpoint: row.endpoint || "",
+    p256dh: row.p256dh || "",
+    auth: row.auth || "",
+    user_email: row.userEmail || "",
+    user_name: row.userName || "",
+    legacy_user_id: row.legacyUserId || "",
+    institution_id: Number(row.institutionId) || 0,
+    user_agent: row.userAgent || "",
+    created_at: row.createdAt || "",
+    updated_at: row.updatedAt || "",
+  };
+}
+
+function mapNotifRow(row: typeof pushNotifications.$inferSelect): PushNotificationRecord {
+  return {
+    id: row.id,
+    title: row.title || "",
+    body: row.body || "",
+    url: row.url || "",
+    icon: row.icon || "",
+    institution_id: Number(row.institutionId) || 0,
+    sent_by_email: row.sentByEmail || "",
+    sent_by_name: row.sentByName || "",
+    sent_at: row.sentAt || "",
+    recipients_count: Number(row.recipientsCount) || 0,
+    status: row.status || "",
+    error_log: row.errorLog || "",
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -91,7 +128,73 @@ export async function saveSubscription(sub: {
 }): Promise<PushSubscriptionRecord> {
   const now = new Date().toISOString();
 
-  // 1. Check if the EXACT same endpoint already exists — if so, just update it
+  if (useDirectDb("push")) {
+    const _dr = await tryDrizzle(async () => {
+      // 1. Check existing by endpoint
+      const [existing] = await db
+        .select()
+        .from(pushSubscriptions)
+        .where(eq(pushSubscriptions.endpoint, sub.endpoint))
+        .limit(1);
+  
+      if (existing) {
+        const [updated] = await db
+          .update(pushSubscriptions)
+          .set({
+            p256dh: sub.p256dh,
+            auth: sub.auth,
+            userEmail: sub.user_email,
+            userName: sub.user_name,
+            legacyUserId: sub.legacy_user_id,
+            institutionId: String(sub.institution_id),
+            userAgent: sub.user_agent,
+            updatedAt: now,
+          })
+          .where(eq(pushSubscriptions.id, existing.id))
+          .returning();
+        console.info(`[Push] Updated existing subscription row ${existing.id}`);
+        return mapSubRow(updated);
+      }
+  
+      // 2. Cleanup old subscriptions for this user
+      const identifier = sub.legacy_user_id || sub.user_email;
+      if (identifier) {
+        const filterCol = sub.legacy_user_id
+          ? pushSubscriptions.legacyUserId
+          : pushSubscriptions.userEmail;
+        const oldSubs = await db
+          .select({ id: pushSubscriptions.id })
+          .from(pushSubscriptions)
+          .where(eq(filterCol, identifier));
+        for (const old of oldSubs) {
+          await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, old.id));
+          console.info(`[Push] Deleted old subscription row ${old.id}`);
+        }
+      }
+  
+      // 3. Create new
+      const [created] = await db
+        .insert(pushSubscriptions)
+        .values({
+          endpoint: sub.endpoint,
+          p256dh: sub.p256dh,
+          auth: sub.auth,
+          userEmail: sub.user_email,
+          userName: sub.user_name,
+          legacyUserId: sub.legacy_user_id,
+          institutionId: String(sub.institution_id),
+          userAgent: sub.user_agent,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
+      console.info(`[Push] Created new subscription row ${created.id}`);
+      return mapSubRow(created);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // --- Baserow fallback ---
   const endpointSearchUrl = `${subscriptionsUrl}&filter__endpoint__equal=${encodeURIComponent(sub.endpoint)}&size=1`;
   try {
     const { data: existing } = await baserowGet<BaserowList<PushSubscriptionRecord>>(endpointSearchUrl);
@@ -112,10 +215,9 @@ export async function saveSubscription(sub: {
       return updated;
     }
   } catch {
-    // If search fails, fall through to create
+    // fall through
   }
 
-  // 2. New endpoint — clean up OLD subscriptions for this user (legacy or stale)
   const identifier = sub.legacy_user_id || sub.user_email;
   if (identifier) {
     const filterField = sub.legacy_user_id ? "legacy_user_id" : "user_email";
@@ -123,17 +225,14 @@ export async function saveSubscription(sub: {
     try {
       const { data: oldSubs } = await baserowGet<BaserowList<PushSubscriptionRecord>>(cleanupUrl);
       for (const old of oldSubs.results) {
-        // Only delete old entries (the new endpoint is different from all of these)
         const deleteUrl = `${BASEROW_API}/database/rows/table/${SUBSCRIPTIONS_TABLE}/${old.id}/`;
         await baserowDelete(deleteUrl).catch(() => {});
-        console.info(`[Push] Deleted old subscription row ${old.id} (endpoint: ${old.endpoint.slice(0, 60)}...)`);
       }
     } catch {
       // ignore cleanup errors
     }
   }
 
-  // 3. Create new subscription
   const { data: created } = await baserowPost<PushSubscriptionRecord>(subscriptionsUrl, {
     endpoint: sub.endpoint,
     p256dh: sub.p256dh,
@@ -146,16 +245,29 @@ export async function saveSubscription(sub: {
     created_at: now,
     updated_at: now,
   });
-  console.info(`[Push] Created new subscription row ${created.id} (endpoint: ${sub.endpoint.slice(0, 60)}...)`);
+  console.info(`[Push] Created new subscription row ${created.id}`);
   return created;
 }
 
 export async function removeSubscription(endpoint: string): Promise<boolean> {
+  if (useDirectDb("push")) {
+    const _dr = await tryDrizzle(async () => {
+      const [existing] = await db
+        .select({ id: pushSubscriptions.id })
+        .from(pushSubscriptions)
+        .where(eq(pushSubscriptions.endpoint, endpoint))
+        .limit(1);
+      if (!existing) return false;
+      await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, existing.id));
+      return true;
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // Baserow fallback
   const searchUrl = `${subscriptionsUrl}&filter__endpoint__equal=${encodeURIComponent(endpoint)}&size=1`;
   const { data: existing } = await baserowGet<BaserowList<PushSubscriptionRecord>>(searchUrl);
-
   if (existing.results.length === 0) return false;
-
   const row = existing.results[0];
   const deleteUrl = `${BASEROW_API}/database/rows/table/${SUBSCRIPTIONS_TABLE}/${row.id}/`;
   await baserowDelete(deleteUrl);
@@ -165,28 +277,44 @@ export async function removeSubscription(endpoint: string): Promise<boolean> {
 export async function getSubscriptionsByInstitution(
   institutionId: number,
 ): Promise<PushSubscriptionRecord[]> {
+  if (useDirectDb("push")) {
+    const _dr = await tryDrizzle(async () => {
+      const rows = await prepared.getSubsByInstitution.execute({
+        institutionId: String(institutionId),
+      });
+      return rows.map(mapSubRow);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // Baserow fallback
   const results: PushSubscriptionRecord[] = [];
   let nextUrl: string | null = `${subscriptionsUrl}&filter__institution_id__equal=${institutionId}&size=200`;
-
   while (nextUrl) {
     const resp: { data: BaserowList<PushSubscriptionRecord> } = await baserowGet(nextUrl);
     results.push(...resp.data.results);
     nextUrl = resp.data.next;
   }
-
   return results;
 }
 
 export async function getAllSubscriptions(): Promise<PushSubscriptionRecord[]> {
+  if (useDirectDb("push")) {
+    const _dr = await tryDrizzle(async () => {
+      const rows = await db.select().from(pushSubscriptions);
+      return rows.map(mapSubRow);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // Baserow fallback
   const results: PushSubscriptionRecord[] = [];
   let nextUrl: string | null = `${subscriptionsUrl}&size=200`;
-
   while (nextUrl) {
     const resp: { data: BaserowList<PushSubscriptionRecord> } = await baserowGet(nextUrl);
     results.push(...resp.data.results);
     nextUrl = resp.data.next;
   }
-
   return results;
 }
 
@@ -195,10 +323,27 @@ export async function getAllSubscriptions(): Promise<PushSubscriptionRecord[]> {
 // ---------------------------------------------------------------------------
 
 export async function cleanupLegacySubscriptions(): Promise<{ deleted: number; kept: number }> {
+  if (useDirectDb("push")) {
+    const _dr = await tryDrizzle(async () => {
+      const legacy = await db
+        .select({ id: pushSubscriptions.id })
+        .from(pushSubscriptions)
+        .where(like(pushSubscriptions.endpoint, "%/fcm/send/%"));
+      for (const row of legacy) {
+        await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, row.id));
+      }
+      const total = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(pushSubscriptions);
+      return { deleted: legacy.length, kept: Number(total[0]?.count ?? 0) };
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // Baserow fallback
   const allSubs = await getAllSubscriptions();
   let deleted = 0;
   let kept = 0;
-
   for (const sub of allSubs) {
     if (isLegacyEndpoint(sub.endpoint)) {
       try {
@@ -212,7 +357,6 @@ export async function cleanupLegacySubscriptions(): Promise<{ deleted: number; k
       kept++;
     }
   }
-
   return { deleted, kept };
 }
 
@@ -235,8 +379,6 @@ export async function sendPushToSubscriptions(
   let failed = 0;
   const errors: string[] = [];
 
-  // Send to ALL subscriptions — never auto-delete.
-  // Cleanup is manual via /api/v1/push/cleanup only.
   const tasks = subscriptions.map(async (sub) => {
     try {
       await webpush.sendNotification(
@@ -275,9 +417,35 @@ export async function createNotificationRecord(record: {
   status: string;
   error_log: string;
 }): Promise<PushNotificationRecord> {
+  const now = new Date().toISOString();
+
+  if (useDirectDb("push")) {
+    const _dr = await tryDrizzle(async () => {
+      const [created] = await db
+        .insert(pushNotifications)
+        .values({
+          title: record.title,
+          body: record.body,
+          url: record.url,
+          icon: record.icon,
+          institutionId: String(record.institution_id),
+          sentByEmail: record.sent_by_email,
+          sentByName: record.sent_by_name,
+          sentAt: now,
+          recipientsCount: String(record.recipients_count),
+          status: record.status,
+          errorLog: record.error_log,
+        })
+        .returning();
+      return mapNotifRow(created);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // Baserow fallback
   const { data: created } = await baserowPost<PushNotificationRecord>(notificationsUrl, {
     ...record,
-    sent_at: new Date().toISOString(),
+    sent_at: now,
   });
   return created;
 }
@@ -288,6 +456,24 @@ export async function getNotificationHistory(opts?: {
 }): Promise<{ results: PushNotificationRecord[]; count: number }> {
   const page = opts?.page || 1;
   const size = opts?.size || 20;
+
+  if (useDirectDb("push")) {
+    const _dr = await tryDrizzle(async () => {
+      const [countResult] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(pushNotifications);
+      const rows = await db
+        .select()
+        .from(pushNotifications)
+        .orderBy(desc(pushNotifications.id))
+        .limit(size)
+        .offset((page - 1) * size);
+      return { results: rows.map(mapNotifRow), count: Number(countResult?.count ?? 0) };
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // Baserow fallback
   const url = `${notificationsUrl}&size=${size}&page=${page}`;
   const { data } = await baserowGet<BaserowList<PushNotificationRecord>>(url);
   return { results: data.results, count: data.count };

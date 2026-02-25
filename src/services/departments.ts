@@ -1,7 +1,13 @@
 import axios from "axios";
+import { eq, and, sql, ne } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { prepared } from "@/lib/db/prepared";
+import { departments as deptTable } from "@/lib/db/schema/departments";
+import { userDepartments as udTable } from "@/lib/db/schema/userDepartments";
+import { useDirectDb, tryDrizzle } from "@/lib/db/repository";
 
 // ---------------------------------------------------------------------------
-// Baserow config
+// Baserow config (fallback)
 // ---------------------------------------------------------------------------
 
 const BASEROW_API_URL =
@@ -76,7 +82,7 @@ export type UserDepartmentPublicRow = {
 };
 
 // ---------------------------------------------------------------------------
-// Baserow client utilities (same pattern as permissions.ts)
+// Baserow client utilities (fallback)
 // ---------------------------------------------------------------------------
 
 const ensureEnv = () => {
@@ -151,9 +157,30 @@ export const isGlobalAdmin = (institutionId: number) =>
   institutionId === GLOBAL_ADMIN_INSTITUTION_ID;
 
 // ---------------------------------------------------------------------------
-// Transformers
+// Drizzle mappers
 // ---------------------------------------------------------------------------
 
+function mapDeptRow(r: typeof deptTable.$inferSelect): DepartmentPublicRow {
+  return {
+    id: r.id,
+    name: (r.name ?? "").trim(),
+    description: (r.description ?? "").trim(),
+    isActive: r.isActive === true,
+    institutionId: r.institutionId ? Number(r.institutionId) : undefined,
+  };
+}
+
+function mapUdRow(r: typeof udTable.$inferSelect): UserDepartmentPublicRow {
+  return {
+    id: r.id,
+    userId: Number(r.userId) || 0,
+    departmentId: Number(r.departmentId) || 0,
+    isPrimary: r.isPrimary === true,
+    institutionId: r.institutionId ? Number(r.institutionId) : undefined,
+  };
+}
+
+// Baserow transformers (fallback)
 const toDepartmentPublic = (row: BaserowDepartmentRow): DepartmentPublicRow => {
   const rawInstId = row[INSTITUTION_FIELD];
   const instId = typeof rawInstId === "number" ? rawInstId : Number(rawInstId);
@@ -181,17 +208,16 @@ const toUserDepartmentPublic = (
 };
 
 // ---------------------------------------------------------------------------
-// Server-side cache for departments (2 min TTL)
+// Server-side cache (only for Baserow fallback — not needed with direct DB)
 // ---------------------------------------------------------------------------
 
 const deptCacheMap = new Map<number, { rows: DepartmentPublicRow[]; ts: number }>();
 const userDeptCacheMap = new Map<string, { ids: number[]; ts: number }>();
-const DEPT_CACHE_TTL = 600_000; // 10 minutes
+const DEPT_CACHE_TTL = 600_000;
 
 export const invalidateDepartmentsCache = (institutionId?: number): void => {
   if (institutionId !== undefined) {
     deptCacheMap.delete(institutionId);
-    // Clear user-department entries for this institution
     for (const key of userDeptCacheMap.keys()) {
       if (key.endsWith(`:${institutionId}`)) {
         userDeptCacheMap.delete(key);
@@ -210,41 +236,73 @@ export const invalidateDepartmentsCache = (institutionId?: number): void => {
 export const fetchInstitutionDepartments = async (
   institutionId: number,
 ): Promise<DepartmentPublicRow[]> => {
+  if (useDirectDb("departments")) {
+    const _dr = await tryDrizzle(async () => {
+      const rows = await db
+        .select()
+        .from(deptTable)
+        .where(
+          and(
+            eq(deptTable.institutionId, String(institutionId)),
+            eq(deptTable.isActive, true),
+          ),
+        );
+      return rows.map(mapDeptRow);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // Baserow fallback with cache
   const cached = deptCacheMap.get(institutionId);
   if (cached && Date.now() - cached.ts < DEPT_CACHE_TTL) {
     return cached.rows;
   }
-
   const params = new URLSearchParams();
   withInstitutionFilter(params, institutionId);
-  const rows = await fetchTableRows<BaserowDepartmentRow>(
-    TABLE_IDS.departments,
-    params,
-  );
+  const rows = await fetchTableRows<BaserowDepartmentRow>(TABLE_IDS.departments, params);
   const result = rows.filter((r) => isActiveValue(r.is_active)).map(toDepartmentPublic);
   deptCacheMap.set(institutionId, { rows: result, ts: Date.now() });
   return result;
 };
 
 export const fetchAllDepartments = async (): Promise<DepartmentPublicRow[]> => {
-  const rows = await fetchTableRows<BaserowDepartmentRow>(
-    TABLE_IDS.departments,
-  );
+  if (useDirectDb("departments")) {
+    const _dr = await tryDrizzle(async () => {
+      const rows = await db
+        .select()
+        .from(deptTable)
+        .where(eq(deptTable.isActive, true));
+      return rows.map(mapDeptRow);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  const rows = await fetchTableRows<BaserowDepartmentRow>(TABLE_IDS.departments);
   return rows.filter((r) => isActiveValue(r.is_active)).map(toDepartmentPublic);
 };
 
 export const fetchDepartmentById = async (
   departmentId: number,
 ): Promise<DepartmentPublicRow | null> => {
+  if (useDirectDb("departments")) {
+    const _dr = await tryDrizzle(async () => {
+      const [row] = await db
+        .select()
+        .from(deptTable)
+        .where(eq(deptTable.id, departmentId))
+        .limit(1);
+      return row ? mapDeptRow(row) : null;
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
   try {
     const client = baserowClient();
     const url = `/database/rows/table/${TABLE_IDS.departments}/${departmentId}/?user_field_names=true`;
     const response = await client.get<BaserowDepartmentRow>(url);
     return toDepartmentPublic(response.data);
   } catch (error) {
-    if (axios.isAxiosError(error) && error.response?.status === 404) {
-      return null;
-    }
+    if (axios.isAxiosError(error) && error.response?.status === 404) return null;
     throw error;
   }
 };
@@ -254,22 +312,51 @@ export const createInstitutionDepartment = async (
   data: { name: string; description?: string },
 ): Promise<DepartmentPublicRow> => {
   const normalizedName = data.name.trim();
+  const now = new Date().toISOString();
 
-  // Check duplicate name in this institution
+  if (useDirectDb("departments")) {
+    const _dr = await tryDrizzle(async () => {
+      // Check duplicate
+      const existing = await db
+        .select({ id: deptTable.id })
+        .from(deptTable)
+        .where(
+          and(
+            eq(deptTable.institutionId, String(institutionId)),
+            eq(deptTable.name, normalizedName),
+            eq(deptTable.isActive, true),
+          ),
+        )
+        .limit(1);
+      if (existing.length > 0) {
+        throw new Error("Já existe um departamento com este nome nesta instituição.");
+      }
+  
+      const [created] = await db
+        .insert(deptTable)
+        .values({
+          institutionId: String(institutionId),
+          name: normalizedName,
+          description: data.description?.trim() ?? "",
+          isActive: true,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
+      return mapDeptRow(created);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // Baserow fallback
   const checkParams = new URLSearchParams();
   checkParams.append("filter__name__equal", normalizedName);
   withInstitutionFilter(checkParams, institutionId);
-  const existing = await fetchTableRows<BaserowDepartmentRow>(
-    TABLE_IDS.departments,
-    checkParams,
-  );
-  if (existing.some((r) => isActiveValue(r.is_active))) {
-    throw new Error(
-      "Já existe um departamento com este nome nesta instituição.",
-    );
+  const existingRows = await fetchTableRows<BaserowDepartmentRow>(TABLE_IDS.departments, checkParams);
+  if (existingRows.some((r) => isActiveValue(r.is_active))) {
+    throw new Error("Já existe um departamento com este nome nesta instituição.");
   }
 
-  const now = new Date().toISOString();
   const payload: Record<string, unknown> = {
     [INSTITUTION_FIELD]: institutionId,
     name: normalizedName,
@@ -278,11 +365,7 @@ export const createInstitutionDepartment = async (
     updated_at: now,
   };
   if (data.description) payload.description = data.description.trim();
-
-  const row = await createRow<BaserowDepartmentRow>(
-    TABLE_IDS.departments,
-    payload,
-  );
+  const row = await createRow<BaserowDepartmentRow>(TABLE_IDS.departments, payload);
   invalidateDepartmentsCache(institutionId);
   return toDepartmentPublic(row);
 };
@@ -292,41 +375,78 @@ export const updateInstitutionDepartment = async (
   departmentId: number,
   data: { name?: string; description?: string; isActive?: boolean },
 ): Promise<DepartmentPublicRow> => {
-  // Verify ownership
+  if (useDirectDb("departments")) {
+    const _dr = await tryDrizzle(async () => {
+      // Verify ownership
+      const [exists] = await db
+        .select({ id: deptTable.id })
+        .from(deptTable)
+        .where(
+          and(
+            eq(deptTable.id, departmentId),
+            eq(deptTable.institutionId, String(institutionId)),
+          ),
+        )
+        .limit(1);
+      if (!exists) throw new Error("Departamento não encontrado nesta instituição.");
+  
+      const setValues: Partial<typeof deptTable.$inferInsert> = {
+        updatedAt: new Date().toISOString(),
+      };
+  
+      if (data.name !== undefined) {
+        const normalizedName = data.name.trim();
+        // Check duplicate excluding self
+        const dups = await db
+          .select({ id: deptTable.id })
+          .from(deptTable)
+          .where(
+            and(
+              eq(deptTable.institutionId, String(institutionId)),
+              eq(deptTable.name, normalizedName),
+              eq(deptTable.isActive, true),
+              ne(deptTable.id, departmentId),
+            ),
+          )
+          .limit(1);
+        if (dups.length > 0) {
+          throw new Error("Já existe outro departamento com este nome nesta instituição.");
+        }
+        setValues.name = normalizedName;
+      }
+      if (data.description !== undefined) setValues.description = data.description.trim();
+      if (data.isActive !== undefined) setValues.isActive = data.isActive;
+  
+      const [updated] = await db
+        .update(deptTable)
+        .set(setValues)
+        .where(eq(deptTable.id, departmentId))
+        .returning();
+      return mapDeptRow(updated);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // Baserow fallback
   const checkParams = new URLSearchParams();
   checkParams.append("filter__id__equal", String(departmentId));
   withInstitutionFilter(checkParams, institutionId);
-  const rows = await fetchTableRows<BaserowDepartmentRow>(
-    TABLE_IDS.departments,
-    checkParams,
-  );
-  if (rows.length === 0) {
-    throw new Error("Departamento não encontrado nesta instituição.");
-  }
+  const rows = await fetchTableRows<BaserowDepartmentRow>(TABLE_IDS.departments, checkParams);
+  if (rows.length === 0) throw new Error("Departamento não encontrado nesta instituição.");
 
-  const payload: Record<string, unknown> = {
-    updated_at: new Date().toISOString(),
-  };
-
+  const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (data.name !== undefined) {
     const normalizedName = data.name.trim();
-    // Check duplicate (excluding self)
     const dupParams = new URLSearchParams();
     dupParams.append("filter__name__equal", normalizedName);
     withInstitutionFilter(dupParams, institutionId);
-    const dups = await fetchTableRows<BaserowDepartmentRow>(
-      TABLE_IDS.departments,
-      dupParams,
-    );
+    const dups = await fetchTableRows<BaserowDepartmentRow>(TABLE_IDS.departments, dupParams);
     if (dups.some((r) => r.id !== departmentId && isActiveValue(r.is_active))) {
-      throw new Error(
-        "Já existe outro departamento com este nome nesta instituição.",
-      );
+      throw new Error("Já existe outro departamento com este nome nesta instituição.");
     }
     payload.name = normalizedName;
   }
-  if (data.description !== undefined)
-    payload.description = data.description.trim();
+  if (data.description !== undefined) payload.description = data.description.trim();
   if (data.isActive !== undefined) payload.is_active = data.isActive;
 
   const client = baserowClient();
@@ -342,19 +462,35 @@ export const deleteInstitutionDepartment = async (
   institutionId: number,
   departmentId: number,
 ): Promise<void> => {
-  // Verify ownership
+  if (useDirectDb("departments")) {
+    const _ok = await tryDrizzle(async () => {
+      const [exists] = await db
+        .select({ id: deptTable.id })
+        .from(deptTable)
+        .where(
+          and(
+            eq(deptTable.id, departmentId),
+            eq(deptTable.institutionId, String(institutionId)),
+          ),
+        )
+        .limit(1);
+      if (!exists) throw new Error("Departamento não encontrado nesta instituição.");
+  
+      await db
+        .update(deptTable)
+        .set({ isActive: false, updatedAt: new Date().toISOString() })
+        .where(eq(deptTable.id, departmentId));
+    });
+    if (_ok !== undefined) return;
+  }
+
+  // Baserow fallback
   const checkParams = new URLSearchParams();
   checkParams.append("filter__id__equal", String(departmentId));
   withInstitutionFilter(checkParams, institutionId);
-  const rows = await fetchTableRows<BaserowDepartmentRow>(
-    TABLE_IDS.departments,
-    checkParams,
-  );
-  if (rows.length === 0) {
-    throw new Error("Departamento não encontrado nesta instituição.");
-  }
+  const rows = await fetchTableRows<BaserowDepartmentRow>(TABLE_IDS.departments, checkParams);
+  if (rows.length === 0) throw new Error("Departamento não encontrado nesta instituição.");
 
-  // Soft-delete: set is_active=false
   const client = baserowClient();
   await client.patch(
     `/database/rows/table/${TABLE_IDS.departments}/${departmentId}/?user_field_names=true`,
@@ -370,24 +506,39 @@ export const deleteInstitutionDepartment = async (
 export const fetchAllUserDepartments = async (
   institutionId: number,
 ): Promise<UserDepartmentPublicRow[]> => {
+  if (useDirectDb("departments")) {
+    const _dr = await tryDrizzle(async () => {
+      const rows = await db
+        .select()
+        .from(udTable)
+        .where(eq(udTable.institutionId, String(institutionId)));
+      return rows.map(mapUdRow);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
   const params = new URLSearchParams();
   withInstitutionFilter(params, institutionId);
-  const rows = await fetchTableRows<BaserowUserDepartmentRow>(
-    TABLE_IDS.userDepartments,
-    params,
-  );
+  const rows = await fetchTableRows<BaserowUserDepartmentRow>(TABLE_IDS.userDepartments, params);
   return rows.map(toUserDepartmentPublic);
 };
 
 export const fetchDepartmentUserIds = async (
   departmentId: number,
 ): Promise<number[]> => {
+  if (useDirectDb("departments")) {
+    const _dr = await tryDrizzle(async () => {
+      const rows = await prepared.getUsersByDepartment.execute({
+        departmentId: String(departmentId),
+      });
+      return rows.map((r) => Number(r.userId)).filter((id) => id > 0);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
   const params = new URLSearchParams();
   params.append("filter__department_id__equal", String(departmentId));
-  const rows = await fetchTableRows<BaserowUserDepartmentRow>(
-    TABLE_IDS.userDepartments,
-    params,
-  );
+  const rows = await fetchTableRows<BaserowUserDepartmentRow>(TABLE_IDS.userDepartments, params);
   return rows.map((r) => Number(r.user_id)).filter((id) => id > 0);
 };
 
@@ -395,19 +546,27 @@ export const getUserDepartmentIds = async (
   userId: number,
   institutionId: number,
 ): Promise<number[]> => {
+  if (useDirectDb("departments")) {
+    const _dr = await tryDrizzle(async () => {
+      const rows = await prepared.getDeptsByUserAndInstitution.execute({
+        userId: String(userId),
+        institutionId: String(institutionId),
+      });
+      return rows.map((r) => Number(r.departmentId)).filter((id) => id > 0);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // Baserow fallback with cache
   const cacheKey = `${userId}:${institutionId}`;
   const cached = userDeptCacheMap.get(cacheKey);
   if (cached && Date.now() - cached.ts < DEPT_CACHE_TTL) {
     return cached.ids;
   }
-
   const params = new URLSearchParams();
   params.append("filter__user_id__equal", String(userId));
   withInstitutionFilter(params, institutionId);
-  const rows = await fetchTableRows<BaserowUserDepartmentRow>(
-    TABLE_IDS.userDepartments,
-    params,
-  );
+  const rows = await fetchTableRows<BaserowUserDepartmentRow>(TABLE_IDS.userDepartments, params);
   const ids = rows.map((r) => Number(r.department_id)).filter((id) => id > 0);
   userDeptCacheMap.set(cacheKey, { ids, ts: Date.now() });
   return ids;
@@ -419,29 +578,67 @@ export const setUserDepartments = async (
   departmentIds: number[],
   primaryDepartmentId?: number,
 ): Promise<void> => {
-  // Fetch existing assignments for this user
+  if (useDirectDb("departments")) {
+    const _ok = await tryDrizzle(async () => {
+      // Fetch existing
+      const existing = await db
+        .select()
+        .from(udTable)
+        .where(
+          and(
+            eq(udTable.userId, String(userId)),
+            eq(udTable.institutionId, String(institutionId)),
+          ),
+        );
+  
+      const existingDeptIds = new Set(existing.map((r) => Number(r.departmentId)).filter((id) => id > 0));
+      const targetDeptIds = new Set(departmentIds);
+  
+      // Delete removed
+      const toDelete = existing.filter((r) => !targetDeptIds.has(Number(r.departmentId)));
+      for (const row of toDelete) {
+        await db.delete(udTable).where(eq(udTable.id, row.id));
+      }
+  
+      // Create new
+      const toCreate = departmentIds.filter((id) => !existingDeptIds.has(id));
+      for (const deptId of toCreate) {
+        await db.insert(udTable).values({
+          institutionId: String(institutionId),
+          userId: String(userId),
+          departmentId: String(deptId),
+          isPrimary: primaryDepartmentId === deptId,
+        });
+      }
+  
+      // Update is_primary on existing kept rows
+      if (primaryDepartmentId !== undefined) {
+        const remaining = existing.filter((r) => targetDeptIds.has(Number(r.departmentId)));
+        for (const row of remaining) {
+          const shouldBePrimary = Number(row.departmentId) === primaryDepartmentId;
+          if ((row.isPrimary === true) !== shouldBePrimary) {
+            await db.update(udTable).set({ isPrimary: shouldBePrimary }).where(eq(udTable.id, row.id));
+          }
+        }
+      }
+    });
+    if (_ok !== undefined) return;
+  }
+
+  // Baserow fallback
   const params = new URLSearchParams();
   params.append("filter__user_id__equal", String(userId));
   withInstitutionFilter(params, institutionId);
-  const existing = await fetchTableRows<BaserowUserDepartmentRow>(
-    TABLE_IDS.userDepartments,
-    params,
-  );
+  const existing = await fetchTableRows<BaserowUserDepartmentRow>(TABLE_IDS.userDepartments, params);
 
-  const existingDeptIds = new Set(
-    existing.map((r) => Number(r.department_id)).filter((id) => id > 0),
-  );
+  const existingDeptIds = new Set(existing.map((r) => Number(r.department_id)).filter((id) => id > 0));
   const targetDeptIds = new Set(departmentIds);
 
-  // Delete removed assignments
-  const toDelete = existing.filter(
-    (r) => !targetDeptIds.has(Number(r.department_id)),
-  );
+  const toDelete = existing.filter((r) => !targetDeptIds.has(Number(r.department_id)));
   for (const row of toDelete) {
     await deleteRow(TABLE_IDS.userDepartments, row.id);
   }
 
-  // Create new assignments
   const toCreate = departmentIds.filter((id) => !existingDeptIds.has(id));
   for (const deptId of toCreate) {
     await createRow<BaserowUserDepartmentRow>(TABLE_IDS.userDepartments, {
@@ -453,12 +650,9 @@ export const setUserDepartments = async (
     });
   }
 
-  // Update is_primary on existing rows if needed
   if (primaryDepartmentId !== undefined) {
     const client = baserowClient();
-    const remaining = existing.filter((r) =>
-      targetDeptIds.has(Number(r.department_id)),
-    );
+    const remaining = existing.filter((r) => targetDeptIds.has(Number(r.department_id)));
     for (const row of remaining) {
       const shouldBePrimary = Number(row.department_id) === primaryDepartmentId;
       if (isActiveValue(row.is_primary) !== shouldBePrimary) {
@@ -478,29 +672,53 @@ export const setDepartmentUsers = async (
   institutionId: number,
   userIds: number[],
 ): Promise<void> => {
-  // Fetch existing assignments for this department
+  if (useDirectDb("departments")) {
+    const _ok = await tryDrizzle(async () => {
+      const existing = await db
+        .select()
+        .from(udTable)
+        .where(
+          and(
+            eq(udTable.departmentId, String(departmentId)),
+            eq(udTable.institutionId, String(institutionId)),
+          ),
+        );
+  
+      const existingUserIds = new Set(existing.map((r) => Number(r.userId)).filter((id) => id > 0));
+      const targetUserIds = new Set(userIds);
+  
+      const toDelete = existing.filter((r) => !targetUserIds.has(Number(r.userId)));
+      for (const row of toDelete) {
+        await db.delete(udTable).where(eq(udTable.id, row.id));
+      }
+  
+      const toCreate = userIds.filter((id) => !existingUserIds.has(id));
+      for (const uid of toCreate) {
+        await db.insert(udTable).values({
+          institutionId: String(institutionId),
+          userId: String(uid),
+          departmentId: String(departmentId),
+          isPrimary: false,
+        });
+      }
+    });
+    if (_ok !== undefined) return;
+  }
+
+  // Baserow fallback
   const params = new URLSearchParams();
   params.append("filter__department_id__equal", String(departmentId));
   withInstitutionFilter(params, institutionId);
-  const existing = await fetchTableRows<BaserowUserDepartmentRow>(
-    TABLE_IDS.userDepartments,
-    params,
-  );
+  const existing = await fetchTableRows<BaserowUserDepartmentRow>(TABLE_IDS.userDepartments, params);
 
-  const existingUserIds = new Set(
-    existing.map((r) => Number(r.user_id)).filter((id) => id > 0),
-  );
+  const existingUserIds = new Set(existing.map((r) => Number(r.user_id)).filter((id) => id > 0));
   const targetUserIds = new Set(userIds);
 
-  // Delete removed assignments
-  const toDelete = existing.filter(
-    (r) => !targetUserIds.has(Number(r.user_id)),
-  );
+  const toDelete = existing.filter((r) => !targetUserIds.has(Number(r.user_id)));
   for (const row of toDelete) {
     await deleteRow(TABLE_IDS.userDepartments, row.id);
   }
 
-  // Create new assignments
   const toCreate = userIds.filter((id) => !existingUserIds.has(id));
   for (const uid of toCreate) {
     await createRow<BaserowUserDepartmentRow>(TABLE_IDS.userDepartments, {

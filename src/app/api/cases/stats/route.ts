@@ -3,13 +3,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRequestAuth } from "@/lib/auth/session";
 import {
   computeCaseStatistics,
+  getEmptyCaseStatistics,
+  stageOrder,
   type CaseStatistics,
 } from "@/lib/case-stats";
-import { getBaserowCases } from "@/services/api";
+import { getBaserowCases, getCaseStatisticsSQL } from "@/services/api";
 
 // Cache em memória com TTL
 type CacheEntry = {
   stats: CaseStatistics;
+  institutionBreakdown?: Record<string, CaseStatistics>;
   timestamp: number;
 };
 
@@ -20,7 +23,7 @@ const getCacheKey = (institutionId: number | string): string => {
   return `stats_${institutionId}`;
 };
 
-const getFromCache = (institutionId: number | string): CaseStatistics | null => {
+const getFromCache = (institutionId: number | string): CacheEntry | null => {
   const key = getCacheKey(institutionId);
   const entry = statsCache.get(key);
 
@@ -34,16 +37,60 @@ const getFromCache = (institutionId: number | string): CaseStatistics | null => 
     return null;
   }
 
-  return entry.stats;
+  return entry;
 };
 
-const setCache = (institutionId: number | string, stats: CaseStatistics): void => {
+const setCache = (
+  institutionId: number | string,
+  stats: CaseStatistics,
+  institutionBreakdown?: Record<string, CaseStatistics>,
+): void => {
   const key = getCacheKey(institutionId);
   statsCache.set(key, {
     stats,
+    institutionBreakdown,
     timestamp: Date.now(),
   });
 };
+
+/** Convert a SQL aggregate row to CaseStatistics */
+function sqlRowToStats(row: {
+  total: number;
+  paused: number;
+  etapa_final: number;
+  etapa_perguntas: number;
+  depoimento_inicial: number;
+  last_7_days: number;
+  last_30_days: number;
+}): CaseStatistics {
+  const totalCases = row.total;
+  const stageCounts = {
+    DepoimentoInicial: row.depoimento_inicial,
+    EtapaPerguntas: row.etapa_perguntas,
+    EtapaFinal: row.etapa_final,
+  } as Record<(typeof stageOrder)[number], number>;
+
+  const stagePercentages = {} as Record<(typeof stageOrder)[number], number>;
+  for (const stage of stageOrder) {
+    stagePercentages[stage] = totalCases
+      ? Number(((stageCounts[stage] / totalCases) * 100).toFixed(1))
+      : 0;
+  }
+
+  const pausedPercentage = totalCases
+    ? Number(((row.paused / totalCases) * 100).toFixed(1))
+    : 0;
+
+  return {
+    totalCases,
+    pausedCases: row.paused,
+    stageCounts,
+    stagePercentages,
+    pausedPercentage,
+    casesLast7Days: row.last_7_days,
+    casesLast30Days: row.last_30_days,
+  };
+}
 
 // Função auxiliar para verificar autenticação
 const verifyAuth = (
@@ -85,35 +132,82 @@ export async function GET(request: NextRequest) {
     }
 
     // Verificar autenticação
-    const auth = verifyAuth(request, institutionIdParam);
-    if (!auth.valid) {
-      return NextResponse.json({ error: auth.error }, { status: 401 });
+    const authResult = verifyAuth(request, institutionIdParam);
+    if (!authResult.valid) {
+      return NextResponse.json({ error: authResult.error }, { status: 401 });
     }
+
+    const isSysAdmin = authResult.userInstitutionId === 4;
 
     // Verificar cache se não for forceRefresh
     if (!forceRefresh) {
-      const cachedStats = getFromCache(institutionId);
-      if (cachedStats) {
-        const cacheEntry = statsCache.get(getCacheKey(institutionId));
+      const cached = getFromCache(institutionId);
+      if (cached) {
         return NextResponse.json({
-          ...cachedStats,
+          ...cached.stats,
+          institutionBreakdown: cached.institutionBreakdown,
           cached: true,
-          cachedAt: cacheEntry ? new Date(cacheEntry.timestamp).toISOString() : null,
+          cachedAt: new Date(cached.timestamp).toISOString(),
         });
       }
     }
 
-    // Buscar todos os casos do Baserow
+    // --- Tentar SQL agregado (rápido) ---
+    const sqlResult = await getCaseStatisticsSQL(institutionId);
+    if (sqlResult && sqlResult.total) {
+      const rows = Array.isArray(sqlResult.total) ? sqlResult.total : [];
+
+      if (isSysAdmin) {
+        // SysAdmin: retorna breakdown por instituição + totais
+        const breakdown: Record<string, CaseStatistics> = {};
+        const totals = {
+          total: 0, paused: 0, etapa_final: 0, etapa_perguntas: 0,
+          depoimento_inicial: 0, last_7_days: 0, last_30_days: 0,
+        };
+
+        for (const row of rows) {
+          const instId = String(row.institution_id || "unknown");
+          breakdown[instId] = sqlRowToStats(row);
+          totals.total += row.total;
+          totals.paused += row.paused;
+          totals.etapa_final += row.etapa_final;
+          totals.etapa_perguntas += row.etapa_perguntas;
+          totals.depoimento_inicial += row.depoimento_inicial;
+          totals.last_7_days += row.last_7_days;
+          totals.last_30_days += row.last_30_days;
+        }
+
+        const stats = sqlRowToStats(totals);
+        setCache(institutionId, stats, breakdown);
+
+        return NextResponse.json({
+          ...stats,
+          institutionBreakdown: breakdown,
+          cached: false,
+          cachedAt: new Date().toISOString(),
+        });
+      }
+
+      // Usuário normal: single institution
+      const row = rows[0];
+      const stats = row ? sqlRowToStats(row) : getEmptyCaseStatistics();
+      setCache(institutionId, stats);
+
+      return NextResponse.json({
+        ...stats,
+        cached: false,
+        cachedAt: new Date().toISOString(),
+      });
+    }
+
+    // --- Fallback: carregar todos os casos e computar em JS ---
     const response = await getBaserowCases({
       institutionId,
       pageSize: 200,
       fetchAll: true,
     });
 
-    // Calcular estatísticas
     const stats = computeCaseStatistics(response.results);
-
-    // Salvar no cache
     setCache(institutionId, stats);
 
     return NextResponse.json({

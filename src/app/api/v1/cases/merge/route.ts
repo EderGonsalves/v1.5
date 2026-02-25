@@ -9,6 +9,11 @@ import {
   baserowDelete,
   type BaserowCaseRow,
 } from "@/services/api";
+import { db } from "@/lib/db";
+import { cases as casesTable } from "@/lib/db/schema/cases";
+import { caseMessages } from "@/lib/db/schema/caseMessages";
+import { eq } from "drizzle-orm";
+import { useDirectDb, tryDrizzle } from "@/lib/db/repository";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -177,6 +182,18 @@ type BaserowListResp = {
 const fetchMessagesByCaseId = async (
   caseId: string | number,
 ): Promise<MessageRow[]> => {
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle(async () => {
+      const rows = await db
+        .select({ id: caseMessages.id, caseId: caseMessages.caseId })
+        .from(caseMessages)
+        .where(eq(caseMessages.caseId, String(caseId)));
+      return rows.map((r) => ({ id: r.id, CaseId: r.caseId } as MessageRow));
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // Baserow fallback
   const rows: MessageRow[] = [];
   let nextUrl: string | null =
     `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASE_MESSAGES_TABLE_ID}/?user_field_names=true&size=200&filter__CaseId__equal=${caseId}`;
@@ -197,12 +214,31 @@ const updateMessageCaseId = async (
   messageId: number,
   newCaseId: string,
 ): Promise<void> => {
+  if (useDirectDb("api")) {
+    const _ok = await tryDrizzle(async () => {
+      await db
+        .update(caseMessages)
+        .set({ caseId: newCaseId })
+        .where(eq(caseMessages.id, messageId));
+    });
+    if (_ok !== undefined) return;
+  }
+
+  // Baserow fallback
   const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASE_MESSAGES_TABLE_ID}/${messageId}/?user_field_names=true`;
   await baserowPatch(url, { CaseId: newCaseId });
 };
 
 /** Delete a case row */
 const deleteCaseRow = async (rowId: number): Promise<void> => {
+  if (useDirectDb("api")) {
+    const _ok = await tryDrizzle(async () => {
+      await db.delete(casesTable).where(eq(casesTable.id, rowId));
+    });
+    if (_ok !== undefined) return;
+  }
+
+  // Baserow fallback
   const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASES_TABLE_ID}/${rowId}/`;
   await baserowDelete(url);
 };

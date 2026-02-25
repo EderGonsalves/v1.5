@@ -4,11 +4,8 @@ import {
   getEnvelopeByRiaId,
   updateEnvelopeRecord,
 } from "@/services/sign-envelopes";
-import { baserowPatch } from "@/services/api";
+import { updateBaserowCase } from "@/services/api";
 import type { RiaSignWebhookEvent, SignerInfo } from "@/lib/documents/types";
-
-const BASEROW_API_URL = process.env.BASEROW_API_URL ?? "";
-const CASES_TABLE_ID = process.env.BASEROW_CASES_TABLE_ID ?? "225";
 
 // Event → status mapping
 const STATUS_MAP: Record<string, string> = {
@@ -84,8 +81,7 @@ export async function POST(request: NextRequest) {
 
       // Also update the case
       try {
-        const caseUrl = `${BASEROW_API_URL}/database/rows/table/${CASES_TABLE_ID}/${record.case_id}/?user_field_names=true`;
-        await baserowPatch(caseUrl, { sign_status: newStatus });
+        await updateBaserowCase(record.case_id, { sign_status: newStatus });
       } catch (caseErr) {
         console.error("[sign/webhook] Case update failed:", caseErr);
       }
