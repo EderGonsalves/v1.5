@@ -49,12 +49,12 @@ let _db: NodePgDatabase | null = null;
 function getPool() {
   if (!_pool) {
     const connStr = process.env.DATABASE_URL;
-    if (!connStr) {
-      throw new Error(
-        "DATABASE_URL não configurado. Defina no .env para acesso direto ao PostgreSQL.",
-      );
+    if (!connStr || !_nativeRequire) {
+      // DATABASE_URL not available (e.g. during Docker build) — return null
+      // so callers fall through to Baserow API via tryDrizzle/circuit breaker.
+      return null;
     }
-    const pg = _nativeRequire!("pg") as { Pool: new (opts: unknown) => unknown };
+    const pg = _nativeRequire("pg") as { Pool: new (opts: unknown) => unknown };
     _pool = new pg.Pool({
       connectionString: connStr,
       max: 20,
@@ -65,13 +65,15 @@ function getPool() {
   return _pool;
 }
 
-/** Drizzle ORM instance — lazy initialized on first use */
-export function getDb(): NodePgDatabase {
+/** Drizzle ORM instance — lazy initialized on first use. Returns null if DB unavailable. */
+export function getDb(): NodePgDatabase | null {
   if (!_db) {
-    const mod = _nativeRequire!("drizzle-orm/node-postgres") as {
+    const pool = getPool();
+    if (!pool || !_nativeRequire) return null;
+    const mod = _nativeRequire("drizzle-orm/node-postgres") as {
       drizzle: (pool: unknown) => NodePgDatabase;
     };
-    _db = mod.drizzle(getPool());
+    _db = mod.drizzle(pool);
   }
   return _db;
 }
@@ -80,8 +82,10 @@ export function getDb(): NodePgDatabase {
 export const db = new Proxy({} as NodePgDatabase, {
   get(_target, prop) {
     if (!_isServer) return NOOP_CHAIN;
+    const instance = getDb();
+    if (!instance) return NOOP_CHAIN;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (getDb() as any)[prop];
+    return (instance as any)[prop];
   },
 });
 
