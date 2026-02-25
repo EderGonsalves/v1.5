@@ -50,17 +50,20 @@ function getPool() {
   if (!_pool) {
     const connStr = process.env.DATABASE_URL;
     if (!connStr || !_nativeRequire) {
-      // DATABASE_URL not available (e.g. during Docker build) — return null
-      // so callers fall through to Baserow API via tryDrizzle/circuit breaker.
       return null;
     }
-    const pg = _nativeRequire("pg") as { Pool: new (opts: unknown) => unknown };
-    _pool = new pg.Pool({
-      connectionString: connStr,
-      max: 20,
-      idleTimeoutMillis: 30_000,
-      connectionTimeoutMillis: 5_000,
-    });
+    try {
+      const pg = _nativeRequire("pg") as { Pool: new (opts: unknown) => unknown };
+      _pool = new pg.Pool({
+        connectionString: connStr,
+        max: 20,
+        idleTimeoutMillis: 30_000,
+        connectionTimeoutMillis: 5_000,
+      });
+    } catch (err) {
+      console.error("[db] Failed to load pg module:", (err as Error).message);
+      return null;
+    }
   }
   return _pool;
 }
@@ -70,10 +73,15 @@ export function getDb(): NodePgDatabase | null {
   if (!_db) {
     const pool = getPool();
     if (!pool || !_nativeRequire) return null;
-    const mod = _nativeRequire("drizzle-orm/node-postgres") as {
-      drizzle: (pool: unknown) => NodePgDatabase;
-    };
-    _db = mod.drizzle(pool);
+    try {
+      const mod = _nativeRequire("drizzle-orm/node-postgres") as {
+        drizzle: (pool: unknown) => NodePgDatabase;
+      };
+      _db = mod.drizzle(pool);
+    } catch (err) {
+      console.error("[db] Failed to load drizzle-orm:", (err as Error).message);
+      return null;
+    }
   }
   return _db;
 }
