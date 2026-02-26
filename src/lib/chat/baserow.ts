@@ -232,14 +232,22 @@ const guessKind = (
   return fallback ?? "document";
 };
 
-/** Formata Date para string no padrão brasileiro DD/MM/YYYY HH:mm */
+/** Formata Date para string no padrão brasileiro DD/MM/YYYY HH:mm (sempre BRT) */
+const _brtFmt = new Intl.DateTimeFormat("pt-BR", {
+  timeZone: "America/Sao_Paulo",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
 const formatDateTimeBR = (date: Date): string => {
-  const day = String(date.getDate()).padStart(2, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const year = date.getFullYear();
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${day}/${month}/${year} ${hours}:${minutes}`;
+  const parts = _brtFmt.formatToParts(date);
+  const v = (t: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === t)?.value ?? "";
+  return `${v("day")}/${v("month")}/${v("year")} ${v("hour")}:${v("minute")}`;
 };
 
 const parseBrazilianDate = (value: string): Date | null => {
@@ -247,13 +255,17 @@ const parseBrazilianDate = (value: string): Date | null => {
   const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?$/);
   if (match) {
     const [, day, month, year, hour, minute, second] = match;
+    // DataHora is always in BRT (America/Sao_Paulo = UTC-3).
+    // Construct UTC by adding 3h offset so the Date represents the correct instant.
     return new Date(
-      Number(year),
-      Number(month) - 1,
-      Number(day),
-      Number(hour),
-      Number(minute),
-      Number(second || 0),
+      Date.UTC(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hour) + 3,
+        Number(minute),
+        Number(second || 0),
+      ),
     );
   }
   return null;

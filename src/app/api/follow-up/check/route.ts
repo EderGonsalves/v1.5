@@ -34,13 +34,21 @@ const DAY_MAP: Record<number, DayOfWeek> = {
   6: "sab",
 };
 
+const _brtFmt = new Intl.DateTimeFormat("pt-BR", {
+  timeZone: "America/Sao_Paulo",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
 const formatDateTimeBR = (date: Date): string => {
-  const day = String(date.getDate()).padStart(2, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const year = date.getFullYear();
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${day}/${month}/${year} ${hours}:${minutes}`;
+  const parts = _brtFmt.formatToParts(date);
+  const v = (t: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === t)?.value ?? "";
+  return `${v("day")}/${v("month")}/${v("year")} ${v("hour")}:${v("minute")}`;
 };
 
 type ChatWebhookPayload = {
