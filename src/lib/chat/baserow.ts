@@ -554,8 +554,9 @@ export const fetchCaseMessagesFromBaserow = async (
         }
       }
 
-      // 2) ALSO search by phone — mensagens antigas podem não ter CaseId
-      if (normalizedPhone) {
+      // 2) Search by phone ONLY if CaseId returned no results
+      //    (mensagens antigas podem não ter CaseId — LIKE é lento em tabelas grandes)
+      if (!collected.length && normalizedPhone) {
         const rows = await db
           .select()
           .from(caseMessages)
@@ -618,8 +619,9 @@ export const fetchCaseMessagesFromBaserow = async (
     }
   }
 
-  // 2) TAMBÉM buscar por telefone — mensagens antigas podem não ter CaseId
-  if (normalizedPhone) {
+  // 2) Buscar por telefone APENAS se CaseId não retornou resultados
+  //    (mensagens antigas podem não ter CaseId — LIKE é lento em tabelas grandes)
+  if (!collected.length && normalizedPhone) {
     const fromUrl = buildMessagesUrl(new URLSearchParams({
       page: "1",
       size: String(pageSize),
