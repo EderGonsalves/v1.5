@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRequestAuth } from "@/lib/auth/session";
 import {
   computeCaseStatistics,
+  getCaseInstitutionId,
   getEmptyCaseStatistics,
   stageOrder,
   type CaseStatistics,
@@ -208,10 +209,31 @@ export async function GET(request: NextRequest) {
     });
 
     const stats = computeCaseStatistics(response.results);
-    setCache(institutionId, stats);
+
+    // SysAdmin: agrupar por instituição para preencher o dropdown
+    let institutionBreakdown: Record<string, CaseStatistics> | undefined;
+    if (isSysAdmin && response.results.length > 0) {
+      const grouped = new Map<string, typeof response.results>();
+      for (const row of response.results) {
+        const instId = getCaseInstitutionId(row) || "unknown";
+        const arr = grouped.get(instId);
+        if (arr) {
+          arr.push(row);
+        } else {
+          grouped.set(instId, [row]);
+        }
+      }
+      institutionBreakdown = {};
+      for (const [instId, rows] of grouped) {
+        institutionBreakdown[instId] = computeCaseStatistics(rows);
+      }
+    }
+
+    setCache(institutionId, stats, institutionBreakdown);
 
     return NextResponse.json({
       ...stats,
+      institutionBreakdown,
       cached: false,
       cachedAt: new Date().toISOString(),
     });
