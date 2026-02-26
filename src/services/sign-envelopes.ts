@@ -126,7 +126,7 @@ export async function getEnvelopesByCaseId(
   institutionId?: number,
 ): Promise<SignEnvelopeRow[]> {
   if (useDirectDb("sign")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("sign", async () => {
       const conditions = [eq(signEnvelopes.caseId, String(caseId))];
       if (institutionId && institutionId !== 4) {
         conditions.push(eq(signEnvelopes.institutionId, String(institutionId)));
@@ -154,7 +154,7 @@ export async function getEnvelopeByRiaId(
   envelopeId: string,
 ): Promise<SignEnvelopeRow | null> {
   if (useDirectDb("sign")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("sign", async () => {
       const [row] = await db
         .select()
         .from(signEnvelopes)
@@ -178,7 +178,7 @@ export async function getEnvelopeById(
   id: number,
 ): Promise<SignEnvelopeRow | null> {
   if (useDirectDb("sign")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("sign", async () => {
       const [row] = await db
         .select()
         .from(signEnvelopes)
@@ -205,7 +205,7 @@ export async function createEnvelopeRecord(
   data: Omit<SignEnvelopeRow, "id">,
 ): Promise<SignEnvelopeRow> {
   if (useDirectDb("sign")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("sign", async () => {
       // Resolve status string → integer option ID
       const statusOptionId = await resolveSelectOptionId(
         STATUS_FIELD_ID,
@@ -249,7 +249,7 @@ export async function updateEnvelopeRecord(
   data: Partial<SignEnvelopeRow>,
 ): Promise<SignEnvelopeRow> {
   if (useDirectDb("sign")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("sign", async () => {
       // Build the set object, mapping snake_case → camelCase
       const setObj: Partial<typeof signEnvelopes.$inferInsert> = {};
   

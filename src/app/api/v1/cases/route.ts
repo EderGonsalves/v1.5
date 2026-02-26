@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     if (phoneDigits.length >= 8) {
       try {
         if (useDirectDb("api")) {
-          const _dr = await tryDrizzle(async () => {
+          const _dr = await tryDrizzle("cases", async () => {
             const conditions = [like(casesTable.custumerPhone, `%${phoneDigits.slice(-8)}%`)];
             if (auth.institutionId !== 4) {
               conditions.push(eq(casesTable.institutionID, String(auth.institutionId)));

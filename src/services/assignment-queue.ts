@@ -91,7 +91,7 @@ export const fetchQueueRecords = async (
   institutionId: number,
 ): Promise<QueueRecord[]> => {
   if (useDirectDb("assignment")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const rows = await prepared.getQueueByInstitution.execute({
         institutionId: String(institutionId),
       });
@@ -118,7 +118,7 @@ export const recordAssignment = async (
   const now = new Date().toISOString();
 
   if (useDirectDb("assignment")) {
-    const _ok = await tryDrizzle(async () => {
+    const _ok = await tryDrizzle("api", async () => {
       // Check if record exists
       const [existing] = await db
         .select()
@@ -213,7 +213,7 @@ export const recordAssignmentsBatch = async (
   }
 
   if (useDirectDb("assignment")) {
-    const _ok = await tryDrizzle(async () => {
+    const _ok = await tryDrizzle("api", async () => {
       for (const [userId, increment] of countsByUser) {
         try {
           const existing = recordMap.get(userId);
@@ -355,7 +355,7 @@ const countUserCases = async (
   institutionId: number,
 ): Promise<number> => {
   if (useDirectDb("assignment")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const [result] = await prepared.countUserCases.execute({
         userId: String(userId),
         institutionId: String(institutionId),

@@ -208,7 +208,7 @@ const toUserDepartmentPublic = (
 };
 
 // ---------------------------------------------------------------------------
-// Server-side cache (only for Baserow fallback — not needed with direct DB)
+// Server-side cache (shared by Drizzle and Baserow paths)
 // ---------------------------------------------------------------------------
 
 const deptCacheMap = new Map<number, { rows: DepartmentPublicRow[]; ts: number }>();
@@ -236,8 +236,14 @@ export const invalidateDepartmentsCache = (institutionId?: number): void => {
 export const fetchInstitutionDepartments = async (
   institutionId: number,
 ): Promise<DepartmentPublicRow[]> => {
+  // Cache shared by both Drizzle and Baserow paths
+  const cached = deptCacheMap.get(institutionId);
+  if (cached && Date.now() - cached.ts < DEPT_CACHE_TTL) {
+    return cached.rows;
+  }
+
   if (useDirectDb("departments")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("departments", async () => {
       const rows = await db
         .select()
         .from(deptTable)
@@ -249,14 +255,13 @@ export const fetchInstitutionDepartments = async (
         );
       return rows.map(mapDeptRow);
     });
-    if (_dr !== undefined) return _dr;
+    if (_dr !== undefined) {
+      deptCacheMap.set(institutionId, { rows: _dr, ts: Date.now() });
+      return _dr;
+    }
   }
 
-  // Baserow fallback with cache
-  const cached = deptCacheMap.get(institutionId);
-  if (cached && Date.now() - cached.ts < DEPT_CACHE_TTL) {
-    return cached.rows;
-  }
+  // Baserow fallback
   const params = new URLSearchParams();
   withInstitutionFilter(params, institutionId);
   const rows = await fetchTableRows<BaserowDepartmentRow>(TABLE_IDS.departments, params);
@@ -267,7 +272,7 @@ export const fetchInstitutionDepartments = async (
 
 export const fetchAllDepartments = async (): Promise<DepartmentPublicRow[]> => {
   if (useDirectDb("departments")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("departments", async () => {
       const rows = await db
         .select()
         .from(deptTable)
@@ -285,7 +290,7 @@ export const fetchDepartmentById = async (
   departmentId: number,
 ): Promise<DepartmentPublicRow | null> => {
   if (useDirectDb("departments")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("departments", async () => {
       const [row] = await db
         .select()
         .from(deptTable)
@@ -315,7 +320,7 @@ export const createInstitutionDepartment = async (
   const now = new Date().toISOString();
 
   if (useDirectDb("departments")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("departments", async () => {
       // Check duplicate
       const existing = await db
         .select({ id: deptTable.id })
@@ -376,7 +381,7 @@ export const updateInstitutionDepartment = async (
   data: { name?: string; description?: string; isActive?: boolean },
 ): Promise<DepartmentPublicRow> => {
   if (useDirectDb("departments")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("departments", async () => {
       // Verify ownership
       const [exists] = await db
         .select({ id: deptTable.id })
@@ -463,7 +468,7 @@ export const deleteInstitutionDepartment = async (
   departmentId: number,
 ): Promise<void> => {
   if (useDirectDb("departments")) {
-    const _ok = await tryDrizzle(async () => {
+    const _ok = await tryDrizzle("departments", async () => {
       const [exists] = await db
         .select({ id: deptTable.id })
         .from(deptTable)
@@ -507,7 +512,7 @@ export const fetchAllUserDepartments = async (
   institutionId: number,
 ): Promise<UserDepartmentPublicRow[]> => {
   if (useDirectDb("departments")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("departments", async () => {
       const rows = await db
         .select()
         .from(udTable)
@@ -527,7 +532,7 @@ export const fetchDepartmentUserIds = async (
   departmentId: number,
 ): Promise<number[]> => {
   if (useDirectDb("departments")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("departments", async () => {
       const rows = await prepared.getUsersByDepartment.execute({
         departmentId: String(departmentId),
       });
@@ -546,23 +551,28 @@ export const getUserDepartmentIds = async (
   userId: number,
   institutionId: number,
 ): Promise<number[]> => {
+  // Cache shared by both Drizzle and Baserow paths
+  const cacheKey = `${userId}:${institutionId}`;
+  const cached = userDeptCacheMap.get(cacheKey);
+  if (cached && Date.now() - cached.ts < DEPT_CACHE_TTL) {
+    return cached.ids;
+  }
+
   if (useDirectDb("departments")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("departments", async () => {
       const rows = await prepared.getDeptsByUserAndInstitution.execute({
         userId: String(userId),
         institutionId: String(institutionId),
       });
       return rows.map((r) => Number(r.departmentId)).filter((id) => id > 0);
     });
-    if (_dr !== undefined) return _dr;
+    if (_dr !== undefined) {
+      userDeptCacheMap.set(cacheKey, { ids: _dr, ts: Date.now() });
+      return _dr;
+    }
   }
 
-  // Baserow fallback with cache
-  const cacheKey = `${userId}:${institutionId}`;
-  const cached = userDeptCacheMap.get(cacheKey);
-  if (cached && Date.now() - cached.ts < DEPT_CACHE_TTL) {
-    return cached.ids;
-  }
+  // Baserow fallback
   const params = new URLSearchParams();
   params.append("filter__user_id__equal", String(userId));
   withInstitutionFilter(params, institutionId);
@@ -579,7 +589,7 @@ export const setUserDepartments = async (
   primaryDepartmentId?: number,
 ): Promise<void> => {
   if (useDirectDb("departments")) {
-    const _ok = await tryDrizzle(async () => {
+    const _ok = await tryDrizzle("departments", async () => {
       // Fetch existing
       const existing = await db
         .select()
@@ -673,7 +683,7 @@ export const setDepartmentUsers = async (
   userIds: number[],
 ): Promise<void> => {
   if (useDirectDb("departments")) {
-    const _ok = await tryDrizzle(async () => {
+    const _ok = await tryDrizzle("departments", async () => {
       const existing = await db
         .select()
         .from(udTable)

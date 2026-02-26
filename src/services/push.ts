@@ -129,7 +129,7 @@ export async function saveSubscription(sub: {
   const now = new Date().toISOString();
 
   if (useDirectDb("push")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("push", async () => {
       // 1. Check existing by endpoint
       const [existing] = await db
         .select()
@@ -251,7 +251,7 @@ export async function saveSubscription(sub: {
 
 export async function removeSubscription(endpoint: string): Promise<boolean> {
   if (useDirectDb("push")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("push", async () => {
       const [existing] = await db
         .select({ id: pushSubscriptions.id })
         .from(pushSubscriptions)
@@ -278,7 +278,7 @@ export async function getSubscriptionsByInstitution(
   institutionId: number,
 ): Promise<PushSubscriptionRecord[]> {
   if (useDirectDb("push")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("push", async () => {
       const rows = await prepared.getSubsByInstitution.execute({
         institutionId: String(institutionId),
       });
@@ -300,7 +300,7 @@ export async function getSubscriptionsByInstitution(
 
 export async function getAllSubscriptions(): Promise<PushSubscriptionRecord[]> {
   if (useDirectDb("push")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("push", async () => {
       const rows = await db.select().from(pushSubscriptions);
       return rows.map(mapSubRow);
     });
@@ -324,7 +324,7 @@ export async function getAllSubscriptions(): Promise<PushSubscriptionRecord[]> {
 
 export async function cleanupLegacySubscriptions(): Promise<{ deleted: number; kept: number }> {
   if (useDirectDb("push")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("push", async () => {
       const legacy = await db
         .select({ id: pushSubscriptions.id })
         .from(pushSubscriptions)
@@ -420,7 +420,7 @@ export async function createNotificationRecord(record: {
   const now = new Date().toISOString();
 
   if (useDirectDb("push")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("push", async () => {
       const [created] = await db
         .insert(pushNotifications)
         .values({
@@ -458,7 +458,7 @@ export async function getNotificationHistory(opts?: {
   const size = opts?.size || 20;
 
   if (useDirectDb("push")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("push", async () => {
       const [countResult] = await db
         .select({ count: sql<number>`count(*)` })
         .from(pushNotifications);

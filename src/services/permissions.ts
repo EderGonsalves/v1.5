@@ -406,21 +406,26 @@ function mapUserFeatureRow(r: typeof userFeaturesTable.$inferSelect): UserFeatur
 const fetchInstitutionUsersRaw = async (
   institutionId: number,
 ): Promise<BaserowUserRow[]> => {
+  // Cache shared by both Drizzle and Baserow paths
+  const cached = rawUsersCacheMap.get(institutionId);
+  if (cached && Date.now() - cached.ts < RAW_USERS_CACHE_TTL) {
+    return cached.rows;
+  }
+
   // --- Drizzle branch (prepared statement) ---
   if (useDirectDb("permissions")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("permissions", async () => {
       const rows = await prepared.getUsersByInstitution.execute({
         institutionId: String(institutionId),
       });
       return rows.map(mapUserRow);
     });
-    if (_dr !== undefined) return _dr;
+    if (_dr !== undefined) {
+      rawUsersCacheMap.set(institutionId, { rows: _dr, ts: Date.now() });
+      return _dr;
+    }
   }
   // --- Baserow fallback ---
-  const cached = rawUsersCacheMap.get(institutionId);
-  if (cached && Date.now() - cached.ts < RAW_USERS_CACHE_TTL) {
-    return cached.rows;
-  }
   const params = new URLSearchParams({
     user_field_names: "true",
     size: "200",
@@ -512,7 +517,7 @@ const buildUserPayload = (params: SyncUserParams) => {
 const findExistingUser = async (params: SyncUserParams) => {
   // --- Drizzle branch (prepared statements) ---
   if (useDirectDb("permissions")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("permissions", async () => {
       const byLegacy = await prepared.getUserByLegacyAndInstitution.execute({
         legacyUserId: params.legacyUserId,
         institutionId: String(params.institutionId),
@@ -578,7 +583,7 @@ export const syncUserRecord = async (
 
   // --- Drizzle branch ---
   if (useDirectDb("permissions")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("permissions", async () => {
       const setFields: Partial<Record<string, unknown>> = {
         institutionId: String(params.institutionId),
         legacyUserId: params.legacyUserId,
@@ -629,7 +634,7 @@ const findUserByLegacy = async (
 ) => {
   // --- Drizzle branch ---
   if (useDirectDb("permissions")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("permissions", async () => {
       const rows = await db
         .select()
         .from(usersTable)
@@ -658,7 +663,7 @@ const findUserByLegacy = async (
 const fetchUserRoleRows = async (institutionId: number) => {
   // --- Drizzle branch ---
   if (useDirectDb("permissions")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("permissions", async () => {
       // userRoles table (241) has no institution_id column in PG.
       // Fetch all rows; calling code filters by user/role IDs.
       const rows = await db.select().from(userRolesTable);
@@ -675,7 +680,7 @@ const fetchUserRoleRows = async (institutionId: number) => {
 const fetchRolePermissionRows = async (institutionId: number) => {
   // --- Drizzle branch ---
   if (useDirectDb("permissions")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("permissions", async () => {
       // rolePermissions table (240) has no institution_id column in PG.
       // Fetch all rows; calling code filters by role/permission IDs.
       const rows = await db.select().from(rolePermissionsTable);
@@ -694,7 +699,7 @@ const fetchRoleRowsForInstitution = async (
 ): Promise<RoleRow[]> => {
   // --- Drizzle branch ---
   if (useDirectDb("permissions")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("permissions", async () => {
       const rows = await db
         .select()
         .from(rolesTable)
@@ -714,7 +719,7 @@ const fetchPermissionRowsForInstitution = async (
 ): Promise<PermissionRow[]> => {
   // --- Drizzle branch ---
   if (useDirectDb("permissions")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("permissions", async () => {
       const rows = await db
         .select()
         .from(permissionsTable)
@@ -887,7 +892,7 @@ const fetchMenuRowsForInstitution = async (
 ): Promise<MenuRow[]> => {
   // --- Drizzle branch ---
   if (useDirectDb("permissions")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("permissions", async () => {
       const rows = await db
         .select()
         .from(menuTable)
@@ -1112,7 +1117,7 @@ const setRolePermissions = async (
 
   // --- Drizzle branch (delete + create) ---
   if (useDirectDb("permissions")) {
-    const _ok = await tryDrizzle(async () => {
+    const _ok = await tryDrizzle("permissions", async () => {
       await Promise.all(
         toDelete.map((rowId) =>
           db.delete(rolePermissionsTable).where(eq(rolePermissionsTable.id, rowId)),
@@ -1173,7 +1178,7 @@ const setUserRoles = async (
 
   // --- Drizzle branch (delete + create) ---
   if (useDirectDb("permissions")) {
-    const _ok = await tryDrizzle(async () => {
+    const _ok = await tryDrizzle("permissions", async () => {
       await Promise.all(
         toDelete.map((rowId) =>
           db.delete(userRolesTable).where(eq(userRolesTable.id, rowId)),
@@ -1263,7 +1268,7 @@ export const listInstitutions = async (): Promise<
 > => {
   // --- Drizzle branch ---
   if (useDirectDb("permissions")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("permissions", async () => {
       const rows = await db
         .select({
           instId: configTable.bodyAuthInstitutionId,
@@ -1354,7 +1359,7 @@ export const getInstitutionFeatures = async (
   if (missingFeatures.length > 0) {
     // --- Drizzle branch (create missing menu rows) ---
     if (useDirectDb("permissions")) {
-      const _ok = await tryDrizzle(async () => {
+      const _ok = await tryDrizzle("permissions", async () => {
         const created = await Promise.all(
           missingFeatures.map((feature, index) =>
             db
@@ -1470,7 +1475,7 @@ export const updateInstitutionFeatures = async ({
   if (updates.length > 0) {
     // --- Drizzle branch ---
     if (useDirectDb("permissions")) {
-      const _ok = await tryDrizzle(async () => {
+      const _ok = await tryDrizzle("permissions", async () => {
         await Promise.all(
           updates.map(({ rowId, isActive }) =>
             db
@@ -1511,7 +1516,7 @@ export const fetchUserFeatures = async (
 ): Promise<UserFeatureRow[]> => {
   // --- Drizzle branch ---
   if (useDirectDb("permissions")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("permissions", async () => {
       const rows = await db
         .select()
         .from(userFeaturesTable)
@@ -1563,7 +1568,7 @@ export const updateUserFeatures = async (
 
   // --- Drizzle branch ---
   if (useDirectDb("permissions")) {
-    const _ok = await tryDrizzle(async () => {
+    const _ok = await tryDrizzle("permissions", async () => {
       const ops: Promise<unknown>[] = [];
       for (const [key, enabled] of Object.entries(features)) {
         const row = existingByKey.get(key);
@@ -1649,7 +1654,7 @@ export const fetchInstitutionUsers = async (
 export const fetchAllUsers = async (): Promise<UserPublicRow[]> => {
   // --- Drizzle branch ---
   if (useDirectDb("permissions")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("permissions", async () => {
       const rows = await db.select().from(usersTable);
       return rows.map(mapUserRow).map(toUserPublic);
     });
@@ -1671,7 +1676,7 @@ export const fetchAllUsers = async (): Promise<UserPublicRow[]> => {
 export const resetAllOfficeAdminFlags = async (): Promise<number> => {
   // --- Drizzle branch ---
   if (useDirectDb("permissions")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("permissions", async () => {
       const result = await db
         .update(usersTable)
         .set({ isOfficeAdmin: false })
@@ -1715,7 +1720,7 @@ export const createInstitutionUser = async (
 
   // --- Drizzle branch ---
   if (useDirectDb("permissions")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("permissions", async () => {
       // Check duplicate
       const dup = await db
         .select({ id: usersTable.id })
@@ -1828,7 +1833,7 @@ export const updateInstitutionUser = async (
 ): Promise<UserPublicRow> => {
   // --- Drizzle branch ---
   if (useDirectDb("permissions")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("permissions", async () => {
       // Verify the user belongs to this institution
       const check = await db
         .select({ id: usersTable.id })
@@ -1938,7 +1943,7 @@ export const deleteInstitutionUser = async (
 ): Promise<void> => {
   // --- Drizzle branch ---
   if (useDirectDb("permissions")) {
-    const _ok = await tryDrizzle(async () => {
+    const _ok = await tryDrizzle("permissions", async () => {
       const check = await db
         .select({ id: usersTable.id })
         .from(usersTable)
@@ -1986,7 +1991,7 @@ export const authenticateViaUsersTable = async (
 
   // --- Drizzle branch (prepared statement) ---
   if (useDirectDb("permissions")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("permissions", async () => {
       const rows = await prepared.getUsersByEmail.execute({
         email: normalizedEmail,
       });
@@ -2054,7 +2059,7 @@ export const backfillLegacyUserIds = async (): Promise<{
 }> => {
   // --- Drizzle branch ---
   if (useDirectDb("permissions")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("permissions", async () => {
       const rows = await db.select().from(usersTable);
       let updated = 0;
       let skipped = 0;

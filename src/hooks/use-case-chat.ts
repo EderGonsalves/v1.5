@@ -114,6 +114,8 @@ export const useCaseChat = (
   const etagRef = useRef<string | null>(null);
   const lastInteractionRef = useRef(Date.now());
   const burstUntilRef = useRef(0); // Timestamp até quando manter burst polling
+  const maxKnownIdRef = useRef(0); // Highest message ID seen (for incremental polling)
+  const initialLoadDoneRef = useRef(false); // Whether full load has completed
 
   // Mensagens otimistas pendentes (ainda não confirmadas pelo Baserow)
   const pendingOptimisticRef = useRef<CaseMessage[]>([]);
@@ -127,6 +129,15 @@ export const useCaseChat = (
     setMeta((prev) => updater(prev ?? DEFAULT_META));
   }, []);
 
+  /** Update maxKnownIdRef from a list of messages */
+  const trackMaxId = useCallback((msgs: CaseMessage[]) => {
+    for (const m of msgs) {
+      if (m.id > maxKnownIdRef.current) {
+        maxKnownIdRef.current = m.id;
+      }
+    }
+  }, []);
+
   const fetchMessages = useCallback(
     async (options?: { silent?: boolean }) => {
       if (options?.silent) {
@@ -136,19 +147,23 @@ export const useCaseChat = (
       }
       setError(null);
 
+      // ── Incremental polling: use since_id after initial load ────────
+      const useIncremental = options?.silent && initialLoadDoneRef.current && maxKnownIdRef.current > 0;
+
       try {
+        const url = useIncremental
+          ? `/api/cases/${caseRowId}/messages?since_id=${maxKnownIdRef.current}`
+          : `/api/cases/${caseRowId}/messages`;
+
         const headers: HeadersInit = {};
-        // Enviar ETag para conditional request (304 Not Modified)
-        if (options?.silent && etagRef.current) {
+        // ETag only for full loads (incremental always returns new data or empty)
+        if (options?.silent && !useIncremental && etagRef.current) {
           headers["If-None-Match"] = etagRef.current;
         }
 
-        const response = await fetch(`/api/cases/${caseRowId}/messages`, {
-          cache: "no-store",
-          headers,
-        });
+        const response = await fetch(url, { cache: "no-store", headers });
 
-        // 304 — nada mudou, skip
+        // 304 — nada mudou, skip (only for full load path)
         if (response.status === 304) {
           return;
         }
@@ -167,16 +182,61 @@ export const useCaseChat = (
           throw new Error(errorMessage);
         }
 
+        const data = await response.json();
+
+        if (useIncremental) {
+          // ── Incremental: append new messages to existing ────────────
+          const newMessages = (data.messages ?? []) as CaseMessage[];
+          if (newMessages.length > 0) {
+            trackMaxId(newMessages);
+
+            // Remove optimistic messages confirmed by server
+            const newIds = new Set(newMessages.map((m: CaseMessage) => m.id));
+            const newContents = new Set(
+              newMessages.map((m: CaseMessage) => `${m.content}|${m.direction}`),
+            );
+            pendingOptimisticRef.current = pendingOptimisticRef.current.filter(
+              (opt) => !newIds.has(opt.id) && !newContents.has(`${opt.content}|${opt.direction}`),
+            );
+
+            setMessages((prev) => {
+              // Deduplicate: skip any new IDs already in prev
+              const existingIds = new Set(prev.map((m) => m.id));
+              const truly_new = newMessages.filter((m: CaseMessage) => !existingIds.has(m.id));
+              if (!truly_new.length) return prev;
+
+              const merged = [...prev.filter((m) => m.id > 0), ...truly_new]; // exclude negative-id legacy
+              // Re-add optimistics
+              if (pendingOptimisticRef.current.length > 0) {
+                merged.push(...pendingOptimisticRef.current);
+              }
+              return merged;
+            });
+
+            // Update meta
+            setMeta((prev) => prev ? {
+              ...prev,
+              total: prev.total + newMessages.length,
+              lastMessageAt: newMessages[newMessages.length - 1].createdAt,
+            } : prev);
+          }
+          return;
+        }
+
+        // ── Full load ────────────────────────────────────────────────
+        const fullData = data as ChatFetchResponse;
+
         // Guardar ETag da resposta
         const serverETag = response.headers.get("etag");
         if (serverETag) {
           etagRef.current = serverETag;
         }
 
-        const data = (await response.json()) as ChatFetchResponse;
+        const serverMessages = fullData.messages;
+        trackMaxId(serverMessages);
+        initialLoadDoneRef.current = true;
 
         // Merge: manter mensagens otimistas que ainda não apareceram no Baserow
-        const serverMessages = data.messages;
         const serverIds = new Set(serverMessages.map((m) => m.id));
         const serverContents = new Set(
           serverMessages.map((m) => `${m.content}|${m.direction}`),
@@ -188,9 +248,7 @@ export const useCaseChat = (
         const OPTIMISTIC_TTL_MS = 60_000;
         pendingOptimisticRef.current = pendingOptimisticRef.current.filter(
           (opt) => {
-            // Expirada — remover silenciosamente
             if (now - opt.id > OPTIMISTIC_TTL_MS) return false;
-            // Confirmada pelo servidor — remover
             if (serverIds.has(opt.id)) return false;
             if (serverContents.has(`${opt.content}|${opt.direction}`)) return false;
             return true;
@@ -204,14 +262,14 @@ export const useCaseChat = (
             : serverMessages;
 
         setMessages(merged);
-        setCaseSummary(data.case);
-        setMeta(data.meta);
+        setCaseSummary(fullData.case);
+        setMeta(fullData.meta);
 
         // Salvar no cache (só as do servidor, otimistas são voláteis)
         setChatCache(caseRowId, {
           messages: serverMessages,
-          caseSummary: data.case,
-          meta: data.meta,
+          caseSummary: fullData.case,
+          meta: fullData.meta,
         });
       } catch (error) {
         setError(
@@ -225,14 +283,16 @@ export const useCaseChat = (
         }
       }
     },
-    [caseRowId],
+    [caseRowId, trackMaxId],
   );
 
   useEffect(() => {
-    // Reset ETag, interação e otimistas ao trocar de caso
+    // Reset state ao trocar de caso
     etagRef.current = null;
     lastInteractionRef.current = Date.now();
     burstUntilRef.current = 0;
+    maxKnownIdRef.current = 0;
+    initialLoadDoneRef.current = false;
     pendingOptimisticRef.current = [];
 
     // Verificar cache primeiro
@@ -242,7 +302,12 @@ export const useCaseChat = (
       setCaseSummary(cached.caseSummary);
       setMeta(cached.meta);
       setIsLoading(false);
-      // Atualizar em background
+      // Restaurar maxKnownId do cache → background refresh será incremental
+      for (const m of cached.messages) {
+        if (m.id > maxKnownIdRef.current) maxKnownIdRef.current = m.id;
+      }
+      initialLoadDoneRef.current = true;
+      // Atualizar em background (incremental — só busca msgs novas)
       fetchMessages({ silent: true });
     } else {
       fetchMessages();

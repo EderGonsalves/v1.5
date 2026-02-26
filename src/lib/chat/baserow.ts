@@ -1,5 +1,5 @@
 import axios from "axios";
-import { or, like, inArray, asc } from "drizzle-orm";
+import { or, like, inArray, asc, gt, and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { prepared } from "@/lib/db/prepared";
 import { useDirectDb, tryDrizzle } from "@/lib/db/repository";
@@ -452,11 +452,45 @@ type FetchMessagesOptions = {
   caseIdentifiers?: Array<string | number>;
   customerPhone?: string;
   fallbackCaseId: number;
+  /** When set, only return messages with id > sinceId (incremental polling) */
+  sinceId?: number;
 };
 
 export type FetchMessagesResult = {
   messages: CaseMessage[];
   wabaPhoneNumber: string | null;
+};
+
+// ---------------------------------------------------------------------------
+// Server-side in-memory cache for chat messages (avoids repeated DB hits
+// when multiple users poll the same case or same user refreshes quickly)
+// ---------------------------------------------------------------------------
+
+const _msgCache = new Map<string, { data: FetchMessagesResult; ts: number }>();
+const MSG_CACHE_TTL = 5_000; // 5 seconds
+
+const buildCacheKey = (identifiers: string[], phone: string): string =>
+  `${identifiers.sort().join(",")}|${phone}`;
+
+const getCachedMessages = (key: string): FetchMessagesResult | null => {
+  const entry = _msgCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > MSG_CACHE_TTL) {
+    _msgCache.delete(key);
+    return null;
+  }
+  return entry.data;
+};
+
+const setCachedMessages = (key: string, data: FetchMessagesResult): void => {
+  _msgCache.set(key, { data, ts: Date.now() });
+  // Evitar memory leak: limpar entradas antigas periodicamente
+  if (_msgCache.size > 500) {
+    const now = Date.now();
+    for (const [k, v] of _msgCache) {
+      if (now - v.ts > MSG_CACHE_TTL) _msgCache.delete(k);
+    }
+  }
 };
 
 // ---------------------------------------------------------------------------
@@ -509,13 +543,89 @@ const buildFetchResult = (
 };
 
 // ---------------------------------------------------------------------------
+// Incremental fetch — only messages with id > sinceId
+// ---------------------------------------------------------------------------
+
+const fetchIncrementalMessages = async (
+  normalizedIdentifiers: string[],
+  normalizedPhone: string,
+  fallbackCaseId: number,
+  sinceId: number,
+): Promise<FetchMessagesResult> => {
+  // ── Drizzle (direct PostgreSQL) ──────────────────────────────────────
+  if (useDirectDb("chat")) {
+    const _dr = await tryDrizzle("chat", async () => {
+      // Simple query: id > sinceId AND caseId matches
+      // Uses primary key index — extremely fast
+      if (normalizedIdentifiers.length === 1) {
+        const rows = await db
+          .select()
+          .from(caseMessages)
+          .where(
+            and(
+              eq(caseMessages.caseId, normalizedIdentifiers[0]),
+              gt(caseMessages.id, sinceId),
+            ),
+          )
+          .orderBy(asc(caseMessages.createdOn), asc(caseMessages.id));
+        return buildFetchResult(
+          rows.map(mapDrizzleToBaserowRow),
+          fallbackCaseId,
+          normalizedPhone,
+        );
+      }
+      // Multiple identifiers (rare)
+      const rows = await db
+        .select()
+        .from(caseMessages)
+        .where(
+          and(
+            inArray(caseMessages.caseId, normalizedIdentifiers),
+            gt(caseMessages.id, sinceId),
+          ),
+        )
+        .orderBy(asc(caseMessages.createdOn), asc(caseMessages.id));
+      const unique = deduplicateAndSort(rows.map(mapDrizzleToBaserowRow));
+      return buildFetchResult(unique, fallbackCaseId, normalizedPhone);
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // ── Baserow REST API (fallback) ──────────────────────────────────────
+  ensureBaserowConfig();
+  const headers = {
+    Authorization: `Token ${BASEROW_API_KEY}`,
+    "Content-Type": "application/json",
+  };
+
+  const collected: BaserowCaseMessageRow[] = [];
+  for (const identifier of normalizedIdentifiers) {
+    const url = buildMessagesUrl(new URLSearchParams({
+      page: "1",
+      size: "200",
+      order_by: "DataHora",
+      "filter__CaseId__equal": identifier,
+      "filter__id__higher_than": String(sinceId),
+    }));
+    const response = await axios.get(url, { headers, timeout: 15000 });
+    const rows: BaserowCaseMessageRow[] = Array.isArray(response.data?.results)
+      ? response.data.results
+      : [];
+    collected.push(...rows);
+  }
+
+  const unique = deduplicateAndSort(collected);
+  return buildFetchResult(unique, fallbackCaseId, normalizedPhone);
+};
+
+// ---------------------------------------------------------------------------
 // fetchCaseMessagesFromBaserow
 // ---------------------------------------------------------------------------
 
 export const fetchCaseMessagesFromBaserow = async (
   options: FetchMessagesOptions,
 ): Promise<FetchMessagesResult> => {
-  const { caseIdentifiers = [], customerPhone, fallbackCaseId } = options;
+  const { caseIdentifiers = [], customerPhone, fallbackCaseId, sinceId } = options;
 
   // Normalize customer phone (remove non-digits)
   const normalizedPhone = customerPhone
@@ -531,9 +641,20 @@ export const fetchCaseMessagesFromBaserow = async (
     return { messages: [], wabaPhoneNumber: null };
   }
 
+  // ── Incremental path (since_id) ────────────────────────────────────
+  // Skip cache for incremental — these are tiny queries (0-few rows)
+  if (sinceId && sinceId > 0) {
+    return fetchIncrementalMessages(normalizedIdentifiers, normalizedPhone, fallbackCaseId, sinceId);
+  }
+
+  // ── Server-side cache (5s TTL) — full load only ────────────────────
+  const cacheKey = buildCacheKey(normalizedIdentifiers, normalizedPhone);
+  const cached = getCachedMessages(cacheKey);
+  if (cached) return cached;
+
   // ── Drizzle (direct PostgreSQL) ──────────────────────────────────────
   if (useDirectDb("chat")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("chat", async () => {
       const collected: BaserowCaseMessageRow[] = [];
 
       // 1) Search by CaseId (indexed — B-tree on field_1701)
@@ -573,7 +694,10 @@ export const fetchCaseMessagesFromBaserow = async (
       const unique = deduplicateAndSort(collected);
       return buildFetchResult(unique, fallbackCaseId, normalizedPhone);
     });
-    if (_dr !== undefined) return _dr;
+    if (_dr !== undefined) {
+      setCachedMessages(cacheKey, _dr);
+      return _dr;
+    }
   }
 
   // ── Baserow REST API (fallback) ──────────────────────────────────────
@@ -643,7 +767,9 @@ export const fetchCaseMessagesFromBaserow = async (
   }
 
   const unique = deduplicateAndSort(collected);
-  return buildFetchResult(unique, fallbackCaseId, normalizedPhone);
+  const result = buildFetchResult(unique, fallbackCaseId, normalizedPhone);
+  setCachedMessages(cacheKey, result);
+  return result;
 };
 
 export const uploadAttachmentToBaserow = async (
@@ -714,7 +840,7 @@ const toBaserowSender = (sender: CaseMessageSender): string => {
 export const createCaseMessageRow = async (input: CreateCaseMessageRowInput) => {
   // ── Drizzle (direct PostgreSQL) ──────────────────────────────────────
   if (useDirectDb("chat")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("chat", async () => {
       const senderValue = toBaserowSender(input.sender);
       // multiple_select stores JSONB array of {id, value} objects
       const senderJsonb = [{ id: 0, value: senderValue }];

@@ -179,7 +179,7 @@ export async function listTemplates(
   institutionId: number,
 ): Promise<DocumentTemplateRow[]> {
   if (useDirectDb("docs")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("docs", async () => {
       const conditions = [eq(documentTemplates.isActive, true)];
       if (institutionId !== 4) {
         conditions.push(
@@ -208,7 +208,7 @@ export async function getTemplateById(
   id: number,
 ): Promise<DocumentTemplateRow | null> {
   if (useDirectDb("docs")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("docs", async () => {
       const [row] = await db
         .select()
         .from(documentTemplates)
@@ -245,7 +245,7 @@ export async function createTemplate(params: {
   const now = new Date().toISOString();
 
   if (useDirectDb("docs")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("docs", async () => {
       // Resolve category string → integer option ID
       const categoryOptionId = await resolveSelectOptionId(
         CATEGORY_FIELD_ID,
@@ -337,7 +337,7 @@ export async function createDirectTemplate(params: {
   const templateType = params.extension === "pdf" ? "direct_pdf" : "direct_docx";
 
   if (useDirectDb("docs")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("docs", async () => {
       // Resolve category string → integer option ID
       const categoryOptionId = await resolveSelectOptionId(
         CATEGORY_FIELD_ID,
@@ -423,7 +423,7 @@ export async function updateTemplate(
   institutionId: number,
 ): Promise<DocumentTemplateRow> {
   if (useDirectDb("docs")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("docs", async () => {
       // Verify template exists
       const [existing] = await db
         .select()
@@ -500,7 +500,7 @@ export async function updateTemplate(
 
 export async function softDeleteTemplate(id: number): Promise<void> {
   if (useDirectDb("docs")) {
-    const _ok = await tryDrizzle(async () => {
+    const _ok = await tryDrizzle("docs", async () => {
       const [existing] = await db
         .select()
         .from(documentTemplates)

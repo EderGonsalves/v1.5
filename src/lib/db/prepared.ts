@@ -17,6 +17,10 @@ import { caseMessages } from "./schema/caseMessages";
 import { userDepartments } from "./schema/userDepartments";
 import { assignmentQueue } from "./schema/assignmentQueue";
 import { pushSubscriptions } from "./schema/pushSubscriptions";
+import { config } from "./schema/config";
+import { kanbanColumns } from "./schema/kanbanColumns";
+import { followUpConfig } from "./schema/followUpConfig";
+import { caseKanbanStatus } from "./schema/caseKanbanStatus";
 
 // ---------------------------------------------------------------------------
 // Users (table 236) — Auth + RBAC, highest frequency
@@ -145,6 +149,64 @@ const getSubsByInstitution = db
   .prepare("get_subs_by_institution");
 
 // ---------------------------------------------------------------------------
+// Config (table 224) — App configuration, loaded on every page
+// ---------------------------------------------------------------------------
+
+/** getBaserowConfigs — configs for an institution */
+const getConfigsByInstitution = db
+  .select()
+  .from(config)
+  .where(eq(config.bodyAuthInstitutionId, sql.placeholder("institutionId")))
+  .prepare("get_configs_by_institution");
+
+/** getBaserowConfigs — all configs (sysAdmin only) */
+const getAllConfigs = db
+  .select()
+  .from(config)
+  .prepare("get_all_configs");
+
+// ---------------------------------------------------------------------------
+// Kanban Columns (table 231) — Kanban board rendering
+// ---------------------------------------------------------------------------
+
+/** getKanbanColumns — columns for an institution */
+const getKanbanColumnsByInstitution = db
+  .select()
+  .from(kanbanColumns)
+  .where(eq(kanbanColumns.institutionId, sql.placeholder("institutionId")))
+  .prepare("get_kanban_cols_by_institution");
+
+// ---------------------------------------------------------------------------
+// Follow-up Config (table 229)
+// ---------------------------------------------------------------------------
+
+/** getFollowUpConfigs — configs for an institution */
+const getFollowUpConfigsByInstitution = db
+  .select()
+  .from(followUpConfig)
+  .where(eq(followUpConfig.institutionId, sql.placeholder("institutionId")))
+  .orderBy(asc(followUpConfig.messageOrder))
+  .prepare("get_followup_configs_by_institution");
+
+// ---------------------------------------------------------------------------
+// Case Kanban Status (table 232)
+// ---------------------------------------------------------------------------
+
+/** getCaseKanbanStatus — status entries for a case */
+const getKanbanStatusByCaseId = db
+  .select()
+  .from(caseKanbanStatus)
+  .where(eq(caseKanbanStatus.caseId, sql.placeholder("caseId")))
+  .prepare("get_kanban_status_by_case");
+
+/** getCaseKanbanStatus — all statuses for an institution */
+const getKanbanStatusByInstitution = db
+  .select()
+  .from(caseKanbanStatus)
+  .where(eq(caseKanbanStatus.institutionId, sql.placeholder("institutionId")))
+  .prepare("get_kanban_status_by_institution");
+
+// ---------------------------------------------------------------------------
 // Export
 // ---------------------------------------------------------------------------
 
@@ -166,4 +228,13 @@ export const prepared = {
   getQueueByInstitution,
   // Push
   getSubsByInstitution,
+  // Config
+  getConfigsByInstitution,
+  getAllConfigs,
+  // Kanban
+  getKanbanColumnsByInstitution,
+  getKanbanStatusByCaseId,
+  getKanbanStatusByInstitution,
+  // Follow-up
+  getFollowUpConfigsByInstitution,
 } as const;

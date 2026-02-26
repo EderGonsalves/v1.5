@@ -248,7 +248,7 @@ export async function fetchTickets(
   institutionId?: number,
 ): Promise<SupportTicketRow[]> {
   if (useDirectDb("support")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("support", async () => {
       const condition = institutionId
         ? eq(supportTickets.institutionId, String(institutionId))
         : undefined;
@@ -275,7 +275,7 @@ export async function fetchTicketById(
   ticketId: number,
 ): Promise<SupportTicketRow | null> {
   if (useDirectDb("support")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("support", async () => {
       const [row] = await db
         .select()
         .from(supportTickets)
@@ -305,7 +305,7 @@ export async function createTicket(
   const sector = categoryToSector(data.category);
 
   if (useDirectDb("support")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("support", async () => {
       const [created] = await db
         .insert(supportTickets)
         .values({
@@ -353,7 +353,7 @@ export async function updateTicket(
   data: UpdateTicketData,
 ): Promise<SupportTicketRow> {
   if (useDirectDb("support")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("support", async () => {
       const setValues: Partial<typeof supportTickets.$inferInsert> = {
         updatedAt: new Date().toISOString(),
       };
@@ -398,7 +398,7 @@ export async function fetchTicketMessages(
   ticketId: number,
 ): Promise<SupportMessageRow[]> {
   if (useDirectDb("support")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("support", async () => {
       const rows = await db
         .select()
         .from(supportMessages)
@@ -420,7 +420,7 @@ export async function createTicketMessage(
   const now = new Date().toISOString();
 
   if (useDirectDb("support")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("support", async () => {
       const [created] = await db
         .insert(supportMessages)
         .values({
@@ -462,7 +462,7 @@ export async function searchKB(query: string): Promise<SupportKBRow[]> {
   const term = query.trim().toLowerCase();
 
   if (useDirectDb("support")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("support", async () => {
       const pattern = `%${term}%`;
       const rows = await db
         .select()

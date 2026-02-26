@@ -183,7 +183,7 @@ const fetchMessagesByCaseId = async (
   caseId: string | number,
 ): Promise<MessageRow[]> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("cases", async () => {
       const rows = await db
         .select({ id: caseMessages.id, caseId: caseMessages.caseId })
         .from(caseMessages)
@@ -215,7 +215,7 @@ const updateMessageCaseId = async (
   newCaseId: string,
 ): Promise<void> => {
   if (useDirectDb("api")) {
-    const _ok = await tryDrizzle(async () => {
+    const _ok = await tryDrizzle("cases", async () => {
       await db
         .update(caseMessages)
         .set({ caseId: newCaseId })
@@ -232,7 +232,7 @@ const updateMessageCaseId = async (
 /** Delete a case row */
 const deleteCaseRow = async (rowId: number): Promise<void> => {
   if (useDirectDb("api")) {
-    const _ok = await tryDrizzle(async () => {
+    const _ok = await tryDrizzle("cases", async () => {
       await db.delete(casesTable).where(eq(casesTable.id, rowId));
     });
     if (_ok !== undefined) return;

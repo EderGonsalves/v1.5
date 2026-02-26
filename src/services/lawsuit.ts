@@ -112,7 +112,7 @@ export async function getTrackingByCaseId(
   institutionId?: number,
 ): Promise<LawsuitTracking[]> {
   if (useDirectDb("lawsuit")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("lawsuit", async () => {
       const conditions = [eq(lawsuitTracking.caseId, String(caseId))];
       if (institutionId && institutionId !== 4) {
         conditions.push(eq(lawsuitTracking.institutionId, String(institutionId)));
@@ -141,7 +141,7 @@ export async function getTrackingById(
   trackingId: number,
 ): Promise<LawsuitTracking | null> {
   if (useDirectDb("lawsuit")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("lawsuit", async () => {
       const [row] = await db
         .select()
         .from(lawsuitTracking)
@@ -167,7 +167,7 @@ export async function createTracking(
   data: Omit<LawsuitTracking, "id">,
 ): Promise<LawsuitTracking> {
   if (useDirectDb("lawsuit")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("lawsuit", async () => {
       const [created] = await db
         .insert(lawsuitTracking)
         .values({
@@ -200,7 +200,7 @@ export async function updateTracking(
   data: Partial<LawsuitTracking>,
 ): Promise<LawsuitTracking> {
   if (useDirectDb("lawsuit")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("lawsuit", async () => {
       const setValues: Record<string, unknown> = {};
       if (data.case_id !== undefined) setValues.caseId = String(data.case_id);
       if (data.institution_id !== undefined) setValues.institutionId = String(data.institution_id);
@@ -243,7 +243,7 @@ export async function getMovementsByTrackingId(
   const size = opts?.size ?? 25;
 
   if (useDirectDb("lawsuit")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("lawsuit", async () => {
       const [countResult] = await db
         .select({ count: sql<number>`count(*)` })
         .from(lawsuitMovements)
@@ -281,7 +281,7 @@ export async function getMovementsByCaseId(
   const size = opts?.size ?? 25;
 
   if (useDirectDb("lawsuit")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("lawsuit", async () => {
       const [countResult] = await db
         .select({ count: sql<number>`count(*)` })
         .from(lawsuitMovements)
@@ -315,7 +315,7 @@ export async function createMovement(
   data: Omit<LawsuitMovement, "id">,
 ): Promise<LawsuitMovement> {
   if (useDirectDb("lawsuit")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("lawsuit", async () => {
       const [created] = await db
         .insert(lawsuitMovements)
         .values({
@@ -346,7 +346,7 @@ export async function createMovements(
   items: Omit<LawsuitMovement, "id">[],
 ): Promise<LawsuitMovement[]> {
   if (useDirectDb("lawsuit")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("lawsuit", async () => {
       if (items.length === 0) return [];
       const rows = await db
         .insert(lawsuitMovements)

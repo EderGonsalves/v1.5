@@ -755,11 +755,11 @@ function buildConfigSetObj(data: Record<string, unknown>): Record<string, unknow
 
 export const getBaserowConfigs = async (institutionId?: number): Promise<BaserowConfigRow[]> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const shouldFilter = typeof institutionId === "number" && institutionId !== 4;
       const rows = shouldFilter
-        ? await db.select().from(cfgTable).where(eq(cfgTable.bodyAuthInstitutionId, String(institutionId)))
-        : await db.select().from(cfgTable);
+        ? await prepared.getConfigsByInstitution.execute({ institutionId: String(institutionId) })
+        : await prepared.getAllConfigs.execute();
       return rows.map(mapConfigRow);
     });
     if (_dr !== undefined) return _dr;
@@ -823,7 +823,7 @@ export const updateBaserowConfig = async (
   }
 
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const setObj = buildConfigSetObj(data as Record<string, unknown>);
       const [row] = await db
         .update(cfgTable)
@@ -893,7 +893,7 @@ export const createBaserowConfig = async (
   data: Partial<BaserowConfigRow>,
 ): Promise<BaserowConfigRow> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const insertObj = buildConfigSetObj(data as Record<string, unknown>);
       const [row] = await db
         .insert(cfgTable)
@@ -1075,6 +1075,43 @@ export type BaserowCaseRow = {
   [key: string]: unknown;
 };
 
+/**
+ * Normaliza uma string de data para formato brasileiro "DD/MM/YYYY HH:MM".
+ * Aceita ISO ("2026-02-26T20:30:45.719Z") ou já formatado ("20/02/2026").
+ * Retorna undefined se vazio/inválido.
+ */
+function formatDateBR(value: unknown): string | undefined {
+  if (!value || typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  // Já no formato BR (DD/MM/YYYY...) — manter como está
+  if (/^\d{2}\/\d{2}\/\d{4}/.test(trimmed)) return trimmed;
+
+  // Tentar parsear como data ISO
+  const d = new Date(trimmed);
+  if (isNaN(d.getTime())) return trimmed; // não é data válida, devolver original
+
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+
+  return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
+}
+
+/** Normaliza campo Data de um BaserowCaseRow vindo do REST API */
+function normalizeCaseDates(row: BaserowCaseRow): BaserowCaseRow {
+  if (row.Data) {
+    const formatted = formatDateBR(row.Data);
+    if (formatted && formatted !== row.Data) {
+      return { ...row, Data: formatted };
+    }
+  }
+  return row;
+}
+
 /** Map a Drizzle `cases` row to the Baserow-compatible `BaserowCaseRow` shape */
 function mapCaseRow(row: typeof casesTable.$inferSelect): BaserowCaseRow {
   return {
@@ -1091,7 +1128,7 @@ function mapCaseRow(row: typeof casesTable.$inferSelect): BaserowCaseRow {
     InstitutionID: row.institutionID ? Number(row.institutionID) : undefined,
     IApause: row.iApause ?? undefined,
     image: row.image as BaserowCaseRow["image"],
-    Data: row.data ?? undefined,
+    Data: formatDateBR(row.data) ?? undefined,
     CustumeId: row.custumeId ?? undefined,
     last_alert_stage: row.lastAlertStage ?? undefined,
     message_order: row.messageOrder ?? undefined,
@@ -1185,7 +1222,7 @@ export const getBaserowCaseById = async (
   rowId: number,
 ): Promise<BaserowCaseRow | null> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       if (!rowId) return null;
       const [row] = await prepared.getCaseById.execute({ id: rowId });
       return row ? mapCaseRow(row) : null;
@@ -1202,7 +1239,7 @@ export const getBaserowCaseById = async (
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASES_TABLE_ID}/${rowId}/?user_field_names=true`;
     const response = await baserowGet(url, 20000);
 
-    return response.data as BaserowCaseRow;
+    return normalizeCaseDates(response.data as BaserowCaseRow);
   } catch (error) {
     if (
       (axios.isAxiosError(error) && error.response?.status === 404) ||
@@ -1265,7 +1302,7 @@ export const getCaseStatisticsSQL = async (
 } | null> => {
   if (!useDirectDb("api")) return null;
 
-  const result = await tryDrizzle(async () => {
+  const result = await tryDrizzle("api", async () => {
     const isSysAdmin = institutionId === 4 || institutionId === undefined;
     const whereClause = isSysAdmin
       ? sql``
@@ -1336,7 +1373,7 @@ export const getBaserowCases = async ({
   includeFields,
 }: GetBaserowCasesParams = {}): Promise<BaserowCasesResponse> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       // Build WHERE conditions
       const conditions = [];
       const useInstFilter = typeof institutionId === "number" && institutionId !== 4;
@@ -1421,7 +1458,7 @@ export const getBaserowCases = async ({
         buildUrl(1),
       );
 
-      const firstPageResults: BaserowCaseRow[] = firstResponse.data?.results || [];
+      const firstPageResults = ((firstResponse.data?.results || []) as BaserowCaseRow[]).map(normalizeCaseDates);
       const totalCount = typeof firstResponse.data?.count === "number"
         ? firstResponse.data.count
         : firstPageResults.length;
@@ -1461,7 +1498,10 @@ export const getBaserowCases = async ({
       const pageResponses = await Promise.all(
         pagesToFetch.map((p) =>
           baserowGet<BaserowListResponse<FollowUpHistoryRow>>(buildUrl(p))
-            .then((resp) => ({ page: p, results: (resp.data?.results || []) as BaserowCaseRow[] })),
+            .then((resp): { page: number; results: BaserowCaseRow[] } => ({
+              page: p,
+              results: ((resp.data?.results || []) as BaserowCaseRow[]).map(normalizeCaseDates),
+            })),
         ),
       );
 
@@ -1499,7 +1539,7 @@ export const getBaserowCases = async ({
     while (nextUrl) {
       const response = await baserowGet<BaserowListResponse<FollowUpHistoryRow>>(nextUrl);
 
-      const pageResults: BaserowCaseRow[] = response.data?.results || [];
+      const pageResults = ((response.data?.results || []) as BaserowCaseRow[]).map(normalizeCaseDates);
       allResults.push(...pageResults);
       if (typeof response.data?.count === "number") {
         totalCount = response.data.count;
@@ -1545,7 +1585,7 @@ export const updateBaserowCase = async (
   data: Partial<BaserowCaseRow>,
 ): Promise<BaserowCaseRow> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const setObj = buildCaseSetObj(data);
       const [updated] = await db
         .update(casesTable)
@@ -1563,7 +1603,7 @@ export const updateBaserowCase = async (
 
     const response = await baserowPatch(url, data);
 
-    return response.data as BaserowCaseRow;
+    return normalizeCaseDates(response.data as BaserowCaseRow);
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response) {
@@ -1583,7 +1623,7 @@ export const createBaserowCase = async (
   data: Partial<BaserowCaseRow>,
 ): Promise<BaserowCaseRow> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const values = buildCaseSetObj(data);
       const [created] = await db
         .insert(casesTable)
@@ -1598,7 +1638,7 @@ export const createBaserowCase = async (
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASES_TABLE_ID}/?user_field_names=true`;
     const response = await baserowPost(url, data);
-    return response.data as BaserowCaseRow;
+    return normalizeCaseDates(response.data as BaserowCaseRow);
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response) {
@@ -1694,7 +1734,7 @@ function mapWhRow(row: typeof whTable.$inferSelect): WebhookRow {
 
 export const getWebhooks = async (institutionId?: number): Promise<WebhookRow[]> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const conditions = [];
       if (typeof institutionId === "number") {
         conditions.push(eq(whTable.webhoockInstitutionId, String(institutionId)));
@@ -1748,7 +1788,7 @@ export const getWebhooks = async (institutionId?: number): Promise<WebhookRow[]>
 
 export const createWebhook = async (data: CreateWebhookPayload): Promise<WebhookRow> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const [created] = await db
         .insert(whTable)
         .values({
@@ -1800,7 +1840,7 @@ export const updateWebhook = async (
   data: UpdateWebhookPayload,
 ): Promise<WebhookRow> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const setObj: Record<string, unknown> = {};
       if (data.webhook_url !== undefined) setObj.webhookUrl = data.webhook_url;
       if (data.webhook_secret !== undefined) setObj.webhookSecret = data.webhook_secret;
@@ -1854,7 +1894,7 @@ export const updateWebhook = async (
 
 export const deleteWebhook = async (rowId: number): Promise<void> => {
   if (useDirectDb("api")) {
-    const _ok = await tryDrizzle(async () => {
+    const _ok = await tryDrizzle("api", async () => {
       await db.delete(whTable).where(eq(whTable.id, rowId));
     });
     if (_ok !== undefined) return;
@@ -1989,16 +2029,10 @@ function mapFuhRow(row: typeof fuhTable.$inferSelect): FollowUpHistoryRow {
 // Follow-up Config CRUD
 export const getFollowUpConfigs = async (institutionId?: number): Promise<FollowUpConfigRow[]> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
-      const conditions = [];
-      if (typeof institutionId === "number") {
-        conditions.push(eq(fucTable.institutionId, String(institutionId)));
-      }
-      const rows = await db
-        .select()
-        .from(fucTable)
-        .where(conditions.length ? and(...conditions) : undefined)
-        .orderBy(asc(fucTable.messageOrder));
+    const _dr = await tryDrizzle("api", async () => {
+      const rows = typeof institutionId === "number"
+        ? await prepared.getFollowUpConfigsByInstitution.execute({ institutionId: String(institutionId) })
+        : await db.select().from(fucTable).orderBy(asc(fucTable.messageOrder));
       return rows.map(mapFucRow);
     });
     if (_dr !== undefined) return _dr;
@@ -2041,7 +2075,7 @@ export const getFollowUpConfigs = async (institutionId?: number): Promise<Follow
 
 export const createFollowUpConfig = async (data: CreateFollowUpConfigPayload): Promise<FollowUpConfigRow> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const now = new Date();
       const [created] = await db
         .insert(fucTable)
@@ -2100,7 +2134,7 @@ export const updateFollowUpConfig = async (
   data: UpdateFollowUpConfigPayload,
 ): Promise<FollowUpConfigRow> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const setObj: Record<string, unknown> = { updatedAt: new Date() };
       if (data.institution_id !== undefined) setObj.institutionId = String(data.institution_id);
       if (data.message_order !== undefined) setObj.messageOrder = String(data.message_order);
@@ -2150,7 +2184,7 @@ export const updateFollowUpConfig = async (
 
 export const deleteFollowUpConfig = async (rowId: number): Promise<void> => {
   if (useDirectDb("api")) {
-    const _ok = await tryDrizzle(async () => {
+    const _ok = await tryDrizzle("api", async () => {
       await db.delete(fucTable).where(eq(fucTable.id, rowId));
     });
     if (_ok !== undefined) return;
@@ -2179,7 +2213,7 @@ export const deleteFollowUpConfig = async (rowId: number): Promise<void> => {
 // Follow-up History
 export const getFollowUpHistory = async (caseId?: number, institutionId?: number): Promise<FollowUpHistoryRow[]> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const conditions = [];
       if (typeof caseId === "number") {
         conditions.push(eq(fuhTable.caseId, String(caseId)));
@@ -2260,7 +2294,7 @@ export const getFollowUpHistory = async (caseId?: number, institutionId?: number
 
 export const createFollowUpHistory = async (data: CreateFollowUpHistoryPayload): Promise<FollowUpHistoryRow> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const sentAt = data.sent_at ? new Date(data.sent_at) : new Date();
       const [created] = await db
         .insert(fuhTable)
@@ -2314,7 +2348,7 @@ export const updateFollowUpHistory = async (
   data: Partial<FollowUpHistoryRow>,
 ): Promise<FollowUpHistoryRow> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const setObj: Record<string, unknown> = {};
       if (data.case_id !== undefined) setObj.caseId = String(data.case_id);
       if (data.institution_id !== undefined) setObj.institutionId = String(data.institution_id);
@@ -2458,16 +2492,11 @@ export const getKanbanColumns = async (
   departmentId?: number | null,
 ): Promise<KanbanColumnRow[]> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
-      const conditions = [];
-      if (typeof institutionId === "number") {
-        conditions.push(eq(kcTable.institutionId, String(institutionId)));
-      }
-      const rows = await db
-        .select()
-        .from(kcTable)
-        .where(conditions.length ? and(...conditions) : undefined);
-  
+    const _dr = await tryDrizzle("api", async () => {
+      const rows = typeof institutionId === "number"
+        ? await prepared.getKanbanColumnsByInstitution.execute({ institutionId: String(institutionId) })
+        : await db.select().from(kcTable);
+
       let results = rows.map(mapKcRow);
   
       // Department-scoped columns — strict isolation (no fallback)
@@ -2556,7 +2585,7 @@ export const getKanbanColumns = async (
 
 export const createKanbanColumn = async (data: CreateKanbanColumnPayload): Promise<KanbanColumnRow> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const now = new Date();
       const [created] = await db
         .insert(kcTable)
@@ -2612,7 +2641,7 @@ export const updateKanbanColumn = async (
   data: UpdateKanbanColumnPayload,
 ): Promise<KanbanColumnRow> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const setObj: Record<string, unknown> = { updatedAt: new Date() };
       if (data.name !== undefined) setObj.name = data.name;
       if (data.ordem !== undefined) setObj.ordem = String(data.ordem);
@@ -2661,7 +2690,7 @@ export const updateKanbanColumn = async (
 
 export const deleteKanbanColumn = async (rowId: number): Promise<void> => {
   if (useDirectDb("api")) {
-    const _ok = await tryDrizzle(async () => {
+    const _ok = await tryDrizzle("api", async () => {
       await db.delete(kcTable).where(eq(kcTable.id, rowId));
     });
     if (_ok !== undefined) return;
@@ -2693,18 +2722,18 @@ export const getCaseKanbanStatus = async (
   institutionId?: number,
 ): Promise<CaseKanbanStatusRow[]> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
-      const conditions = [];
-      if (typeof caseId === "number") {
-        conditions.push(eq(cksTable.caseId, String(caseId)));
+    const _dr = await tryDrizzle("api", async () => {
+      let rows;
+      if (typeof caseId === "number" && typeof institutionId !== "number") {
+        rows = await prepared.getKanbanStatusByCaseId.execute({ caseId: String(caseId) });
+      } else if (typeof institutionId === "number" && typeof caseId !== "number") {
+        rows = await prepared.getKanbanStatusByInstitution.execute({ institutionId: String(institutionId) });
+      } else {
+        const conditions = [];
+        if (typeof caseId === "number") conditions.push(eq(cksTable.caseId, String(caseId)));
+        if (typeof institutionId === "number") conditions.push(eq(cksTable.institutionId, String(institutionId)));
+        rows = await db.select().from(cksTable).where(conditions.length ? and(...conditions) : undefined);
       }
-      if (typeof institutionId === "number") {
-        conditions.push(eq(cksTable.institutionId, String(institutionId)));
-      }
-      const rows = await db
-        .select()
-        .from(cksTable)
-        .where(conditions.length ? and(...conditions) : undefined);
       return rows.map(mapCksRow);
     });
     if (_dr !== undefined) return _dr;
@@ -2761,7 +2790,7 @@ export const createCaseKanbanStatus = async (
   data: CreateCaseKanbanStatusPayload,
 ): Promise<CaseKanbanStatusRow> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const now = data.moved_at ? new Date(data.moved_at) : new Date();
       const [created] = await db
         .insert(cksTable)
@@ -2811,7 +2840,7 @@ export const updateCaseKanbanStatus = async (
   data: Partial<CaseKanbanStatusRow>,
 ): Promise<CaseKanbanStatusRow> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const setObj: Record<string, unknown> = { movedAt: new Date() };
       if (data.case_id !== undefined) setObj.caseId = String(data.case_id);
       if (data.institution_id !== undefined) setObj.institutionId = String(data.institution_id);
@@ -2858,7 +2887,7 @@ export const updateCaseKanbanStatus = async (
 
 export const deleteCaseKanbanStatus = async (rowId: number): Promise<void> => {
   if (useDirectDb("api")) {
-    const _ok = await tryDrizzle(async () => {
+    const _ok = await tryDrizzle("api", async () => {
       await db.delete(cksTable).where(eq(cksTable.id, rowId));
     });
     if (_ok !== undefined) return;
@@ -3079,7 +3108,7 @@ export const getClientById = async (
   rowId: number,
 ): Promise<ClientRow | null> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       if (!rowId) return null;
       const [row] = await db.select().from(clientsTable).where(eq(clientsTable.id, rowId)).limit(1);
       return row ? mapClientRow(row) : null;
@@ -3113,7 +3142,7 @@ export const getClientsByInstitution = async (
   institutionId: number,
 ): Promise<ClientRow[]> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const rows = await db.select().from(clientsTable)
         .where(eq(clientsTable.institutionId, String(institutionId)));
       return rows.map(mapClientRow);
@@ -3137,7 +3166,7 @@ export const createClient = async (
   payload: CreateClientPayload,
 ): Promise<ClientRow> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const insertObj = buildClientSetObj(payload as unknown as Record<string, unknown>);
       const [row] = await db.insert(clientsTable)
         .values(insertObj as typeof clientsTable.$inferInsert)
@@ -3189,7 +3218,7 @@ export const updateClient = async (
   payload: UpdateClientPayload,
 ): Promise<ClientRow> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const setObj = buildClientSetObj(payload as unknown as Record<string, unknown>);
       if (Object.keys(setObj).length > 0) {
         await db.update(clientsTable).set(setObj).where(eq(clientsTable.id, rowId));
@@ -3243,7 +3272,7 @@ export const searchClientByPhone = async (
   institutionId: number,
 ): Promise<ClientRow | null> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const cleanPhone = phone.replace(/\D/g, "");
       const rows = await db.select().from(clientsTable)
         .where(
@@ -3500,7 +3529,7 @@ export const listCalendarEvents = async (
   params: ListCalendarEventsParams = {},
 ): Promise<CalendarEventRow[]> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const conditions = [];
       if (params.institutionId) {
         conditions.push(eq(eventsTable.institutionID, String(params.institutionId)));
@@ -3565,7 +3594,7 @@ export const getCalendarEventById = async (
   eventId: number,
 ): Promise<CalendarEventRow | null> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       if (!eventId) return null;
       const [row] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId)).limit(1);
       return row ? mapEventRow(row) : null;
@@ -3600,7 +3629,7 @@ export const createCalendarEvent = async (
   payload: CreateCalendarEventPayload,
 ): Promise<CalendarEventRow> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const insertObj = buildEventSetObj(payload as unknown as Record<string, unknown>);
       const [row] = await db.insert(eventsTable).values(insertObj as typeof eventsTable.$inferInsert).returning();
       return mapEventRow(row);
@@ -3635,7 +3664,7 @@ export const updateCalendarEvent = async (
   payload: UpdateCalendarEventPayload,
 ): Promise<CalendarEventRow> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const setObj = buildEventSetObj(payload as unknown as Record<string, unknown>);
       // If setObj is empty (e.g., only deleted_at was passed which isn't in schema), fall through to Baserow
       if (Object.keys(setObj).length > 0) {
@@ -3672,7 +3701,7 @@ export const deleteCalendarEvent = async (
   eventId: number,
 ): Promise<void> => {
   if (useDirectDb("api")) {
-    const _ok = await tryDrizzle(async () => {
+    const _ok = await tryDrizzle("api", async () => {
       await db.delete(eventsTable).where(eq(eventsTable.id, eventId));
     });
     if (_ok !== undefined) return;
@@ -3693,7 +3722,7 @@ export const createCalendarEventGuest = async (
   payload: CreateCalendarEventGuestPayload,
 ): Promise<CalendarEventGuestRow> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const insertObj: typeof eventGuestsTable.$inferInsert = {
         name: payload.name,
         eventId: [{ id: payload.event_id }],
@@ -3732,7 +3761,7 @@ export const getCalendarEventGuestById = async (
   guestId: number,
 ): Promise<CalendarEventGuestRow | null> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       if (!guestId) return null;
       const [row] = await db.select().from(eventGuestsTable).where(eq(eventGuestsTable.id, guestId)).limit(1);
       return row ? mapGuestRow(row) : null;
@@ -3765,7 +3794,7 @@ export const getCalendarEventGuestById = async (
 
 export const deleteCalendarEventGuest = async (guestId: number): Promise<void> => {
   if (useDirectDb("api")) {
-    const _ok = await tryDrizzle(async () => {
+    const _ok = await tryDrizzle("api", async () => {
       await db.delete(eventGuestsTable).where(eq(eventGuestsTable.id, guestId));
     });
     if (_ok !== undefined) return;
@@ -3786,7 +3815,7 @@ export const listCalendarEventGuests = async (
   eventId: number,
 ): Promise<CalendarEventGuestRow[]> => {
   if (useDirectDb("api")) {
-    const _dr = await tryDrizzle(async () => {
+    const _dr = await tryDrizzle("api", async () => {
       const rows = await db
         .select()
         .from(eventGuestsTable)

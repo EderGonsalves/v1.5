@@ -74,7 +74,10 @@ const buildCaseIdentifiers = (
   if (caseRow.CaseId !== null && caseRow.CaseId !== undefined) {
     identifiers.push(caseRow.CaseId);
   }
-  identifiers.push(rowId);
+  // Só adicionar rowId se diferente do CaseId (evita duplicata que força inArray em vez de prepared stmt)
+  if (String(caseRow.CaseId) !== String(rowId)) {
+    identifiers.push(rowId);
+  }
   return identifiers;
 };
 
@@ -377,6 +380,28 @@ export async function GET(
     const { caseRow, identifiers, rowId } = resolved;
     const customerPhone = caseRow.CustumerPhone ? String(caseRow.CustumerPhone).trim() : "";
 
+    // ── Incremental polling: ?since_id=N returns only new messages ────
+    const sinceIdParam = request.nextUrl.searchParams.get("since_id");
+    const sinceId = sinceIdParam ? Number(sinceIdParam) : 0;
+
+    if (sinceId > 0) {
+      const fetchResult = await fetchCaseMessagesFromBaserow({
+        caseIdentifiers: identifiers,
+        customerPhone,
+        fallbackCaseId: rowId,
+        sinceId,
+      });
+
+      return NextResponse.json({
+        messages: fetchResult.messages,
+        meta: {
+          total: fetchResult.messages.length,
+          incremental: true,
+        },
+      });
+    }
+
+    // ── Full load (initial) ──────────────────────────────────────────
     const fetchResult = await fetchCaseMessagesFromBaserow({
       caseIdentifiers: identifiers,
       customerPhone,
