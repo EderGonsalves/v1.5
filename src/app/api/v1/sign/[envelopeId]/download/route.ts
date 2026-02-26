@@ -26,9 +26,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
         { status: 404 },
       );
 
+    // Permitir acesso se: SysAdmin (4), mesma instituição, ou registro sem institution_id (legado)
+    const recordInstId = Number(record.institution_id) || 0;
     if (
       auth.institutionId !== 4 &&
-      record.institution_id !== auth.institutionId
+      recordInstId !== 0 &&
+      recordInstId !== auth.institutionId
     ) {
       return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
     }

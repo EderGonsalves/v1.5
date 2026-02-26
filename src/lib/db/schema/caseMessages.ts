@@ -1,4 +1,4 @@
-import { jsonb, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { jsonb, numeric, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
 
 /**
  * caseMessages — Baserow table 227
@@ -14,8 +14,8 @@ export const caseMessages = pgTable("database_table_227", {
   from: text("field_1706"), // from (text)
   to: text("field_1707"), // to (text)
   senderName: text("field_2006"), // SenderName (text)
-  // Baserow internal auto-columns (not in field map)
-  createdOn: timestamp("created_on", { withTimezone: true }),
-  updatedOn: timestamp("updated_on", { withTimezone: true }),
-  order: text("order"), // Baserow row ordering
+  // Baserow internal auto-columns (NOT NULL, no SQL DEFAULT — Django manages them)
+  createdOn: timestamp("created_on", { withTimezone: true }).notNull(),
+  updatedOn: timestamp("updated_on", { withTimezone: true }).notNull(),
+  order: numeric("order", { precision: 40, scale: 20 }).notNull(),
 });

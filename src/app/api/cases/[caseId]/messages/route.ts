@@ -543,7 +543,7 @@ export async function POST(
       ),
     );
 
-    const timestamp = new Date().toISOString();
+    const timestamp = formatDateTimeBR(new Date());
     let newMessage: CaseMessage;
     // Determine message type based on original file MIME (not Baserow's detection)
     const determineMessageType = (originalMimes: string[]): MessageType => {

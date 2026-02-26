@@ -9,10 +9,11 @@
  *   const rows = await prepared.getUsersByInstitution.execute({ institutionId: "123" });
  */
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "./index";
 import { users } from "./schema/users";
 import { cases } from "./schema/cases";
+import { caseMessages } from "./schema/caseMessages";
 import { userDepartments } from "./schema/userDepartments";
 import { assignmentQueue } from "./schema/assignmentQueue";
 import { pushSubscriptions } from "./schema/pushSubscriptions";
@@ -121,6 +122,18 @@ const getQueueByInstitution = db
   .prepare("get_queue_by_institution");
 
 // ---------------------------------------------------------------------------
+// Chat Messages (table 227) — Chat polling, highest volume
+// ---------------------------------------------------------------------------
+
+/** getMessagesByCaseId — messages for a case, sorted chronologically */
+const getMessagesByCaseId = db
+  .select()
+  .from(caseMessages)
+  .where(eq(caseMessages.caseId, sql.placeholder("caseId")))
+  .orderBy(asc(caseMessages.createdOn), asc(caseMessages.id))
+  .prepare("get_messages_by_case_id");
+
+// ---------------------------------------------------------------------------
 // Push Subscriptions (table 254)
 // ---------------------------------------------------------------------------
 
@@ -144,6 +157,8 @@ export const prepared = {
   // Cases
   getCaseById,
   countUserCases,
+  // Chat Messages
+  getMessagesByCaseId,
   // Departments
   getDeptsByUserAndInstitution,
   getUsersByDepartment,

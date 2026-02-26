@@ -1,6 +1,7 @@
 import axios from "axios";
-import { or, like, inArray } from "drizzle-orm";
+import { or, like, inArray, asc } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { prepared } from "@/lib/db/prepared";
 import { useDirectDb, tryDrizzle } from "@/lib/db/repository";
 import { caseMessages } from "@/lib/db/schema/caseMessages";
 
@@ -231,6 +232,16 @@ const guessKind = (
   return fallback ?? "document";
 };
 
+/** Formata Date para string no padrão brasileiro DD/MM/YYYY HH:mm */
+const formatDateTimeBR = (date: Date): string => {
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = date.getFullYear();
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${day}/${month}/${year} ${hours}:${minutes}`;
+};
+
 const parseBrazilianDate = (value: string): Date | null => {
   // Format: DD/MM/YYYY HH:mm or DD/MM/YYYY, HH:mm or DD/MM/YYYY HH:mm:ss
   const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?$/);
@@ -368,7 +379,7 @@ const toCaseMessage = (
 
   const direction = sender === "cliente" ? "inbound" : "outbound";
   const kind = guessKind(attachments, row.Message ? "text" : undefined);
-  const createdAt = normalizeDate(row.DataHora || row.created_on);
+  const createdAt = normalizeDate(row.created_on || row.DataHora);
 
   const rawSenderName = row.SenderName
     ? String(row.SenderName).trim()
@@ -470,8 +481,8 @@ const deduplicateAndSort = (collected: BaserowCaseMessageRow[]): BaserowCaseMess
   }
   const unique = Array.from(uniqueMap.values());
   unique.sort((a, b) => {
-    const dateA = parseDateForSort(a.DataHora || a.created_on);
-    const dateB = parseDateForSort(b.DataHora || b.created_on);
+    const dateA = parseDateForSort(a.created_on || a.DataHora);
+    const dateB = parseDateForSort(b.created_on || b.DataHora);
     if (dateA !== dateB) return dateA - dateB;
     return a.id - b.id;
   });
@@ -519,9 +530,27 @@ export const fetchCaseMessagesFromBaserow = async (
   if (useDirectDb("chat")) {
     const _dr = await tryDrizzle(async () => {
       const collected: BaserowCaseMessageRow[] = [];
-  
-      // Search by phone (from/to) first
-      if (normalizedPhone) {
+
+      // 1) Search by CaseId FIRST (indexed — B-tree on field_1701)
+      if (normalizedIdentifiers.length) {
+        // Use prepared statement for single caseId (most common), dynamic for multiple
+        if (normalizedIdentifiers.length === 1) {
+          const rows = await prepared.getMessagesByCaseId.execute({
+            caseId: normalizedIdentifiers[0],
+          });
+          collected.push(...rows.map(mapDrizzleToBaserowRow));
+        } else {
+          const rows = await db
+            .select()
+            .from(caseMessages)
+            .where(inArray(caseMessages.caseId, normalizedIdentifiers))
+            .orderBy(asc(caseMessages.createdOn), asc(caseMessages.id));
+          collected.push(...rows.map(mapDrizzleToBaserowRow));
+        }
+      }
+
+      // 2) Fallback to phone search only if caseId returned nothing
+      if (!collected.length && normalizedPhone) {
         const rows = await db
           .select()
           .from(caseMessages)
@@ -530,20 +559,18 @@ export const fetchCaseMessagesFromBaserow = async (
               like(caseMessages.from, `%${normalizedPhone}%`),
               like(caseMessages.to, `%${normalizedPhone}%`),
             ),
-          );
+          )
+          .orderBy(asc(caseMessages.createdOn), asc(caseMessages.id));
         collected.push(...rows.map(mapDrizzleToBaserowRow));
       }
-  
-      // If no results from phone, fallback to CaseId search
-      if (!collected.length && normalizedIdentifiers.length) {
-        const rows = await db
-          .select()
-          .from(caseMessages)
-          .where(inArray(caseMessages.caseId, normalizedIdentifiers));
-        collected.push(...rows.map(mapDrizzleToBaserowRow));
-      }
-  
-      const unique = deduplicateAndSort(collected);
+
+      // Dedup only (already sorted by SQL ORDER BY)
+      const seen = new Set<number>();
+      const unique = collected.filter((r) => {
+        if (seen.has(r.id)) return false;
+        seen.add(r.id);
+        return true;
+      });
       return buildFetchResult(unique, fallbackCaseId, normalizedPhone);
     });
     if (_dr !== undefined) return _dr;
@@ -575,8 +602,25 @@ export const fetchCaseMessagesFromBaserow = async (
     return rows;
   };
 
-  // Buscar por telefone (from e to) em PARALELO
-  if (normalizedPhone) {
+  // 1) Buscar por CaseId PRIMEIRO (mais rápido, campo indexado)
+  if (normalizedIdentifiers.length) {
+    const identifierPromises = normalizedIdentifiers.map((identifier) => {
+      const url = buildMessagesUrl(new URLSearchParams({
+        page: "1",
+        size: String(pageSize),
+        order_by: "DataHora",
+        "filter__CaseId__equal": identifier,
+      }));
+      return fetchAllPages(url);
+    });
+    const results = await Promise.all(identifierPromises);
+    for (const rows of results) {
+      collected.push(...rows);
+    }
+  }
+
+  // 2) Fallback por telefone (from e to) em PARALELO se CaseId não retornou
+  if (!collected.length && normalizedPhone) {
     const fromUrl = buildMessagesUrl(new URLSearchParams({
       page: "1",
       size: String(pageSize),
@@ -595,23 +639,6 @@ export const fetchCaseMessagesFromBaserow = async (
       fetchAllPages(toUrl),
     ]);
     collected.push(...fromRows, ...toRows);
-  }
-
-  // Se não encontrou por telefone, buscar por CaseId (em paralelo)
-  if (!collected.length && normalizedIdentifiers.length) {
-    const identifierPromises = normalizedIdentifiers.map((identifier) => {
-      const url = buildMessagesUrl(new URLSearchParams({
-        page: "1",
-        size: String(pageSize),
-        order_by: "DataHora",
-        "filter__CaseId__equal": identifier,
-      }));
-      return fetchAllPages(url);
-    });
-    const results = await Promise.all(identifierPromises);
-    for (const rows of results) {
-      collected.push(...rows);
-    }
   }
 
   const unique = deduplicateAndSort(collected);
@@ -690,23 +717,29 @@ export const createCaseMessageRow = async (input: CreateCaseMessageRowInput) => 
       const senderValue = toBaserowSender(input.sender);
       // multiple_select stores JSONB array of {id, value} objects
       const senderJsonb = [{ id: 0, value: senderValue }];
-  
+      const now = new Date();
+
+      // Baserow auto-columns are NOT NULL without SQL DEFAULT (Django manages them).
+      // We must set created_on, updated_on, and order explicitly.
       const values: typeof caseMessages.$inferInsert = {
         caseId: String(input.caseIdentifier),
         sender: senderJsonb,
         senderName: input.senderName ?? "",
         message: input.content,
-        dataHora: input.timestamp ?? new Date().toISOString(),
+        dataHora: input.timestamp ?? formatDateTimeBR(now),
         from: input.from ?? null,
         to: input.to ?? null,
         file: input.attachments?.length ? input.attachments : null,
+        createdOn: now,
+        updatedOn: now,
+        order: "1",
       };
-  
+
       const [created] = await db
         .insert(caseMessages)
         .values(values)
         .returning();
-  
+
       return mapDrizzleToBaserowRow(created);
     });
     if (_dr !== undefined) return _dr;
@@ -720,7 +753,7 @@ export const createCaseMessageRow = async (input: CreateCaseMessageRowInput) => 
     Sender: toBaserowSender(input.sender),
     SenderName: input.senderName ?? "",
     Message: input.content,
-    DataHora: input.timestamp ?? new Date().toISOString(),
+    DataHora: input.timestamp ?? formatDateTimeBR(new Date()),
     field: input.field ?? "chat",
   };
 

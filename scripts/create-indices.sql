@@ -186,17 +186,21 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_224_institution_id
   ON database_table_224 (field_1672);
 
 -- =============================================================================
--- Trigram index for phone LIKE '%pattern%' searches (optional, requires extension)
+-- Trigram index for phone LIKE '%pattern%' searches (requires pg_trgm extension)
 -- =============================================================================
--- Se quiser otimizar LIKE '%phone%' (contains), habilitar pg_trgm:
---
--- CREATE EXTENSION IF NOT EXISTS pg_trgm;
--- CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_225_phone_trgm
---   ON database_table_225 USING GIN (field_1684 gin_trgm_ops);
--- CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_227_from_trgm
---   ON database_table_227 USING GIN (field_1706 gin_trgm_ops);
--- CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_227_to_trgm
---   ON database_table_227 USING GIN (field_1707 gin_trgm_ops);
+-- Otimiza LIKE '%phone%' (contains) — sem estes índices é full table scan.
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_225_phone_trgm
+  ON database_table_225 USING GIN (field_1684 gin_trgm_ops);
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_227_from_trgm
+  ON database_table_227 USING GIN (field_1706 gin_trgm_ops);
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_227_to_trgm
+  ON database_table_227 USING GIN (field_1707 gin_trgm_ops);
+
 -- =============================================================================
 
 -- Verificar índices criados

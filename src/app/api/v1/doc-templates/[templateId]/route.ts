@@ -35,10 +35,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
         { status: 404 },
       );
 
-    // Check institution access (SysAdmin=4 sees all)
+    // Permitir acesso se: SysAdmin (4), mesma instituição, ou registro sem institution_id (legado)
+    const tplInstId = Number(template.institution_id) || 0;
     if (
       auth.institutionId !== 4 &&
-      template.institution_id !== auth.institutionId
+      tplInstId !== 0 &&
+      tplInstId !== auth.institutionId
     ) {
       return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
     }
@@ -50,7 +52,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
     if (templateType === "html" && template.file_path) {
       try {
         htmlContent = await readTemplateHtml(template.file_path);
-      } catch {
+      } catch (readErr) {
+        console.error(
+          `[doc-templates] Falha ao ler HTML do template ${id} (file_path=${template.file_path}):`,
+          readErr instanceof Error ? readErr.message : readErr,
+        );
         htmlContent = "";
       }
     }

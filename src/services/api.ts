@@ -810,6 +810,18 @@ export const updateBaserowConfig = async (
   rowId: number,
   data: Partial<BaserowConfigRow>,
 ): Promise<BaserowConfigRow> => {
+  // fullAddress é campo virtual (sintetizado na UI a partir de street/city/state/zipCode).
+  // Não existe na tabela — remapear para street e limpar os demais.
+  if ("body.tenant.address.fullAddress" in data) {
+    const fullAddr = data["body.tenant.address.fullAddress"];
+    // Garantir que street seja string (nunca undefined) — JSON.stringify omite undefined
+    data["body.tenant.address.street"] = fullAddr != null ? String(fullAddr) : "";
+    data["body.tenant.address.city"] = "";
+    data["body.tenant.address.state"] = "";
+    data["body.tenant.address.zipCode"] = "";
+    delete data["body.tenant.address.fullAddress"];
+  }
+
   if (useDirectDb("api")) {
     const _dr = await tryDrizzle(async () => {
       const setObj = buildConfigSetObj(data as Record<string, unknown>);
@@ -1642,6 +1654,31 @@ export type CreateWebhookPayload = {
 
 export type UpdateWebhookPayload = Partial<Omit<WebhookRow, "id">>;
 
+/** Serialize alert_* booleans → JSON string for webhook_alerts field */
+function serializeAlerts(data: Partial<WebhookRow>): string {
+  return JSON.stringify({
+    alert_depoimento_inicial: data.alert_depoimento_inicial ?? true,
+    alert_etapa_perguntas: data.alert_etapa_perguntas ?? true,
+    alert_etapa_final: data.alert_etapa_final ?? true,
+  });
+}
+
+/** Deserialize webhook_alerts JSON → alert_* booleans */
+function deserializeAlerts(raw: string | null | undefined): Pick<WebhookRow, "alert_depoimento_inicial" | "alert_etapa_perguntas" | "alert_etapa_final"> {
+  const defaults = { alert_depoimento_inicial: true, alert_etapa_perguntas: true, alert_etapa_final: true };
+  if (!raw) return defaults;
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      alert_depoimento_inicial: parsed.alert_depoimento_inicial ?? true,
+      alert_etapa_perguntas: parsed.alert_etapa_perguntas ?? true,
+      alert_etapa_final: parsed.alert_etapa_final ?? true,
+    };
+  } catch {
+    return defaults;
+  }
+}
+
 /** Map Drizzle row → WebhookRow */
 function mapWhRow(row: typeof whTable.$inferSelect): WebhookRow {
   return {
@@ -1651,6 +1688,7 @@ function mapWhRow(row: typeof whTable.$inferSelect): WebhookRow {
     webhook_secret: row.webhookSecret || "",
     webhook_active: row.webhookActive || "",
     webhook_alerts: row.webhookAlerts || "",
+    ...deserializeAlerts(row.webhookAlerts),
   };
 }
 
@@ -1677,6 +1715,12 @@ export const getWebhooks = async (institutionId?: number): Promise<WebhookRow[]>
     const response = await baserowGet(url);
 
     let results: WebhookRow[] = (response.data as { results?: WebhookRow[] })?.results || [];
+
+    // Deserializar alert_* do campo webhook_alerts (Baserow retorna como texto)
+    results = results.map((row) => ({
+      ...row,
+      ...deserializeAlerts(row.webhook_alerts as string | undefined),
+    }));
 
     if (typeof institutionId === "number") {
       results = results.filter((row) => {
@@ -1712,7 +1756,7 @@ export const createWebhook = async (data: CreateWebhookPayload): Promise<Webhook
           webhookUrl: data.webhook_url,
           webhookSecret: data.webhook_secret ?? "",
           webhookActive: data.webhook_active ?? "sim",
-          webhookAlerts: "",
+          webhookAlerts: serializeAlerts(data),
         })
         .returning();
       return mapWhRow(created);
@@ -1724,12 +1768,11 @@ export const createWebhook = async (data: CreateWebhookPayload): Promise<Webhook
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_WEBHOOKS_TABLE_ID}/?user_field_names=true`;
 
+    const { alert_depoimento_inicial, alert_etapa_perguntas, alert_etapa_final, ...rest } = data;
     const payload = {
-      ...data,
+      ...rest,
       webhook_active: data.webhook_active ?? "sim",
-      alert_depoimento_inicial: data.alert_depoimento_inicial ?? true,
-      alert_etapa_perguntas: data.alert_etapa_perguntas ?? true,
-      alert_etapa_final: data.alert_etapa_final ?? true,
+      webhook_alerts: serializeAlerts(data),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -1763,7 +1806,11 @@ export const updateWebhook = async (
       if (data.webhook_secret !== undefined) setObj.webhookSecret = data.webhook_secret;
       if (data.webhook_active !== undefined) setObj.webhookActive = data.webhook_active;
       if (data.webhoock_institution_id !== undefined) setObj.webhoockInstitutionId = String(data.webhoock_institution_id);
-  
+      // Serializar alert_* no campo webhook_alerts
+      if (data.alert_depoimento_inicial !== undefined || data.alert_etapa_perguntas !== undefined || data.alert_etapa_final !== undefined) {
+        setObj.webhookAlerts = serializeAlerts(data);
+      }
+
       const [updated] = await db
         .update(whTable)
         .set(setObj)
@@ -1778,10 +1825,14 @@ export const updateWebhook = async (
   try {
     const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_WEBHOOKS_TABLE_ID}/${rowId}/?user_field_names=true`;
 
-    const payload = {
-      ...data,
+    const { alert_depoimento_inicial, alert_etapa_perguntas, alert_etapa_final, ...restUpdate } = data;
+    const payload: Record<string, unknown> = {
+      ...restUpdate,
       updated_at: new Date().toISOString(),
     };
+    if (alert_depoimento_inicial !== undefined || alert_etapa_perguntas !== undefined || alert_etapa_final !== undefined) {
+      payload.webhook_alerts = serializeAlerts(data);
+    }
 
     const response = await baserowPatch(url, payload);
 

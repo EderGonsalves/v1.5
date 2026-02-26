@@ -333,17 +333,35 @@ export default function ConfiguracoesPage() {
   };
 
   const cancelEditing = (rowId: number, fieldKey: string) => {
-    setEditingFields((prev) => ({
-      ...prev,
-      [rowId]: {
-        ...prev[rowId],
-        [fieldKey]: {
-          ...prev[rowId][fieldKey],
-          isEditing: false,
-          value: configs.find((c) => c.id === rowId)?.[fieldKey],
+    setEditingFields((prev) => {
+      // Para fullAddress (virtual), sintetizar a partir dos campos reais
+      let resetValue: unknown;
+      if (fieldKey === "body.tenant.address.fullAddress") {
+        const cfg = configs.find((c) => c.id === rowId) as Record<string, unknown> | undefined;
+        if (cfg) {
+          const st = (cfg["body.tenant.address.street"] as string)?.trim() || "";
+          const ci = (cfg["body.tenant.address.city"] as string)?.trim() || "";
+          const se = (cfg["body.tenant.address.state"] as string)?.trim() || "";
+          const zp = (cfg["body.tenant.address.zipCode"] as string)?.trim() || "";
+          const parts = [st, ci && se ? `${ci}/${se}` : ci || se, zp ? `CEP ${zp}` : ""].filter(Boolean);
+          resetValue = parts.join(" - ") || "";
+        }
+      } else {
+        resetValue = configs.find((c) => c.id === rowId)?.[fieldKey];
+      }
+
+      return {
+        ...prev,
+        [rowId]: {
+          ...prev[rowId],
+          [fieldKey]: {
+            ...prev[rowId][fieldKey],
+            isEditing: false,
+            value: resetValue,
+          },
         },
-      },
-    }));
+      };
+    });
   };
 
   const updateFieldValue = (rowId: number, fieldKey: string, newValue: unknown) => {
@@ -375,11 +393,17 @@ export default function ConfiguracoesPage() {
       console.log(`Salvando campo ${fieldKey} da linha ${rowId}:`, updatedData);
       
       const updated = await updateBaserowConfig(rowId, updatedData);
-      
+
       // Atualizar a configuração na lista
       setConfigs((prev) =>
         prev.map((config) => (config.id === rowId ? updated : config))
       );
+
+      // Para campo virtual fullAddress: o Baserow retorna body.tenant.address.street,
+      // não fullAddress. Usar o valor que foi salvo (field.value) para manter consistência.
+      const savedValue = fieldKey === "body.tenant.address.fullAddress"
+        ? field.value
+        : updated[fieldKey];
 
       // Atualizar o campo editável
       setEditingFields((prev) => ({
@@ -389,7 +413,7 @@ export default function ConfiguracoesPage() {
           [fieldKey]: {
             ...prev[rowId][fieldKey],
             isEditing: false,
-            value: updated[fieldKey],
+            value: savedValue,
           },
         },
       }));
