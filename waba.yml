@@ -1,0 +1,111 @@
+version: "3.8"
+
+services:
+  onboarding-app:
+    image: riasistemas/onboarding:latest
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=minha_rede"
+        - "traefik.http.routers.onboarding-app.rule=Host(`waba.riasistemas.com.br`)"
+        - "traefik.http.routers.onboarding-app.entrypoints=websecure"
+        - "traefik.http.routers.onboarding-app.tls.certresolver=letsencrypt"
+        - "traefik.http.routers.onboarding-app.service=onboarding-app"
+        - "traefik.http.services.onboarding-app.loadbalancer.server.port=3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+      - NEXT_PUBLIC_ONBOARDING_API_URL=/api/onboarding
+      - NEXT_PUBLIC_LOGIN_WEBHOOK_URL=${NEXT_PUBLIC_LOGIN_WEBHOOK_URL}
+      # PostgreSQL direto (Drizzle)
+      - DATABASE_URL=postgresql://postgres:RLaNTHerwalc@postgress_postgres:5432/baserow
+      - USE_DIRECT_DB=true
+      # Automation
+      - AUTOMATION_ENDPOINT_URL=https://automation-webhook.riasistemas.com.br/webhook/onboarding-v2
+      - RAG_WORKER_ENDPOINT_URL=https://sua-automacao/rag
+      - AUTOMATION_DB_API_URL=https://automation-db.riasistemas.com.br/api
+      - AUTOMATION_DB_TOKEN=jSOTmQbEzFZUOxMSkOs6t5KARjTTaH3S
+      - AUTOMATION_DB_TABLE_ID=219
+      - AUTOMATION_DB_FILE_FIELD=arquivo
+      # Baserow (server-only)
+      - BASEROW_API_URL=https://automation-db.riasistemas.com.br/api
+      - BASEROW_API_KEY=jSOTmQbEzFZUOxMSkOs6t5KARjTTaH3S
+      - BASEROW_CONFIG_TABLE_ID=224
+      - BASEROW_CASES_TABLE_ID=225
+      - BASEROW_AGENT_STATE_TABLE_ID=226
+      - BASEROW_CASE_MESSAGES_TABLE_ID=227
+      - BASEROW_EVENTS_TABLE_ID=234
+      - BASEROW_EVENT_GUESTS_TABLE_ID=235
+      - BASEROW_USERS_TABLE_ID=236
+      - BASEROW_ROLES_TABLE_ID=237
+      - BASEROW_MENU_TABLE_ID=238
+      - BASEROW_PERMISSIONS_TABLE_ID=239
+      - BASEROW_ROLE_PERMISSION_TABLE_ID=240
+      - BASEROW_USER_ROLE_TABLE_ID=241
+      - BASEROW_AUDIT_PERMISSION_TABLE_ID=242
+      - BASEROW_WEBHOOKS_TABLE_ID=228
+      - BASEROW_FOLLOW_UP_CONFIG_TABLE_ID=229
+      - BASEROW_FOLLOW_UP_HISTORY_TABLE_ID=230
+      - BASEROW_DEPARTMENTS_TABLE_ID=247
+      - BASEROW_USER_DEPARTMENTS_TABLE_ID=248
+      - BASEROW_KANBAN_COLUMNS_TABLE_ID=231
+      - BASEROW_CASE_KANBAN_STATUS_TABLE_ID=232
+      - BASEROW_LAWSUIT_TRACKING_TABLE_ID=252
+      - BASEROW_LAWSUIT_MOVEMENTS_TABLE_ID=253
+      - BASEROW_DOCUMENT_TEMPLATES_TABLE_ID=257
+      - BASEROW_SIGN_ENVELOPES_TABLE_ID=256
+      # Templates de documentos (volume persistente)
+      - TEMPLATES_STORAGE_DIR=/app/data/doc-templates
+      # App URL
+      - APP_URL=https://waba.riasistemas.com.br
+      # Chat / WhatsApp
+      - CHAT_WEBHOOK_URL=https://automation-webhook.riasistemas.com.br/webhook/chatv1-5
+      - FOLLOW_UP_WEBHOOK_URL=https://automation-webhook.riasistemas.com.br/webhook/chatv1-5
+      - CHAT_WEBHOOK_TOKEN=
+      - CHAT_WEBHOOK_TIMEOUT_MS=20000
+      - NEXT_PUBLIC_CHAT_POLL_INTERVAL_MS=10000
+      # WhatsApp OAuth
+      - NEXT_PUBLIC_WHATSAPP_CLIENT_ID=1990068605120799
+      - NEXT_PUBLIC_WHATSAPP_REDIRECT_URI=https://automation-webhook.riasistemas.com.br/webhook/wa/auth
+      - NEXT_PUBLIC_WHATSAPP_CONFIG_ID=1339029904935343
+      # Auth / Cron
+      - CRON_SECRET=527a8dd1383c94b37ad7e465d60592424744d7c770d5eea88ae1a3909e366fa4
+      - CALENDAR_API_KEY=a319963c0ddb17e1da45d9067e2f300274387150ce4b88931182a1845504aa55
+      # WABA Templates (server-only)
+      - WABA_ACCESS_TOKEN=EAAcR9PRJcR8BQOrJgIFHjNgKeOGBCUl0cdFrkZBgGOppaE5V5GLKGSbaljTthOiuNepP8ntZCyXIRkNWWUUMCplYTEZCOu1WwxVisTlQvwcJHLdSpGeqcLpt9MPCZBxUt5zCDIopz8uspvtJF2ZCCgKZC3xsZAMs6pOKBchekNPN1iOQDdSQbu4ZC00EeZBbNer0dyAZDZD
+      - WABA_GRAPH_API_VERSION=v22.0
+      - TEMPLATE_WEBHOOK_URL=https://automation-webhook.riasistemas.com.br/webhook/envia-templates
+      # Codilo (server-only)
+      - CODILO_CLIENT_ID=AD858E50E977302B
+      - CODILO_CLIENT_SECRET=097b0b0135de92b6de29bb9501bef76a
+      - CODILO_WEBHOOK_SECRET=codilo_wh_secret_riasistemas_2026
+      # RIA Sign (assinatura eletronica)
+      - RIASIGN_BASE_URL=https://sign.riasistemas.com.br
+      - RIASIGN_API_KEY=${RIASIGN_API_KEY}
+      - RIASIGN_WEBHOOK_SECRET=${RIASIGN_WEBHOOK_SECRET}
+    networks:
+      - minha_rede
+    volumes:
+      - onboarding-uploads:/app/public/rag-uploads
+      - onboarding-templates:/app/data/doc-templates
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => {let data='';r.on('data',(c)=>{data+=c});r.on('end',()=>{try{const json=JSON.parse(data);process.exit(json.status==='ok'?0:1)}catch(e){process.exit(r.statusCode===200?0:1)}})}).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  onboarding-uploads:
+    driver: local
+  onboarding-templates:
+    driver: local
+
+networks:
+  minha_rede:
+    external: true
