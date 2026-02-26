@@ -531,7 +531,7 @@ export const fetchCaseMessagesFromBaserow = async (
     const _dr = await tryDrizzle(async () => {
       const collected: BaserowCaseMessageRow[] = [];
 
-      // 1) Search by CaseId FIRST (indexed — B-tree on field_1701)
+      // 1) Search by CaseId (indexed — B-tree on field_1701)
       if (normalizedIdentifiers.length) {
         // Use prepared statement for single caseId (most common), dynamic for multiple
         if (normalizedIdentifiers.length === 1) {
@@ -549,8 +549,8 @@ export const fetchCaseMessagesFromBaserow = async (
         }
       }
 
-      // 2) Fallback to phone search only if caseId returned nothing
-      if (!collected.length && normalizedPhone) {
+      // 2) ALSO search by phone — mensagens antigas podem não ter CaseId
+      if (normalizedPhone) {
         const rows = await db
           .select()
           .from(caseMessages)
@@ -564,13 +564,7 @@ export const fetchCaseMessagesFromBaserow = async (
         collected.push(...rows.map(mapDrizzleToBaserowRow));
       }
 
-      // Dedup only (already sorted by SQL ORDER BY)
-      const seen = new Set<number>();
-      const unique = collected.filter((r) => {
-        if (seen.has(r.id)) return false;
-        seen.add(r.id);
-        return true;
-      });
+      const unique = deduplicateAndSort(collected);
       return buildFetchResult(unique, fallbackCaseId, normalizedPhone);
     });
     if (_dr !== undefined) return _dr;
@@ -619,8 +613,8 @@ export const fetchCaseMessagesFromBaserow = async (
     }
   }
 
-  // 2) Fallback por telefone (from e to) em PARALELO se CaseId não retornou
-  if (!collected.length && normalizedPhone) {
+  // 2) TAMBÉM buscar por telefone — mensagens antigas podem não ter CaseId
+  if (normalizedPhone) {
     const fromUrl = buildMessagesUrl(new URLSearchParams({
       page: "1",
       size: String(pageSize),
