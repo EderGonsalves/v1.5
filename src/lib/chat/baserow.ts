@@ -232,22 +232,15 @@ const guessKind = (
   return fallback ?? "document";
 };
 
-/** Formata Date para string no padrão brasileiro DD/MM/YYYY HH:mm (sempre BRT) */
-const _brtFmt = new Intl.DateTimeFormat("pt-BR", {
-  timeZone: "America/Sao_Paulo",
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
-});
-
+/** Formata Date para string no padrão brasileiro DD/MM/YYYY HH:mm (sempre BRT = UTC-3) */
 const formatDateTimeBR = (date: Date): string => {
-  const parts = _brtFmt.formatToParts(date);
-  const v = (t: Intl.DateTimeFormatPartTypes) =>
-    parts.find((p) => p.type === t)?.value ?? "";
-  return `${v("day")}/${v("month")}/${v("year")} ${v("hour")}:${v("minute")}`;
+  const brt = new Date(date.getTime() - 3 * 60 * 60 * 1000);
+  const day = String(brt.getUTCDate()).padStart(2, "0");
+  const month = String(brt.getUTCMonth() + 1).padStart(2, "0");
+  const year = brt.getUTCFullYear();
+  const hours = String(brt.getUTCHours()).padStart(2, "0");
+  const minutes = String(brt.getUTCMinutes()).padStart(2, "0");
+  return `${day}/${month}/${year} ${hours}:${minutes}`;
 };
 
 const parseBrazilianDate = (value: string): Date | null => {
