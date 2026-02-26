@@ -125,46 +125,46 @@ export default function ConexoesPage() {
   }, [data.auth?.institutionId]);
 
   // Buscar os números WABA do Baserow
-  useEffect(() => {
-    const fetchWabaNumbers = async () => {
-      if (!data.auth?.institutionId) return;
+  const fetchWabaNumbers = useCallback(async () => {
+    if (!data.auth?.institutionId) return;
 
-      setIsLoadingWaba(true);
-      try {
-        const configs = await getBaserowConfigs(data.auth.institutionId);
-        const numbers: ConnectedNumber[] = [];
+    setIsLoadingWaba(true);
+    try {
+      const configs = await getBaserowConfigs(data.auth.institutionId);
+      const numbers: ConnectedNumber[] = [];
 
-        configs.forEach((config) => {
-          const record = config as Record<string, unknown>;
-          const phoneNumber = record.waba_phone_number;
-          if (phoneNumber) {
-            const normalizedPhone = typeof phoneNumber === "string"
-              ? phoneNumber.trim()
-              : String(phoneNumber);
-            if (normalizedPhone) {
-              const deptId = record.phone_department_id;
-              const deptName = record.phone_department_name;
-              numbers.push({
-                id: config.id,
-                phoneNumber: normalizedPhone,
-                departmentId: typeof deptId === "number" ? deptId : null,
-                departmentName: typeof deptName === "string" ? deptName : null,
-              });
-            }
+      configs.forEach((config) => {
+        const record = config as Record<string, unknown>;
+        const phoneNumber = record.waba_phone_number;
+        if (phoneNumber) {
+          const normalizedPhone = typeof phoneNumber === "string"
+            ? phoneNumber.trim()
+            : String(phoneNumber);
+          if (normalizedPhone) {
+            const deptId = record.phone_department_id;
+            const deptName = record.phone_department_name;
+            numbers.push({
+              id: config.id,
+              phoneNumber: normalizedPhone,
+              departmentId: typeof deptId === "number" ? deptId : null,
+              departmentName: typeof deptName === "string" ? deptName : null,
+            });
           }
-        });
+        }
+      });
 
-        setConnectedNumbers(numbers);
-      } catch (error) {
-        console.error("Erro ao buscar números WABA:", error);
-      } finally {
-        setIsLoadingWaba(false);
-      }
-    };
+      setConnectedNumbers(numbers);
+    } catch (error) {
+      console.error("Erro ao buscar números WABA:", error);
+    } finally {
+      setIsLoadingWaba(false);
+    }
+  }, [data.auth?.institutionId]);
 
+  useEffect(() => {
     fetchWabaNumbers();
     fetchWebhooks();
-  }, [data.auth?.institutionId, fetchWebhooks]);
+  }, [fetchWabaNumbers, fetchWebhooks]);
 
   const handlePhoneDeptChange = useCallback(async (configId: number, deptIdStr: string) => {
     const deptId = deptIdStr ? Number(deptIdStr) : null;
@@ -296,18 +296,15 @@ export default function ConexoesPage() {
       return;
     }
 
-    // Listener para mensagens do popup
+    // Listener para mensagens do popup (callback OAuth retorna HTML do mesmo domínio)
     const handleMessage = (event: MessageEvent) => {
-      // Verificar se a mensagem é do popup de OAuth
-      if (event.origin !== "https://www.facebook.com" && 
-          event.origin !== "https://automation-webhook.riasistemas.com.br") {
-        return;
-      }
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type !== "whatsapp_connected") return;
 
-      console.log("Mensagem recebida do popup:", event.data);
-      
-      // Se a conexão foi bem-sucedida, atualizar o estado
-      if (event.data?.type === "whatsapp_connected" || event.data?.connected) {
+      console.log("Mensagem recebida do callback OAuth:", event.data);
+      setIsConnecting(false);
+
+      if (event.data.connected) {
         updateSection({
           connections: {
             ...data.connections,
@@ -317,13 +314,16 @@ export default function ConexoesPage() {
             },
           },
         });
-        setIsConnecting(false);
+        // Recarregar números conectados
+        fetchWabaNumbers();
+      } else {
+        console.error("Erro ao conectar WhatsApp:", event.data.error, "step:", event.data.step);
       }
     };
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [isHydrated, data.auth, router, data.connections, updateSection]);
+  }, [isHydrated, data.auth, router, data.connections, updateSection, fetchWabaNumbers]);
 
   const handleWhatsAppConnect = () => {
     if (!data.auth?.institutionId) {
@@ -353,72 +353,23 @@ export default function ConexoesPage() {
       return;
     }
 
-    // Verificar se o popup foi fechado ou redirecionado
+    // Verificar se o popup foi fechado (o postMessage do callback já cuida da atualização)
     const checkPopupStatus = setInterval(() => {
       if (popup.closed) {
         clearInterval(checkPopupStatus);
         setIsConnecting(false);
-        console.log("Popup fechado - assumindo que conexão foi concluída");
-        
-        // Quando o popup fecha, assumimos que o processo foi concluído
-        // O webhook processa a conexão no backend
-        // Atualizar o estado localmente após um pequeno delay para dar tempo ao webhook processar
-        setTimeout(() => {
-          updateSection({
-            connections: {
-              ...data.connections,
-              whatsApp: {
-                connected: true,
-                connectedAt: new Date().toISOString(),
-              },
-            },
-          });
-        }, 1000);
-        return;
-      }
-
-      try {
-        // Tentar verificar se o popup foi redirecionado para o redirect_uri
-        // Isso indica que a autorização foi concluída
-        // Nota: Isso pode falhar devido a políticas de segurança do navegador (cross-origin)
-        if (popup.location.href.includes("automation-webhook.riasistemas.com.br")) {
-          console.log("Popup redirecionado para webhook - fechando popup");
-          clearInterval(checkPopupStatus);
-          
-          // Dar um tempo para o webhook processar antes de fechar
-          setTimeout(() => {
-            if (!popup.closed) {
-              popup.close();
-            }
-            setIsConnecting(false);
-            
-            // Atualizar estado da conexão
-            updateSection({
-              connections: {
-                ...data.connections,
-                whatsApp: {
-                  connected: true,
-                  connectedAt: new Date().toISOString(),
-                },
-              },
-            });
-          }, 1000);
-        }
-      } catch (e) {
-        // Erro esperado quando tentamos acessar location de outro domínio
-        // Isso é normal durante o processo de OAuth (cross-origin policy)
-        // Continuamos verificando se o popup foi fechado
+        console.log("Popup fechado");
       }
     }, 500);
 
-    // Limpar o intervalo após 5 minutos (timeout de segurança)
+    // Timeout de segurança: 5 minutos
     setTimeout(() => {
       clearInterval(checkPopupStatus);
       if (!popup.closed) {
         popup.close();
       }
       setIsConnecting(false);
-    }, 300000); // 5 minutos
+    }, 300000);
   };
 
   if (!isHydrated || !data.auth) {

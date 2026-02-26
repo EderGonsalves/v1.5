@@ -10,10 +10,10 @@ import { StepActions } from "./StepActions";
 
 const WHATSAPP_OAUTH_BASE_URL =
   "https://www.facebook.com/v22.0/dialog/oauth";
-const WHATSAPP_CLIENT_ID = "1990068605120799";
+const WHATSAPP_CLIENT_ID = process.env.NEXT_PUBLIC_WHATSAPP_CLIENT_ID || "";
 const WHATSAPP_REDIRECT_URI =
-  "https://automation-webhook.riasistemas.com.br/webhook/wa/auth";
-const WHATSAPP_CONFIG_ID = "1339029904935343";
+  process.env.NEXT_PUBLIC_WHATSAPP_REDIRECT_URI || "";
+const WHATSAPP_CONFIG_ID = process.env.NEXT_PUBLIC_WHATSAPP_CONFIG_ID || "";
 
 const buildWhatsAppOAuthUrl = (institutionId: number): string => {
   const state = institutionId.toString();

@@ -26,7 +26,7 @@ ARG NEXT_PUBLIC_BASEROW_API_URL=https://automation-db.riasistemas.com.br/api
 ARG NEXT_PUBLIC_ONBOARDING_API_URL=/api/onboarding
 ARG NEXT_PUBLIC_CHAT_POLL_INTERVAL_MS=10000
 ARG NEXT_PUBLIC_WHATSAPP_CLIENT_ID=1990068605120799
-ARG NEXT_PUBLIC_WHATSAPP_REDIRECT_URI=https://automation-webhook.riasistemas.com.br/webhook/wa/auth
+ARG NEXT_PUBLIC_WHATSAPP_REDIRECT_URI=https://waba.riasistemas.com.br/api/v1/waba/callback
 ARG NEXT_PUBLIC_WHATSAPP_CONFIG_ID=1339029904935343
 ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY=BH1YQiNZCrXNA0TmA1HT1woAKtAGpi5XkPinUd59VAH1Fp5_DIdpZV6p_nwAmzNzgz8oaYQhxxMB6cwhmLLdl0c
 
@@ -39,8 +39,8 @@ ENV NEXT_PUBLIC_WHATSAPP_CONFIG_ID=$NEXT_PUBLIC_WHATSAPP_CONFIG_ID
 ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=$NEXT_PUBLIC_VAPID_PUBLIC_KEY
 
 # Cache-bust: incrementar quando NEXT_PUBLIC_* mudar para invalidar build cache
-# v3: Drizzle ORM migration — removed NEXT_PUBLIC_BASEROW_*_TABLE_ID vars
-LABEL build.cache.version="3"
+# v4: WABA OAuth callback — redirect URI now points to app's own /api/v1/waba/callback
+LABEL build.cache.version="4"
 
 # Build da aplicação
 RUN npm run build
