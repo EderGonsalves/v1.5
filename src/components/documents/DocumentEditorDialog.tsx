@@ -154,14 +154,27 @@ export function DocumentEditorDialog({
     setLoading(true);
     setError("");
     try {
-      const { htmlContent: rawHtml } = await fetchTemplateWithContent(
-        template.id,
-      );
-      const context = buildVariableContext(caseData, clientData || null);
-      const filled = interpolateVariables(rawHtml, context);
-      setHtmlContent(filled);
-      setStep("edit");
+      const resp = await fetchTemplateWithContent(template.id);
+      const rawHtml = resp.htmlContent ?? "";
+
+      // Mostrar aviso do servidor se houver
+      const warning = (resp as Record<string, unknown>).warning;
+      if (warning && typeof warning === "string") {
+        setError(warning);
+      }
+
+      if (!rawHtml) {
+        setError("Conteúdo HTML vazio — o arquivo do template pode não existir no servidor");
+        setHtmlContent("");
+        setStep("edit");
+      } else {
+        const context = buildVariableContext(caseData, clientData || null);
+        const filled = interpolateVariables(rawHtml, context);
+        setHtmlContent(filled);
+        setStep("edit");
+      }
     } catch (err) {
+      console.error("[DocumentEditorDialog] Erro ao carregar template:", err);
       setError(
         err instanceof Error ? err.message : "Erro ao carregar template",
       );

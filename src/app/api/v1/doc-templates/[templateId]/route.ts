@@ -48,20 +48,35 @@ export async function GET(request: NextRequest, context: RouteContext) {
     // Direct upload templates have no editable HTML
     const templateType = template.template_type || "html";
     let htmlContent: string | null = null;
+    let warning: string | undefined;
 
-    if (templateType === "html" && template.file_path) {
-      try {
-        htmlContent = await readTemplateHtml(template.file_path);
-      } catch (readErr) {
-        console.error(
-          `[doc-templates] Falha ao ler HTML do template ${id} (file_path=${template.file_path}):`,
-          readErr instanceof Error ? readErr.message : readErr,
+    console.log(
+      `[doc-templates] GET/${id} — type=${templateType}, file_path=${template.file_path || "(vazio)"}, institution_id=${template.institution_id}`,
+    );
+
+    if (templateType === "html") {
+      if (!template.file_path) {
+        console.warn(
+          `[doc-templates] Template ${id} é HTML mas file_path está vazio/null`,
         );
+        warning = "Template sem arquivo HTML associado (file_path vazio)";
         htmlContent = "";
+      } else {
+        try {
+          htmlContent = await readTemplateHtml(template.file_path);
+        } catch (readErr) {
+          const errMsg = readErr instanceof Error ? readErr.message : String(readErr);
+          console.error(
+            `[doc-templates] Falha ao ler HTML do template ${id} (file_path=${template.file_path}):`,
+            errMsg,
+          );
+          warning = `Arquivo do template não encontrado: ${errMsg}`;
+          htmlContent = "";
+        }
       }
     }
 
-    return NextResponse.json({ template, htmlContent });
+    return NextResponse.json({ template, htmlContent, warning });
   } catch (err) {
     console.error("[doc-templates] GET/:id error:", err);
     return NextResponse.json(

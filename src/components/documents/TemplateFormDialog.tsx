@@ -99,14 +99,25 @@ export function TemplateFormDialog({
       if (!isDirectType) {
         setLoading(true);
         fetchTemplateWithContent(editTemplate.id)
-          .then(({ htmlContent: html }) => {
-            setHtmlContent(html ?? "");
-            // Extract variables from loaded HTML for the panel
+          .then((resp) => {
+            const html = resp.htmlContent ?? "";
+            setHtmlContent(html);
             if (html) {
               setDetectedVariables(extractVariables(html));
             }
+            // Mostrar aviso do servidor se houver
+            const warning = (resp as Record<string, unknown>).warning;
+            if (warning && typeof warning === "string") {
+              setError(warning);
+            } else if (!html) {
+              setError("Conteúdo HTML vazio — o arquivo do template pode não existir no servidor");
+            }
           })
-          .catch(() => setHtmlContent(""))
+          .catch((err) => {
+            console.error("[TemplateFormDialog] Erro ao carregar template:", err);
+            setHtmlContent("");
+            setError(err instanceof Error ? err.message : "Erro ao carregar template");
+          })
           .finally(() => setLoading(false));
       } else {
         setHtmlContent("");
