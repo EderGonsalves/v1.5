@@ -92,6 +92,9 @@ COPY --from=deps /app/node_modules/drizzle-orm ./node_modules/drizzle-orm
 # Verificar se server.js existe
 RUN test -f server.js || (echo "ERRO: server.js não encontrado!" && exit 1)
 
+# Criar diretórios de dados persistentes (volumes montados com root por padrão)
+RUN mkdir -p /app/data/doc-templates
+
 # Ajustar permissões
 RUN chown -R nextjs:nodejs /app
 
