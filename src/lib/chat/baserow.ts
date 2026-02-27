@@ -467,10 +467,10 @@ export type FetchMessagesResult = {
 // ---------------------------------------------------------------------------
 
 const _msgCache = new Map<string, { data: FetchMessagesResult; ts: number }>();
-const MSG_CACHE_TTL = 5_000; // 5 seconds
+const MSG_CACHE_TTL = 30_000; // 30 seconds
 
 const buildCacheKey = (identifiers: string[], phone: string): string =>
-  `${identifiers.sort().join(",")}|${phone}`;
+  `${[...identifiers].sort().join(",")}|${phone}`;
 
 const getCachedMessages = (key: string): FetchMessagesResult | null => {
   const entry = _msgCache.get(key);
@@ -546,12 +546,24 @@ const buildFetchResult = (
 // Incremental fetch — only messages with id > sinceId
 // ---------------------------------------------------------------------------
 
+// Cache de "nenhuma mensagem nova" — evita query DB quando nada mudou
+const _emptyPollCache = new Map<string, number>(); // key → timestamp do último poll vazio
+const EMPTY_POLL_TTL = 3_000; // 3s — skip query se último poll foi vazio há menos de 3s
+const EMPTY_RESULT: FetchMessagesResult = { messages: [], wabaPhoneNumber: null };
+
 const fetchIncrementalMessages = async (
   normalizedIdentifiers: string[],
   normalizedPhone: string,
   fallbackCaseId: number,
   sinceId: number,
 ): Promise<FetchMessagesResult> => {
+  // Fast path: se o último poll com este sinceId retornou vazio há menos de 3s, skip
+  const emptyKey = `${normalizedIdentifiers[0] ?? fallbackCaseId}:${sinceId}`;
+  const lastEmpty = _emptyPollCache.get(emptyKey);
+  if (lastEmpty && Date.now() - lastEmpty < EMPTY_POLL_TTL) {
+    return EMPTY_RESULT;
+  }
+
   // ── Drizzle (direct PostgreSQL) ──────────────────────────────────────
   if (useDirectDb("chat")) {
     const _dr = await tryDrizzle("chat", async () => {
@@ -588,7 +600,11 @@ const fetchIncrementalMessages = async (
       const unique = deduplicateAndSort(rows.map(mapDrizzleToBaserowRow));
       return buildFetchResult(unique, fallbackCaseId, normalizedPhone);
     });
-    if (_dr !== undefined) return _dr;
+    if (_dr !== undefined) {
+      if (_dr.messages.length === 0) _emptyPollCache.set(emptyKey, Date.now());
+      else _emptyPollCache.delete(emptyKey);
+      return _dr;
+    }
   }
 
   // ── Baserow REST API (fallback) ──────────────────────────────────────
@@ -615,7 +631,10 @@ const fetchIncrementalMessages = async (
   }
 
   const unique = deduplicateAndSort(collected);
-  return buildFetchResult(unique, fallbackCaseId, normalizedPhone);
+  const result = buildFetchResult(unique, fallbackCaseId, normalizedPhone);
+  if (result.messages.length === 0) _emptyPollCache.set(emptyKey, Date.now());
+  else _emptyPollCache.delete(emptyKey);
+  return result;
 };
 
 // ---------------------------------------------------------------------------

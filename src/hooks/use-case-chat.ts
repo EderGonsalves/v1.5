@@ -165,7 +165,7 @@ export const useCaseChat = (
 
         // 304 — nada mudou, skip (only for full load path)
         if (response.status === 304) {
-          return;
+          return true;
         }
 
         if (!response.ok) {
@@ -220,7 +220,7 @@ export const useCaseChat = (
               lastMessageAt: newMessages[newMessages.length - 1].createdAt,
             } : prev);
           }
-          return;
+          return true;
         }
 
         // ── Full load ────────────────────────────────────────────────
@@ -271,10 +271,12 @@ export const useCaseChat = (
           caseSummary: fullData.case,
           meta: fullData.meta,
         });
+        return true; // success
       } catch (error) {
         setError(
           error instanceof Error ? error.message : "Erro desconhecido ao carregar o chat",
         );
+        return false; // failure
       } finally {
         if (options?.silent) {
           setIsRefreshing(false);
@@ -315,23 +317,49 @@ export const useCaseChat = (
   }, [caseRowId, fetchMessages]);
 
   // ---------------------------------------------------------------------------
-  // Adaptive polling: 3s ativo, 15s idle, 60s background
+  // Adaptive polling: 2s ativo, 15s idle, 60s background + error backoff
   // ---------------------------------------------------------------------------
   useEffect(() => {
     let timerId: ReturnType<typeof setTimeout>;
     let unmounted = false;
+    let consecutiveErrors = 0;
+    let tickInFlight = false; // prevent overlapping fetches
+
+    const ERROR_BACKOFF_BASE = 5_000;  // 5s on first error
+    const ERROR_BACKOFF_MAX  = 60_000; // cap at 60s
 
     const getInterval = (): number => {
+      // Error backoff: exponential 5s → 10s → 20s → 40s → 60s
+      if (consecutiveErrors > 0) {
+        return Math.min(
+          ERROR_BACKOFF_BASE * Math.pow(2, consecutiveErrors - 1),
+          ERROR_BACKOFF_MAX,
+        );
+      }
       if (typeof document !== "undefined" && document.hidden) return POLL_BG;
       if (Date.now() < burstUntilRef.current) return POLL_BURST;
       if (Date.now() - lastInteractionRef.current > IDLE_THRESHOLD_MS) return POLL_IDLE;
       return POLL_ACTIVE;
     };
 
-    const tick = () => {
-      if (unmounted) return;
-      fetchMessages({ silent: true }).catch(() => null);
-      timerId = setTimeout(tick, getInterval());
+    const tick = async () => {
+      if (unmounted || tickInFlight) return;
+      tickInFlight = true;
+      try {
+        const ok = await fetchMessages({ silent: true });
+        if (ok) {
+          consecutiveErrors = 0;
+        } else {
+          consecutiveErrors++;
+        }
+      } catch {
+        consecutiveErrors++;
+      } finally {
+        tickInFlight = false;
+      }
+      if (!unmounted) {
+        timerId = setTimeout(tick, getInterval());
+      }
     };
 
     // Iniciar primeiro tick
@@ -339,11 +367,10 @@ export const useCaseChat = (
 
     // Reagendar imediatamente quando a aba volta ao foco
     const onVisibility = () => {
-      if (!document.hidden) {
+      if (!document.hidden && !tickInFlight) {
         clearTimeout(timerId);
-        // Fetch imediato ao retornar para o foco
-        fetchMessages({ silent: true }).catch(() => null);
-        timerId = setTimeout(tick, getInterval());
+        consecutiveErrors = 0; // reset on user return
+        tick();
       }
     };
 

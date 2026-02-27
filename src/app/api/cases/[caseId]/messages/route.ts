@@ -342,10 +342,23 @@ const parseKindValue = (
   return detectKindFromFiles(attachments, "text");
 };
 
-const ensureCaseContext = async (caseIdParam: string) => {
+// ── Cache de contexto do caso (evita buscar metadados a cada poll) ──────────
+type CaseContextSuccess = { caseRow: BaserowCaseRow; identifiers: Array<string | number>; rowId: number };
+type CaseContextResult = CaseContextSuccess | { error: NextResponse };
+
+const _caseContextCache = new Map<number, { data: CaseContextSuccess; ts: number }>();
+const CASE_CTX_CACHE_TTL = 120_000; // 120s — metadados de caso não mudam durante polling
+
+const ensureCaseContext = async (caseIdParam: string): Promise<CaseContextResult> => {
   const parsedId = parseCaseIdParam(caseIdParam);
   if (!parsedId) {
     return { error: NextResponse.json({ error: "invalid_case_id" }, { status: 400 }) };
+  }
+
+  // Check cache first
+  const cached = _caseContextCache.get(parsedId);
+  if (cached && Date.now() - cached.ts < CASE_CTX_CACHE_TTL) {
+    return cached.data;
   }
 
   const caseRow = await getBaserowCaseById(parsedId);
@@ -354,7 +367,19 @@ const ensureCaseContext = async (caseIdParam: string) => {
   }
 
   const identifiers = buildCaseIdentifiers(caseRow, parsedId);
-  return { caseRow, identifiers, rowId: parsedId };
+  const result: CaseContextSuccess = { caseRow, identifiers, rowId: parsedId };
+
+  // Cache the result
+  _caseContextCache.set(parsedId, { data: result, ts: Date.now() });
+  // Evitar memory leak
+  if (_caseContextCache.size > 200) {
+    const now = Date.now();
+    for (const [k, v] of _caseContextCache) {
+      if (now - v.ts > CASE_CTX_CACHE_TTL) _caseContextCache.delete(k);
+    }
+  }
+
+  return result;
 };
 
 const resolveRouteParams = async (context: RouteContext): Promise<RouteParams> => {
@@ -457,10 +482,13 @@ export async function GET(
       { headers: { ETag: etag } },
     );
   } catch (error) {
-    console.error("[chat] Falha ao listar mensagens do caso:", error);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const errStack = error instanceof Error ? error.stack : undefined;
+    console.error("[chat] Falha ao listar mensagens do caso:", errMsg, errStack ?? "");
     return NextResponse.json(
       {
         error: "Erro ao carregar mensagens",
+        detail: process.env.NODE_ENV === "development" ? errMsg : undefined,
       },
       { status: 500 },
     );

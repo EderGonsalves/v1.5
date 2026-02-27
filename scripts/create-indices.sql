@@ -48,6 +48,12 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_227_case_id
   ON database_table_227 (field_1701)
   WHERE field_1701 IS NOT NULL;
 
+-- CaseId + id: incremental polling (WHERE caseId = X AND id > sinceId)
+-- Composite index allows index-only scan for the most frequent query pattern
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_227_case_id_incremental
+  ON database_table_227 (field_1701, id DESC)
+  WHERE field_1701 IS NOT NULL;
+
 -- ===================== TABLE 236: users =====================
 -- Autenticação e RBAC — consultas frequentes
 

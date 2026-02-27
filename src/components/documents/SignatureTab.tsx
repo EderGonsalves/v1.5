@@ -56,11 +56,21 @@ export function SignatureTab({
     );
     if (!hasActive || envelopes.length === 0) return;
 
-    const intervalId = setInterval(() => {
-      loadEnvelopes(false); // sem spinner
-    }, POLL_INTERVAL);
+    let timerId: ReturnType<typeof setTimeout>;
+    let unmounted = false;
 
-    return () => clearInterval(intervalId);
+    const tick = async () => {
+      if (unmounted) return;
+      try {
+        await loadEnvelopes(false);
+      } catch { /* silent */ }
+      if (!unmounted) {
+        timerId = setTimeout(tick, POLL_INTERVAL);
+      }
+    };
+
+    timerId = setTimeout(tick, POLL_INTERVAL);
+    return () => { unmounted = true; clearTimeout(timerId); };
   }, [envelopes, loadEnvelopes]);
 
   const handleRefresh = async (envelope: SignEnvelopeRow) => {

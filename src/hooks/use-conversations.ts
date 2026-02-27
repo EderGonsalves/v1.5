@@ -152,11 +152,11 @@ export const useConversations = (institutionId: number | undefined) => {
   const fetchConversations = useCallback(
     async (options: { silent?: boolean } = {}) => {
       if (!institutionId) {
-        return;
+        return false;
       }
 
       if (isFetchingRef.current) {
-        return;
+        return false;
       }
 
       isFetchingRef.current = true;
@@ -203,10 +203,12 @@ export const useConversations = (institutionId: number | undefined) => {
           fetch("/api/v1/cases/auto-assign", { method: "POST" }).catch(() => {});
           fetch("/api/v1/cases/auto-merge", { method: "POST" }).catch(() => {});
         }
+        return true;
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "Erro ao carregar conversas",
         );
+        return false;
       } finally {
         isFetchingRef.current = false;
         if (silent) {
@@ -305,32 +307,57 @@ export const useConversations = (institutionId: number | undefined) => {
   }, [conversations, institutionId]);
 
   // ---------------------------------------------------------------------------
-  // Adaptive polling: 30s aba ativa, 120s background
+  // Adaptive polling: 30s aba ativa, 120s background + error backoff
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!institutionId) return undefined;
     let timerId: ReturnType<typeof setTimeout>;
     let unmounted = false;
+    let consecutiveErrors = 0;
+    let tickInFlight = false;
+
+    const ERROR_BACKOFF_BASE = 30_000;  // 30s base (conversations are less time-critical)
+    const ERROR_BACKOFF_MAX  = 120_000; // 2min cap
 
     const getInterval = (): number => {
+      if (consecutiveErrors > 0) {
+        return Math.min(
+          ERROR_BACKOFF_BASE * Math.pow(2, consecutiveErrors - 1),
+          ERROR_BACKOFF_MAX,
+        );
+      }
       return typeof document !== "undefined" && document.hidden
         ? CONV_POLL_BG
         : CONV_POLL_ACTIVE;
     };
 
-    const tick = () => {
-      if (unmounted) return;
-      fetchConversations({ silent: true }).catch(() => null);
-      timerId = setTimeout(tick, getInterval());
+    const tick = async () => {
+      if (unmounted || tickInFlight) return;
+      tickInFlight = true;
+      try {
+        const ok = await fetchConversations({ silent: true });
+        if (ok) {
+          consecutiveErrors = 0;
+        } else {
+          consecutiveErrors++;
+        }
+      } catch {
+        consecutiveErrors++;
+      } finally {
+        tickInFlight = false;
+      }
+      if (!unmounted) {
+        timerId = setTimeout(tick, getInterval());
+      }
     };
 
     timerId = setTimeout(tick, getInterval());
 
     const onVisibility = () => {
-      if (!document.hidden && !unmounted) {
+      if (!document.hidden && !unmounted && !tickInFlight) {
         clearTimeout(timerId);
-        fetchConversations({ silent: true }).catch(() => null);
-        timerId = setTimeout(tick, getInterval());
+        consecutiveErrors = 0;
+        tick();
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
