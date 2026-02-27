@@ -561,6 +561,8 @@ const fetchIncrementalMessages = async (
   const emptyKey = `${normalizedIdentifiers[0] ?? fallbackCaseId}:${sinceId}`;
   const lastEmpty = _emptyPollCache.get(emptyKey);
   if (lastEmpty && Date.now() - lastEmpty < EMPTY_POLL_TTL) {
+    // DEBUG: descomentar se precisar ver cache hits
+    // console.log(`[chat][emptyPollCache] HIT key=${emptyKey} age=${Date.now() - lastEmpty}ms`);
     return EMPTY_RESULT;
   }
 
@@ -569,8 +571,9 @@ const fetchIncrementalMessages = async (
     const _dr = await tryDrizzle("chat", async () => {
       // Simple query: id > sinceId AND caseId matches
       // Uses primary key index — extremely fast
+      let rows;
       if (normalizedIdentifiers.length === 1) {
-        const rows = await db
+        rows = await db
           .select()
           .from(caseMessages)
           .where(
@@ -580,24 +583,26 @@ const fetchIncrementalMessages = async (
             ),
           )
           .orderBy(asc(caseMessages.createdOn), asc(caseMessages.id));
-        return buildFetchResult(
-          rows.map(mapDrizzleToBaserowRow),
-          fallbackCaseId,
-          normalizedPhone,
-        );
+      } else {
+        // Multiple identifiers (rare)
+        rows = await db
+          .select()
+          .from(caseMessages)
+          .where(
+            and(
+              inArray(caseMessages.caseId, normalizedIdentifiers),
+              gt(caseMessages.id, sinceId),
+            ),
+          )
+          .orderBy(asc(caseMessages.createdOn), asc(caseMessages.id));
       }
-      // Multiple identifiers (rare)
-      const rows = await db
-        .select()
-        .from(caseMessages)
-        .where(
-          and(
-            inArray(caseMessages.caseId, normalizedIdentifiers),
-            gt(caseMessages.id, sinceId),
-          ),
-        )
-        .orderBy(asc(caseMessages.createdOn), asc(caseMessages.id));
-      const unique = deduplicateAndSort(rows.map(mapDrizzleToBaserowRow));
+      // DEBUG: log query results
+      console.log(
+        `[chat][drizzle-incremental] identifiers=${JSON.stringify(normalizedIdentifiers)} sinceId=${sinceId} → ${rows.length} rows` +
+        (rows.length > 0 ? ` (ids: ${rows.map((r) => r.id).join(",")}, caseIds: ${[...new Set(rows.map((r) => r.caseId))].join(",")})` : ""),
+      );
+      const mapped = rows.map(mapDrizzleToBaserowRow);
+      const unique = normalizedIdentifiers.length > 1 ? deduplicateAndSort(mapped) : mapped;
       return buildFetchResult(unique, fallbackCaseId, normalizedPhone);
     });
     if (_dr !== undefined) {
@@ -605,6 +610,10 @@ const fetchIncrementalMessages = async (
       else _emptyPollCache.delete(emptyKey);
       return _dr;
     }
+    // Se caiu aqui, circuit breaker ativou — log
+    console.warn(`[chat][incremental] circuit breaker ativo para "chat", usando Baserow API fallback`);
+  } else {
+    console.log(`[chat][incremental] useDirectDb("chat")=false, usando Baserow API`);
   }
 
   // ── Baserow REST API (fallback) ──────────────────────────────────────

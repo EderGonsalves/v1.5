@@ -418,6 +418,13 @@ export async function GET(
         sinceId,
       });
 
+      // DEBUG: log incremental polling results
+      if (fetchResult.messages.length > 0) {
+        console.log(
+          `[chat][incremental] case=${rowId} sinceId=${sinceId} identifiers=${JSON.stringify(identifiers)} → ${fetchResult.messages.length} novas msgs (ids: ${fetchResult.messages.map((m) => m.id).join(",")})`,
+        );
+      }
+
       return NextResponse.json({
         messages: fetchResult.messages,
         meta: {
