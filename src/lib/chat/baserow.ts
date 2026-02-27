@@ -490,6 +490,8 @@ function mapDrizzleToBaserowRow(r: DrizzleCaseMessageRow): BaserowCaseMessageRow
 type FetchMessagesOptions = {
   caseIdentifiers?: Array<string | number>;
   customerPhone?: string;
+  /** Número WABA do caso — usado para isolar mensagens órfãs por escritório */
+  wabaPhoneNumber?: string;
   fallbackCaseId: number;
   /** When set, only return messages with id > sinceId (incremental polling) */
   sinceId?: number;
@@ -582,6 +584,39 @@ const buildFetchResult = (
 };
 
 // ---------------------------------------------------------------------------
+// Condição para mensagens órfãs (CaseId null ou vazio) filtrada por telefone
+// Se o número WABA é conhecido, exige a dupla (cliente ↔ WABA) para
+// não misturar mensagens de escritórios diferentes com o mesmo cliente.
+// ---------------------------------------------------------------------------
+
+const buildOrphanPhoneCondition = (
+  customerPhone: string,
+  wabaPhone?: string,
+) => {
+  const caseIdMissing = or(isNull(caseMessages.caseId), eq(caseMessages.caseId, ""));
+
+  if (wabaPhone) {
+    // Preciso: bate a conversa exata (cliente ↔ WABA)
+    return and(
+      caseIdMissing,
+      or(
+        and(eq(caseMessages.from, customerPhone), eq(caseMessages.to, wabaPhone)),
+        and(eq(caseMessages.from, wabaPhone), eq(caseMessages.to, customerPhone)),
+      ),
+    );
+  }
+
+  // Fallback: sem WABA, busca só pelo telefone do cliente
+  return and(
+    caseIdMissing,
+    or(
+      eq(caseMessages.from, customerPhone),
+      eq(caseMessages.to, customerPhone),
+    ),
+  );
+};
+
+// ---------------------------------------------------------------------------
 // Incremental fetch — only messages with id > sinceId
 // ---------------------------------------------------------------------------
 
@@ -593,6 +628,7 @@ const EMPTY_RESULT: FetchMessagesResult = { messages: [], wabaPhoneNumber: null 
 const fetchIncrementalMessages = async (
   normalizedIdentifiers: string[],
   normalizedPhone: string,
+  normalizedWabaPhone: string,
   fallbackCaseId: number,
   sinceId: number,
 ): Promise<FetchMessagesResult> => {
@@ -606,21 +642,14 @@ const fetchIncrementalMessages = async (
   // ── Drizzle (direct PostgreSQL) ──────────────────────────────────────
   if (useDirectDb("chat")) {
     const _dr = await tryDrizzle("chat", async () => {
-      // Condição base: mensagens com CaseId correspondente
+      // Condição base: mensagens com CaseId correspondente (rowId, CaseId, BJCaseId)
       const caseIdCondition = normalizedIdentifiers.length === 1
         ? eq(caseMessages.caseId, normalizedIdentifiers[0])
         : inArray(caseMessages.caseId, normalizedIdentifiers);
 
-      // Condição extra: mensagens com CaseId NULL mas telefone do cliente
-      // (N8N pode salvar mensagens recebidas sem CaseId)
+      // Condição extra: mensagens órfãs (CaseId null/vazio) filtradas por telefone+WABA
       const phoneCondition = normalizedPhone
-        ? and(
-            isNull(caseMessages.caseId),
-            or(
-              eq(caseMessages.from, normalizedPhone),
-              eq(caseMessages.to, normalizedPhone),
-            ),
-          )
+        ? buildOrphanPhoneCondition(normalizedPhone, normalizedWabaPhone || undefined)
         : null;
 
       const matchCondition = phoneCondition
@@ -681,11 +710,16 @@ const fetchIncrementalMessages = async (
 export const fetchCaseMessagesFromBaserow = async (
   options: FetchMessagesOptions,
 ): Promise<FetchMessagesResult> => {
-  const { caseIdentifiers = [], customerPhone, fallbackCaseId, sinceId } = options;
+  const { caseIdentifiers = [], customerPhone, wabaPhoneNumber, fallbackCaseId, sinceId } = options;
 
   // Normalize customer phone (remove non-digits)
   const normalizedPhone = customerPhone
     ? customerPhone.replace(/\D/g, "").trim()
+    : "";
+
+  // Normalize WABA phone (remove non-digits)
+  const normalizedWabaPhone = wabaPhoneNumber
+    ? wabaPhoneNumber.replace(/\D/g, "").trim()
     : "";
 
   const normalizedIdentifiers = caseIdentifiers
@@ -700,7 +734,7 @@ export const fetchCaseMessagesFromBaserow = async (
   // ── Incremental path (since_id) ────────────────────────────────────
   // Skip cache for incremental — these are tiny queries (0-few rows)
   if (sinceId && sinceId > 0) {
-    return fetchIncrementalMessages(normalizedIdentifiers, normalizedPhone, fallbackCaseId, sinceId);
+    return fetchIncrementalMessages(normalizedIdentifiers, normalizedPhone, normalizedWabaPhone, fallbackCaseId, sinceId);
   }
 
   // ── Server-side cache (5s TTL) — full load only ────────────────────
@@ -713,7 +747,7 @@ export const fetchCaseMessagesFromBaserow = async (
     const _dr = await tryDrizzle("chat", async () => {
       const collected: BaserowCaseMessageRow[] = [];
 
-      // 1) Search by CaseId (indexed — B-tree on field_1701)
+      // 1) Search by CaseId — inclui rowId, CaseId e BJCaseId (indexed — B-tree on field_1701)
       if (normalizedIdentifiers.length) {
         // Use prepared statement for single caseId (most common), dynamic for multiple
         if (normalizedIdentifiers.length === 1) {
@@ -731,22 +765,18 @@ export const fetchCaseMessagesFromBaserow = async (
         }
       }
 
-      // 2) Search messages with NULL CaseId by phone (N8N pode salvar sem CaseId)
+      // 2) Mensagens órfãs (CaseId null/vazio) — filtradas por telefone + WABA
       if (normalizedPhone) {
-        const nullCaseIdRows = await db
+        const orphanCondition = buildOrphanPhoneCondition(
+          normalizedPhone,
+          normalizedWabaPhone || undefined,
+        );
+        const orphanRows = await db
           .select()
           .from(caseMessages)
-          .where(
-            and(
-              isNull(caseMessages.caseId),
-              or(
-                eq(caseMessages.from, normalizedPhone),
-                eq(caseMessages.to, normalizedPhone),
-              ),
-            ),
-          )
+          .where(orphanCondition)
           .orderBy(asc(caseMessages.createdOn), asc(caseMessages.id));
-        collected.push(...nullCaseIdRows.map(mapDrizzleToBaserowRow));
+        collected.push(...orphanRows.map(mapDrizzleToBaserowRow));
       }
 
       // 3) Fallback: search by phone ONLY if nothing found yet

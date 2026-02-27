@@ -75,9 +75,17 @@ const buildCaseIdentifiers = (
   if (caseRow.CaseId !== null && caseRow.CaseId !== undefined) {
     identifiers.push(caseRow.CaseId);
   }
-  // Só adicionar rowId se diferente do CaseId (evita duplicata que força inArray em vez de prepared stmt)
+  // Adicionar rowId se diferente do CaseId
   if (String(caseRow.CaseId) !== String(rowId)) {
     identifiers.push(rowId);
+  }
+  // N8N salva mensagens do bot com BJCaseId no campo CaseId da tabela 227
+  if (
+    caseRow.BJCaseId &&
+    String(caseRow.BJCaseId) !== String(caseRow.CaseId) &&
+    String(caseRow.BJCaseId) !== String(rowId)
+  ) {
+    identifiers.push(caseRow.BJCaseId);
   }
   return identifiers;
 };
@@ -405,6 +413,9 @@ export async function GET(
 
     const { caseRow, identifiers, rowId } = resolved;
     const customerPhone = caseRow.CustumerPhone ? String(caseRow.CustumerPhone).trim() : "";
+    const wabaPhone = caseRow.display_phone_number
+      ? String(caseRow.display_phone_number).replace(/\D/g, "").trim()
+      : undefined;
 
     // ── Incremental polling: ?since_id=N returns only new messages ────
     const sinceIdParam = request.nextUrl.searchParams.get("since_id");
@@ -414,6 +425,7 @@ export async function GET(
       const fetchResult = await fetchCaseMessagesFromBaserow({
         caseIdentifiers: identifiers,
         customerPhone,
+        wabaPhoneNumber: wabaPhone,
         fallbackCaseId: rowId,
         sinceId,
       });
@@ -431,6 +443,7 @@ export async function GET(
     const fetchResult = await fetchCaseMessagesFromBaserow({
       caseIdentifiers: identifiers,
       customerPhone,
+      wabaPhoneNumber: wabaPhone,
       fallbackCaseId: rowId,
     });
     let messages = fetchResult.messages;

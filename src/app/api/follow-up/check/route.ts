@@ -178,7 +178,17 @@ const buildCaseIdentifiers = (
   if (caseRow.CaseId !== null && caseRow.CaseId !== undefined) {
     identifiers.push(caseRow.CaseId);
   }
-  identifiers.push(rowId);
+  if (String(caseRow.CaseId) !== String(rowId)) {
+    identifiers.push(rowId);
+  }
+  // N8N salva mensagens do bot com BJCaseId no campo CaseId da tabela 227
+  if (
+    caseRow.BJCaseId &&
+    String(caseRow.BJCaseId) !== String(caseRow.CaseId) &&
+    String(caseRow.BJCaseId) !== String(rowId)
+  ) {
+    identifiers.push(caseRow.BJCaseId);
+  }
   return identifiers;
 };
 

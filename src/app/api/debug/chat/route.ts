@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { caseMessages } from "@/lib/db/schema/caseMessages";
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { getRequestAuth } from "@/lib/auth/session";
 import { useDirectDb } from "@/lib/db/repository";
 
 /**
- * GET /api/debug/chat?case=4130
+ * GET /api/debug/chat?case=4130&phone=5511937188154
  *
  * Endpoint de diagnóstico para verificar mensagens no banco.
+ * - ?case=X  → busca por CaseId = X
+ * - ?phone=Y → busca por from/to contendo Y (ignora CaseId)
+ * - ambos    → mostra as duas buscas separadas para diagnóstico
  * Requer auth (sysAdmin). Remover após resolver o problema.
  */
 export async function GET(request: NextRequest) {
@@ -18,43 +21,81 @@ export async function GET(request: NextRequest) {
   }
 
   const caseId = request.nextUrl.searchParams.get("case");
+  const phone = request.nextUrl.searchParams.get("phone")?.replace(/\D/g, "") || null;
+
+  const selectFields = {
+    id: caseMessages.id,
+    caseId: caseMessages.caseId,
+    caseIdIsNull: sql<boolean>`${caseMessages.caseId} IS NULL`,
+    caseIdIsEmpty: sql<boolean>`${caseMessages.caseId} = ''`,
+    from: caseMessages.from,
+    to: caseMessages.to,
+    senderName: caseMessages.senderName,
+    message: sql<string>`LEFT(${caseMessages.message}::text, 80)`,
+    file: caseMessages.file,
+    createdOn: caseMessages.createdOn,
+  };
 
   try {
     const drizzleEnabled = useDirectDb("chat");
 
-    // Últimas 15 mensagens (por caso ou geral)
-    let rows;
+    // 1) Busca por CaseId exato
+    let byCaseId = null;
     if (caseId) {
-      rows = await db
-        .select({
-          id: caseMessages.id,
-          caseId: caseMessages.caseId,
-          from: caseMessages.from,
-          to: caseMessages.to,
-          senderName: caseMessages.senderName,
-          message: sql<string>`LEFT(${caseMessages.message}::text, 80)`,
-          file: caseMessages.file,
-          createdOn: caseMessages.createdOn,
-        })
+      byCaseId = await db
+        .select(selectFields)
         .from(caseMessages)
         .where(eq(caseMessages.caseId, caseId))
         .orderBy(desc(caseMessages.id))
-        .limit(15);
-    } else {
-      rows = await db
-        .select({
-          id: caseMessages.id,
-          caseId: caseMessages.caseId,
-          from: caseMessages.from,
-          to: caseMessages.to,
-          senderName: caseMessages.senderName,
-          message: sql<string>`LEFT(${caseMessages.message}::text, 80)`,
-          file: caseMessages.file,
-          createdOn: caseMessages.createdOn,
-        })
+        .limit(20);
+    }
+
+    // 2) Busca por telefone (from/to) — ignora CaseId
+    let byPhone = null;
+    if (phone) {
+      byPhone = await db
+        .select(selectFields)
         .from(caseMessages)
+        .where(or(
+          eq(caseMessages.from, phone),
+          eq(caseMessages.to, phone),
+        ))
         .orderBy(desc(caseMessages.id))
-        .limit(15);
+        .limit(20);
+    }
+
+    // 3) Busca mensagens com CaseId NULL ou vazio que tenham o telefone
+    let orphanedByPhone = null;
+    if (phone) {
+      orphanedByPhone = await db
+        .select(selectFields)
+        .from(caseMessages)
+        .where(and(
+          or(isNull(caseMessages.caseId), eq(caseMessages.caseId, "")),
+          or(
+            eq(caseMessages.from, phone),
+            eq(caseMessages.to, phone),
+          ),
+        ))
+        .orderBy(desc(caseMessages.id))
+        .limit(20);
+    }
+
+    // 4) Mensagens com CaseId NULL/vazio sem from/to (completamente órfãs)
+    let fullyOrphaned = null;
+    if (caseId) {
+      fullyOrphaned = await db
+        .select(selectFields)
+        .from(caseMessages)
+        .where(and(
+          or(isNull(caseMessages.caseId), eq(caseMessages.caseId, "")),
+          or(
+            isNull(caseMessages.from),
+            eq(caseMessages.from, ""),
+          ),
+        ))
+        .orderBy(desc(caseMessages.id))
+        .limit(10);
     }
 
     // Max ID geral
@@ -65,9 +106,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       drizzleEnabled,
       maxIdGlobal: maxRow?.maxId,
-      caseFilter: caseId || "(todas)",
-      count: rows.length,
-      messages: rows,
+      filters: { caseId: caseId || null, phone: phone || null },
+      byCaseId: byCaseId ? { count: byCaseId.length, messages: byCaseId } : null,
+      byPhone: byPhone ? { count: byPhone.length, messages: byPhone } : null,
+      orphanedByPhone: orphanedByPhone ? { count: orphanedByPhone.length, messages: orphanedByPhone } : null,
+      fullyOrphaned: fullyOrphaned ? { count: fullyOrphaned.length, messages: fullyOrphaned } : null,
     });
   } catch (error) {
     return NextResponse.json({
