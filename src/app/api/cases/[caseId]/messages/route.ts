@@ -6,6 +6,7 @@ import { isCasePaused } from "@/lib/case-stats";
 import {
   createCaseMessageRow,
   fetchCaseMessagesFromBaserow,
+  invalidateMessageCaches,
   normalizeCaseMessageRow,
   uploadAttachmentToBaserow,
 } from "@/lib/chat/baserow";
@@ -651,6 +652,9 @@ export async function POST(
       imageId: messageType === "image" ? getMediaId(uploadedAttachments, "image") : undefined,
       documentId: messageType === "document" ? getMediaId(uploadedAttachments, "document") : undefined,
     });
+
+    // Invalidar caches server-side para que o próximo poll encontre esta mensagem
+    invalidateMessageCaches(identifiers[0] ?? rowId);
 
     newMessage = normalizeCaseMessageRow(createdRow, rowId, customerPhone);
 

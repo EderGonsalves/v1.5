@@ -120,9 +120,26 @@ export const useCaseChat = (
   // Mensagens otimistas pendentes (ainda não confirmadas pelo Baserow)
   const pendingOptimisticRef = useRef<CaseMessage[]>([]);
 
-  /** Marca interação do usuário — mantém polling em ritmo rápido */
+  // Refs compartilhadas para permitir reset do backoff de erro de fora do useEffect
+  const consecutiveErrorsRef = useRef(0);
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tickFnRef = useRef<(() => void) | null>(null);
+  const emptyPollsRef = useRef(0); // Contagem de polls incrementais vazios consecutivos
+  const FORCE_FULL_RELOAD_AFTER = 10; // Após N polls vazios, forçar full reload
+
+  /** Marca interação do usuário — mantém polling em ritmo rápido.
+   *  Se estava em backoff de erro, reseta e força poll imediato. */
   const markActive = useCallback(() => {
     lastInteractionRef.current = Date.now();
+    // Se estava em backoff de erro, resetar e forçar poll imediato
+    if (consecutiveErrorsRef.current > 0) {
+      consecutiveErrorsRef.current = 0;
+      if (pollTimerRef.current) {
+        clearTimeout(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+      tickFnRef.current?.();
+    }
   }, []);
 
   const updateMeta = useCallback((updater: (prev: ChatMeta) => ChatMeta) => {
@@ -148,7 +165,14 @@ export const useCaseChat = (
       setError(null);
 
       // ── Incremental polling: use since_id after initial load ────────
-      const useIncremental = options?.silent && initialLoadDoneRef.current && maxKnownIdRef.current > 0;
+      // Após muitos polls vazios consecutivos, forçar full reload para detectar mensagens que
+      // o incremental pode ter perdido (ex: CaseId diferente, cache server-side travado)
+      const forceFullReload = emptyPollsRef.current >= FORCE_FULL_RELOAD_AFTER;
+      if (forceFullReload) {
+        emptyPollsRef.current = 0;
+        etagRef.current = null; // Limpar ETag para evitar 304
+      }
+      const useIncremental = !forceFullReload && options?.silent && initialLoadDoneRef.current && maxKnownIdRef.current > 0;
 
       try {
         const url = useIncremental
@@ -188,6 +212,7 @@ export const useCaseChat = (
           // ── Incremental: append new messages to existing ────────────
           const newMessages = (data.messages ?? []) as CaseMessage[];
           if (newMessages.length > 0) {
+            emptyPollsRef.current = 0; // Reset: encontrou mensagens novas
             trackMaxId(newMessages);
 
             // Remove optimistic messages confirmed by server
@@ -219,6 +244,8 @@ export const useCaseChat = (
               total: prev.total + newMessages.length,
               lastMessageAt: newMessages[newMessages.length - 1].createdAt,
             } : prev);
+          } else {
+            emptyPollsRef.current++; // Incrementar contador de polls vazios
           }
           return true;
         }
@@ -296,6 +323,8 @@ export const useCaseChat = (
     maxKnownIdRef.current = 0;
     initialLoadDoneRef.current = false;
     pendingOptimisticRef.current = [];
+    consecutiveErrorsRef.current = 0;
+    emptyPollsRef.current = 0;
 
     // Verificar cache primeiro
     const cached = getChatCache(caseRowId);
@@ -320,19 +349,18 @@ export const useCaseChat = (
   // Adaptive polling: 2s ativo, 15s idle, 60s background + error backoff
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    let timerId: ReturnType<typeof setTimeout>;
     let unmounted = false;
-    let consecutiveErrors = 0;
     let tickInFlight = false; // prevent overlapping fetches
 
-    const ERROR_BACKOFF_BASE = 5_000;  // 5s on first error
-    const ERROR_BACKOFF_MAX  = 60_000; // cap at 60s
+    const ERROR_BACKOFF_BASE = 4_000;  // 4s on first error
+    const ERROR_BACKOFF_MAX  = 15_000; // cap at 15s (was 60s — too slow to recover)
 
     const getInterval = (): number => {
-      // Error backoff: exponential 5s → 10s → 20s → 40s → 60s
-      if (consecutiveErrors > 0) {
+      const errors = consecutiveErrorsRef.current;
+      // Error backoff: exponential 4s → 8s → 15s (cap)
+      if (errors > 0) {
         return Math.min(
-          ERROR_BACKOFF_BASE * Math.pow(2, consecutiveErrors - 1),
+          ERROR_BACKOFF_BASE * Math.pow(2, errors - 1),
           ERROR_BACKOFF_MAX,
         );
       }
@@ -342,34 +370,44 @@ export const useCaseChat = (
       return POLL_ACTIVE;
     };
 
+    const scheduleTick = (delay: number) => {
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = setTimeout(tick, delay);
+    };
+
     const tick = async () => {
       if (unmounted || tickInFlight) return;
       tickInFlight = true;
       try {
         const ok = await fetchMessages({ silent: true });
         if (ok) {
-          consecutiveErrors = 0;
+          consecutiveErrorsRef.current = 0;
         } else {
-          consecutiveErrors++;
+          consecutiveErrorsRef.current++;
         }
       } catch {
-        consecutiveErrors++;
+        consecutiveErrorsRef.current++;
       } finally {
         tickInFlight = false;
       }
       if (!unmounted) {
-        timerId = setTimeout(tick, getInterval());
+        scheduleTick(getInterval());
       }
     };
 
+    // Expor tick para que markActive/refresh possam forçar poll imediato
+    tickFnRef.current = () => {
+      if (!unmounted && !tickInFlight) tick();
+    };
+
     // Iniciar primeiro tick
-    timerId = setTimeout(tick, getInterval());
+    scheduleTick(getInterval());
 
     // Reagendar imediatamente quando a aba volta ao foco
     const onVisibility = () => {
       if (!document.hidden && !tickInFlight) {
-        clearTimeout(timerId);
-        consecutiveErrors = 0; // reset on user return
+        if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+        consecutiveErrorsRef.current = 0; // reset on user return
         tick();
       }
     };
@@ -378,7 +416,8 @@ export const useCaseChat = (
 
     return () => {
       unmounted = true;
-      clearTimeout(timerId);
+      tickFnRef.current = null;
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [fetchMessages]);
@@ -444,6 +483,13 @@ export const useCaseChat = (
 
         // Ativar burst polling para captar resposta mais rápido
         burstUntilRef.current = Date.now() + BURST_DURATION_MS;
+        // Forçar poll imediato (cancela timer atual de possível backoff longo)
+        consecutiveErrorsRef.current = 0;
+        if (pollTimerRef.current) {
+          clearTimeout(pollTimerRef.current);
+          pollTimerRef.current = null;
+        }
+        tickFnRef.current?.();
 
         setMessages((prev) => [...prev, result.message]);
         updateMeta((prev) => {
@@ -489,7 +535,19 @@ export const useCaseChat = (
     isRefreshing,
     isSending,
     error,
-    refresh: () => fetchMessages({ silent: true }),
+    refresh: () => {
+      // Resetar backoff de erro e forçar poll imediato
+      consecutiveErrorsRef.current = 0;
+      if (pollTimerRef.current) {
+        clearTimeout(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+      return fetchMessages({ silent: true }).then((ok) => {
+        // Re-agendar polling normal após o refresh manual
+        tickFnRef.current?.();
+        return ok;
+      });
+    },
     sendMessage,
     setPausedState,
     /** Chamar em eventos de interação (scroll, digitação) para manter polling rápido */

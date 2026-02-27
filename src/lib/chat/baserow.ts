@@ -856,6 +856,23 @@ const toBaserowSender = (sender: CaseMessageSender): string => {
   }
 };
 
+/** Invalidar caches de mensagens para um caseId — garante que o próximo poll encontre msgs novas */
+export const invalidateMessageCaches = (caseIdentifier: string | number): void => {
+  const caseIdStr = String(caseIdentifier);
+  // Limpar _emptyPollCache — qualquer entry que comece com este caseId
+  for (const key of _emptyPollCache.keys()) {
+    if (key.startsWith(`${caseIdStr}:`)) {
+      _emptyPollCache.delete(key);
+    }
+  }
+  // Limpar _msgCache — qualquer entry que contenha este caseId
+  for (const key of _msgCache.keys()) {
+    if (key.includes(caseIdStr)) {
+      _msgCache.delete(key);
+    }
+  }
+};
+
 export const createCaseMessageRow = async (input: CreateCaseMessageRowInput) => {
   // ── Drizzle (direct PostgreSQL) ──────────────────────────────────────
   if (useDirectDb("chat")) {
