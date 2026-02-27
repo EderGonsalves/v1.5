@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
           to: caseMessages.to,
           senderName: caseMessages.senderName,
           message: sql<string>`LEFT(${caseMessages.message}::text, 80)`,
+          file: caseMessages.file,
           createdOn: caseMessages.createdOn,
         })
         .from(caseMessages)
@@ -48,6 +49,7 @@ export async function GET(request: NextRequest) {
           to: caseMessages.to,
           senderName: caseMessages.senderName,
           message: sql<string>`LEFT(${caseMessages.message}::text, 80)`,
+          file: caseMessages.file,
           createdOn: caseMessages.createdOn,
         })
         .from(caseMessages)

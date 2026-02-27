@@ -98,21 +98,60 @@ const normalizeNextUrl = (value: unknown): string | null => {
   }
 };
 
+/**
+ * Constrói a URL base de mídia do Baserow a partir da BASEROW_API_URL.
+ * Ex: "https://baserow.example.com/api" → "https://baserow.example.com/media"
+ */
+const getBaserowMediaUrl = (): string => {
+  return BASEROW_API_URL.replace(/\/api\/?$/, "/media");
+};
+
+/**
+ * Enriquece dados de arquivo lidos diretamente do PostgreSQL com URLs completas.
+ * O Baserow armazena apenas metadados internos (name, mime_type, etc.) na coluna PG;
+ * as URLs são geradas pela camada REST API. Quando lemos via Drizzle, precisamos
+ * reconstruí-las manualmente.
+ */
+const enrichFileWithUrls = (file: BaserowFileValue): BaserowFileValue => {
+  // Se já tem URL, retorna como está (ex: mensagens inseridas via Drizzle com dados do upload)
+  if (file.url) return file;
+
+  // Sem nome do arquivo, não podemos construir a URL
+  if (!file.name) return file;
+
+  const mediaUrl = getBaserowMediaUrl();
+  const enriched: BaserowFileValue = {
+    ...file,
+    url: `${mediaUrl}/user_files/${file.name}`,
+  };
+
+  // Adicionar thumbnails para imagens
+  if (file.is_image && !file.thumbnails) {
+    enriched.thumbnails = {
+      tiny: { url: `${mediaUrl}/thumbnails/tiny/${file.name}` },
+      small: { url: `${mediaUrl}/thumbnails/small/${file.name}` },
+    };
+  }
+
+  return enriched;
+};
+
 const normalizeAttachment = (value: BaserowFileValue): CaseMessageAttachment => {
-  const thumbnailUrl = value.thumbnails?.small?.url ?? value.thumbnails?.tiny?.url;
+  const enriched = enrichFileWithUrls(value);
+  const thumbnailUrl = enriched.thumbnails?.small?.url ?? enriched.thumbnails?.tiny?.url;
   return {
     id: String(
-      value.id ??
-        value.url ??
-        value.name ??
+      enriched.id ??
+        enriched.url ??
+        enriched.name ??
         `upload-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     ),
-    name: value.original_name ?? value.name ?? "arquivo",
-    mimeType: value.mime_type ?? "application/octet-stream",
-    size: Number(value.size ?? 0),
-    url: value.url ?? "",
+    name: enriched.original_name ?? enriched.name ?? "arquivo",
+    mimeType: enriched.mime_type ?? "application/octet-stream",
+    size: Number(enriched.size ?? 0),
+    url: enriched.url ?? "",
     previewUrl: thumbnailUrl,
-    isImage: Boolean(value.is_image),
+    isImage: Boolean(enriched.is_image),
   };
 };
 
