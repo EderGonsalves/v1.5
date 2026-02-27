@@ -431,7 +431,7 @@ function mapDrizzleToBaserowRow(r: DrizzleCaseMessageRow): BaserowCaseMessageRow
   return {
     id: r.id,
     CaseId: r.caseId,
-    Sender: extractSenderValue(r.sender),
+    Sender: null, // multiple_select — não existe como coluna PG; sender inferido via from/to
     SenderName: r.senderName,
     DataHora: r.dataHora,
     Message: r.message,
@@ -440,7 +440,7 @@ function mapDrizzleToBaserowRow(r: DrizzleCaseMessageRow): BaserowCaseMessageRow
     to: r.to,
     created_on: r.createdOn?.toISOString() ?? null,
     updated_on: r.updatedOn?.toISOString() ?? null,
-    // Fields not present as PG columns (Baserow never stored them):
+    // Fields not present as PG columns:
     messages_type: null,
     audioid: null,
     imageId: null,
@@ -561,8 +561,6 @@ const fetchIncrementalMessages = async (
   const emptyKey = `${normalizedIdentifiers[0] ?? fallbackCaseId}:${sinceId}`;
   const lastEmpty = _emptyPollCache.get(emptyKey);
   if (lastEmpty && Date.now() - lastEmpty < EMPTY_POLL_TTL) {
-    // DEBUG: descomentar se precisar ver cache hits
-    // console.log(`[chat][emptyPollCache] HIT key=${emptyKey} age=${Date.now() - lastEmpty}ms`);
     return EMPTY_RESULT;
   }
 
@@ -596,11 +594,6 @@ const fetchIncrementalMessages = async (
           )
           .orderBy(asc(caseMessages.createdOn), asc(caseMessages.id));
       }
-      // DEBUG: log query results
-      console.log(
-        `[chat][drizzle-incremental] identifiers=${JSON.stringify(normalizedIdentifiers)} sinceId=${sinceId} → ${rows.length} rows` +
-        (rows.length > 0 ? ` (ids: ${rows.map((r) => r.id).join(",")}, caseIds: ${[...new Set(rows.map((r) => r.caseId))].join(",")})` : ""),
-      );
       const mapped = rows.map(mapDrizzleToBaserowRow);
       const unique = normalizedIdentifiers.length > 1 ? deduplicateAndSort(mapped) : mapped;
       return buildFetchResult(unique, fallbackCaseId, normalizedPhone);
@@ -610,10 +603,6 @@ const fetchIncrementalMessages = async (
       else _emptyPollCache.delete(emptyKey);
       return _dr;
     }
-    // Se caiu aqui, circuit breaker ativou — log
-    console.warn(`[chat][incremental] circuit breaker ativo para "chat", usando Baserow API fallback`);
-  } else {
-    console.log(`[chat][incremental] useDirectDb("chat")=false, usando Baserow API`);
   }
 
   // ── Baserow REST API (fallback) ──────────────────────────────────────
@@ -886,16 +875,14 @@ export const createCaseMessageRow = async (input: CreateCaseMessageRowInput) => 
   // ── Drizzle (direct PostgreSQL) ──────────────────────────────────────
   if (useDirectDb("chat")) {
     const _dr = await tryDrizzle("chat", async () => {
-      const senderValue = toBaserowSender(input.sender);
-      // multiple_select stores JSONB array of {id, value} objects
-      const senderJsonb = [{ id: 0, value: senderValue }];
       const now = new Date();
 
       // Baserow auto-columns are NOT NULL without SQL DEFAULT (Django manages them).
       // We must set created_on, updated_on, and order explicitly.
+      // NOTA: Sender (multiple_select) é gerenciado via tabela de junção do Baserow,
+      // não existe como coluna PG. O remetente é inferido via from/to.
       const values: typeof caseMessages.$inferInsert = {
         caseId: String(input.caseIdentifier),
-        sender: senderJsonb,
         senderName: input.senderName ?? "",
         message: input.content,
         dataHora: input.timestamp ?? formatDateTimeBR(now),

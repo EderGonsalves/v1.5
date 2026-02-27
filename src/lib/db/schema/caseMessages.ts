@@ -3,11 +3,16 @@ import { jsonb, numeric, pgTable, serial, text, timestamp } from "drizzle-orm/pg
 /**
  * caseMessages — Baserow table 227
  * PostgreSQL table: database_table_227
+ *
+ * NOTA: O campo Sender (field_1702) é multiple_select no Baserow.
+ * Campos multiple_select NÃO existem como coluna na tabela PG —
+ * são armazenados em tabela de junção interna do Baserow.
+ * A detecção de remetente usa os campos from/to (prioridade 1).
  */
 export const caseMessages = pgTable("database_table_227", {
   id: serial("id").primaryKey(),
   caseId: text("field_1701"), // CaseId (text)
-  sender: jsonb("field_1702"), // Sender (multiple_select) — JSONB array of {id,value}
+  // sender: campo multiple_select — NÃO existe como coluna PG (ver nota acima)
   dataHora: text("field_1703"), // DataHora (text)
   message: text("field_1704"), // Message (long_text)
   file: jsonb("field_1705"), // file (file) — JSONB array
