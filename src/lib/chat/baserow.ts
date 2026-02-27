@@ -1,5 +1,5 @@
 import axios from "axios";
-import { or, like, inArray, asc, gt, and, eq } from "drizzle-orm";
+import { or, like, inArray, asc, gt, and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { prepared } from "@/lib/db/prepared";
 import { useDirectDb, tryDrizzle } from "@/lib/db/repository";
@@ -567,35 +567,35 @@ const fetchIncrementalMessages = async (
   // ── Drizzle (direct PostgreSQL) ──────────────────────────────────────
   if (useDirectDb("chat")) {
     const _dr = await tryDrizzle("chat", async () => {
-      // Simple query: id > sinceId AND caseId matches
-      // Uses primary key index — extremely fast
-      let rows;
-      if (normalizedIdentifiers.length === 1) {
-        rows = await db
-          .select()
-          .from(caseMessages)
-          .where(
-            and(
-              eq(caseMessages.caseId, normalizedIdentifiers[0]),
-              gt(caseMessages.id, sinceId),
+      // Condição base: mensagens com CaseId correspondente
+      const caseIdCondition = normalizedIdentifiers.length === 1
+        ? eq(caseMessages.caseId, normalizedIdentifiers[0])
+        : inArray(caseMessages.caseId, normalizedIdentifiers);
+
+      // Condição extra: mensagens com CaseId NULL mas telefone do cliente
+      // (N8N pode salvar mensagens recebidas sem CaseId)
+      const phoneCondition = normalizedPhone
+        ? and(
+            isNull(caseMessages.caseId),
+            or(
+              eq(caseMessages.from, normalizedPhone),
+              eq(caseMessages.to, normalizedPhone),
             ),
           )
-          .orderBy(asc(caseMessages.createdOn), asc(caseMessages.id));
-      } else {
-        // Multiple identifiers (rare)
-        rows = await db
-          .select()
-          .from(caseMessages)
-          .where(
-            and(
-              inArray(caseMessages.caseId, normalizedIdentifiers),
-              gt(caseMessages.id, sinceId),
-            ),
-          )
-          .orderBy(asc(caseMessages.createdOn), asc(caseMessages.id));
-      }
+        : null;
+
+      const matchCondition = phoneCondition
+        ? or(caseIdCondition, phoneCondition)
+        : caseIdCondition;
+
+      const rows = await db
+        .select()
+        .from(caseMessages)
+        .where(and(matchCondition, gt(caseMessages.id, sinceId)))
+        .orderBy(asc(caseMessages.createdOn), asc(caseMessages.id));
+
       const mapped = rows.map(mapDrizzleToBaserowRow);
-      const unique = normalizedIdentifiers.length > 1 ? deduplicateAndSort(mapped) : mapped;
+      const unique = deduplicateAndSort(mapped);
       return buildFetchResult(unique, fallbackCaseId, normalizedPhone);
     });
     if (_dr !== undefined) {
@@ -692,8 +692,26 @@ export const fetchCaseMessagesFromBaserow = async (
         }
       }
 
-      // 2) Search by phone ONLY if CaseId returned no results
-      //    (mensagens antigas podem não ter CaseId — LIKE é lento em tabelas grandes)
+      // 2) Search messages with NULL CaseId by phone (N8N pode salvar sem CaseId)
+      if (normalizedPhone) {
+        const nullCaseIdRows = await db
+          .select()
+          .from(caseMessages)
+          .where(
+            and(
+              isNull(caseMessages.caseId),
+              or(
+                eq(caseMessages.from, normalizedPhone),
+                eq(caseMessages.to, normalizedPhone),
+              ),
+            ),
+          )
+          .orderBy(asc(caseMessages.createdOn), asc(caseMessages.id));
+        collected.push(...nullCaseIdRows.map(mapDrizzleToBaserowRow));
+      }
+
+      // 3) Fallback: search by phone ONLY if nothing found yet
+      //    (mensagens antigas podem ter CaseId diferente — LIKE é lento em tabelas grandes)
       if (!collected.length && normalizedPhone) {
         const rows = await db
           .select()
