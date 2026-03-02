@@ -289,6 +289,8 @@ export type OnboardingData = {
 
   ragFiles: RagFile[];
 
+  agentPhaseConfig: AgentPhaseConfig;
+
   connections?: Connections;
 
   auth: AuthInfo | null;
@@ -308,6 +310,8 @@ export type OnboardingData = {
     agentPersonality: boolean;
 
     ragUpload: boolean;
+
+    agentPhases: boolean;
 
   };
 
@@ -398,6 +402,67 @@ export const defaultAgentFlow: AgentFlow = {
     "Atendimento 100% digital com especialistas dedicados e canal direto para documentacao complementar.",
 };
 
+// ---------------------------------------------------------------------------
+// Configuracao modular do agente por fases (movido antes de defaultOnboardingData)
+// ---------------------------------------------------------------------------
+
+export const FINALIZATION_FEATURES = {
+  agendamento: {
+    id: "agendamento" as const,
+    label: "Agendamento de Reunião",
+    description:
+      "O agente oferece horários disponíveis para agendar reunião com especialista",
+  },
+  assinatura_documentos: {
+    id: "assinatura_documentos" as const,
+    label: "Assinatura de Documentos",
+    description:
+      "O agente envia documento para assinatura eletrônica via RIA Sign",
+  },
+} as const;
+
+export type FinalizationFeatureId = keyof typeof FINALIZATION_FEATURES;
+export type FinalizationFeatures = Record<FinalizationFeatureId, boolean>;
+
+export type AgentPhaseConfig = {
+  phases: {
+    initial: { customPrompt: string };
+    questions: { customPrompt: string };
+    finalization: { customPrompt: string };
+  };
+  qualificationRules: string;
+  disqualificationMessage: string;
+  finalizationFeatures: FinalizationFeatures;
+};
+
+export const DEFAULT_PHASE_PROMPTS = {
+  initial:
+    "O agente se apresenta como assistente do escritório, coleta o nome do cliente e pede um relato livre do caso.",
+  questions:
+    "O agente faz perguntas complementares ao relato livre para completar o briefing jurídico. Respeita o limite de perguntas configurado.",
+  finalization:
+    "O agente agradece pelo relato e informa que um especialista entrará em contato.",
+} as const;
+
+export const DEFAULT_DISQUALIFICATION_MESSAGE =
+  "Agradecemos seu contato, mas infelizmente não conseguimos atender este tipo de demanda no momento.";
+
+export const DEFAULT_FINALIZATION_FEATURES: FinalizationFeatures = {
+  agendamento: true,
+  assinatura_documentos: false,
+};
+
+export const defaultAgentPhaseConfig: AgentPhaseConfig = {
+  phases: {
+    initial: { customPrompt: "" },
+    questions: { customPrompt: "" },
+    finalization: { customPrompt: "" },
+  },
+  qualificationRules: "",
+  disqualificationMessage: DEFAULT_DISQUALIFICATION_MESSAGE,
+  finalizationFeatures: DEFAULT_FINALIZATION_FEATURES,
+};
+
 export const defaultOnboardingData: OnboardingData = {
 
   companyInfo: defaultCompanyInfo,
@@ -411,6 +476,8 @@ export const defaultOnboardingData: OnboardingData = {
   agentPersonality: defaultAgentPersonality,
 
   agentFlow: defaultAgentFlow,
+
+  agentPhaseConfig: defaultAgentPhaseConfig,
 
   ragFiles: [],
 
@@ -441,6 +508,8 @@ export const defaultOnboardingData: OnboardingData = {
     agentPersonality: true,
 
     ragUpload: true,
+
+    agentPhases: true,
 
   },
 
@@ -518,6 +587,17 @@ export const onboardingPayloadSchema = z.object({
 
   ragFiles: z.array(ragFileSchema),
 
+  agentPhaseConfig: z.object({
+    phases: z.object({
+      initial: z.object({ customPrompt: z.string() }),
+      questions: z.object({ customPrompt: z.string() }),
+      finalization: z.object({ customPrompt: z.string() }),
+    }),
+    qualificationRules: z.string(),
+    disqualificationMessage: z.string(),
+    finalizationFeatures: z.record(z.string(), z.boolean()),
+  }).optional(),
+
   includedSteps: z.object({
 
     companyInfo: z.boolean(),
@@ -531,6 +611,8 @@ export const onboardingPayloadSchema = z.object({
     agentPersonality: z.boolean(),
 
     ragUpload: z.boolean(),
+
+    agentPhases: z.boolean(),
 
   }).optional(),
 
@@ -583,6 +665,8 @@ export const buildOnboardingPayload = (
     },
 
     ragFiles: data.ragFiles,
+
+    agentPhaseConfig: data.agentPhaseConfig,
 
     includedSteps: data.includedSteps,
 

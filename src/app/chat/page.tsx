@@ -94,16 +94,32 @@ function ChatContent() {
     return enrichedConversations.find((c) => c.id === selectedId) ?? null;
   }, [enrichedConversations, selectedId]);
 
+  // Fallback: se o caso não está na lista de conversas (ainda carregando ou caso
+  // antigo fora das primeiras páginas), criar stub mínimo para renderizar o ChatPanel.
+  // O hook useCaseChat busca os dados reais da API (/api/cases/{id}/messages).
+  const effectiveConversation = useMemo(() => {
+    if (selectedConversation) return selectedConversation;
+    if (!selectedId) return null;
+    // Enquanto a lista carrega, criar stub para mostrar o chat imediatamente
+    return {
+      id: selectedId,
+      caseId: selectedId,
+      customerName: "Carregando...",
+      customerPhone: "",
+      paused: false,
+    } as Conversation;
+  }, [selectedConversation, selectedId]);
+
   // Determinar qual numero WABA usar para enviar mensagens
   const activeWabaNumber = useMemo(() => {
-    if (selectedConversation?.wabaPhoneNumber) {
-      return selectedConversation.wabaPhoneNumber;
+    if (effectiveConversation?.wabaPhoneNumber) {
+      return effectiveConversation.wabaPhoneNumber;
     }
     if (wabaNumbers.length > 0) {
       return wabaNumbers[0].phoneNumber.replace(/\D/g, "");
     }
     return null;
-  }, [selectedConversation, wabaNumbers]);
+  }, [effectiveConversation, wabaNumbers]);
 
   const handleSelectConversation = useCallback(
     (conversation: Conversation) => {
@@ -172,11 +188,11 @@ function ChatContent() {
 
       {/* Área do chat */}
       <main className={`flex-1 flex flex-col ${selectedId ? "flex" : "hidden lg:flex"}`}>
-        {selectedConversation ? (
+        {effectiveConversation ? (
           <ChatPanel
-            key={selectedConversation.id}
-            caseRowId={selectedConversation.id}
-            conversation={selectedConversation}
+            key={effectiveConversation.id}
+            caseRowId={effectiveConversation.id}
+            conversation={effectiveConversation}
             onBack={handleBack}
             activeWabaNumber={activeWabaNumber}
             wabaNumbers={wabaNumbers}

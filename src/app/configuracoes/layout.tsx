@@ -12,6 +12,7 @@ import {
   FileCode,
   Shuffle,
   ShieldCheck,
+  Bot,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
@@ -27,6 +28,7 @@ type SettingsNavItem = {
 
 const SETTINGS_NAV: SettingsNavItem[] = [
   { href: "/configuracoes", label: "Geral", icon: Settings },
+  { href: "/configuracoes/agente", label: "Agente", icon: Bot },
   { href: "/configuracoes/agenda", label: "Agenda", icon: CalendarDays },
   { href: "/configuracoes/conexoes", label: "Conexões", icon: Plug },
   { href: "/configuracoes/follow-up", label: "Follow-up", icon: Repeat2 },

@@ -132,6 +132,7 @@ export default function ConexoesPage() {
     try {
       const configs = await getBaserowConfigs(data.auth.institutionId);
       const numbers: ConnectedNumber[] = [];
+      const seenPhones = new Set<string>();
 
       configs.forEach((config) => {
         const record = config as Record<string, unknown>;
@@ -140,7 +141,8 @@ export default function ConexoesPage() {
           const normalizedPhone = typeof phoneNumber === "string"
             ? phoneNumber.trim()
             : String(phoneNumber);
-          if (normalizedPhone) {
+          if (normalizedPhone && !seenPhones.has(normalizedPhone)) {
+            seenPhones.add(normalizedPhone);
             const deptId = record.phone_department_id;
             const deptName = record.phone_department_name;
             numbers.push({

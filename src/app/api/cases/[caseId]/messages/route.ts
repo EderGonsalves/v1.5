@@ -395,6 +395,34 @@ const resolveRouteParams = async (context: RouteContext): Promise<RouteParams> =
   return context.params instanceof Promise ? context.params : context.params;
 };
 
+/**
+ * SEGURANÇA: Verifica se o usuário autenticado tem acesso ao caso.
+ * SysAdmin (institutionId=4) tem acesso a todos os casos.
+ * Demais usuários só acessam casos da sua própria instituição.
+ */
+const assertCaseAccess = (
+  authInstitutionId: number | undefined,
+  caseRow: BaserowCaseRow,
+): NextResponse | null => {
+  // SysAdmin vê tudo
+  if (authInstitutionId === 4) return null;
+
+  const caseInstitutionId = caseRow.InstitutionID
+    ? Number(String(caseRow.InstitutionID).trim())
+    : undefined;
+
+  // Se o caso não tem instituição definida, permitir acesso (caso legado)
+  if (!caseInstitutionId) return null;
+
+  // Comparar instituição do auth com instituição do caso
+  if (authInstitutionId && authInstitutionId === caseInstitutionId) return null;
+
+  return NextResponse.json(
+    { error: "Acesso negado: caso pertence a outra instituição" },
+    { status: 403 },
+  );
+};
+
 export async function GET(
   request: NextRequest,
   context: RouteContext,
@@ -412,10 +440,33 @@ export async function GET(
     }
 
     const { caseRow, identifiers, rowId } = resolved;
+
+    // SEGURANÇA: verificar se o caso pertence à instituição do usuário
+    const accessDenied = assertCaseAccess(auth.institutionId, caseRow);
+    if (accessDenied) return accessDenied;
+
     const customerPhone = caseRow.CustumerPhone ? String(caseRow.CustumerPhone).trim() : "";
-    const wabaPhone = caseRow.display_phone_number
-      ? String(caseRow.display_phone_number).replace(/\D/g, "").trim()
-      : undefined;
+
+    // ── Derivar número WABA do caso ────────────────────────────────
+    // Prioridade: 1) campo display_phone_number do caso
+    //             2) WABA padrão da instituição do caso (via config table 224)
+    //             3) WABA padrão da instituição do usuário autenticado (fallback)
+    let wabaPhone: string | undefined;
+    if (caseRow.display_phone_number) {
+      wabaPhone = String(caseRow.display_phone_number).replace(/\D/g, "").trim() || undefined;
+    }
+    if (!wabaPhone) {
+      // Usar institutionId do caso; se ausente, fallback para auth (nunca undefined)
+      const rawInstitutionId = caseRow.InstitutionID ?? caseRow["body.auth.institutionId"];
+      const caseInstId = rawInstitutionId ? Number(String(rawInstitutionId).trim()) : undefined;
+      const effectiveInstId = caseInstId || auth.institutionId;
+      if (effectiveInstId) {
+        const instWaba = await getInstitutionWabaPhoneNumber(effectiveInstId);
+        if (instWaba) {
+          wabaPhone = instWaba.replace(/\D/g, "").trim() || undefined;
+        }
+      }
+    }
 
     // ── Incremental polling: ?since_id=N returns only new messages ────
     const sinceIdParam = request.nextUrl.searchParams.get("since_id");
@@ -526,6 +577,11 @@ export async function POST(
     }
 
     const { caseRow, identifiers, rowId } = resolved;
+
+    // SEGURANÇA: verificar se o caso pertence à instituição do usuário
+    const accessDenied = assertCaseAccess(auth.institutionId, caseRow);
+    if (accessDenied) return accessDenied;
+
     const formData = await request.formData();
     const rawContent = formData.get("content");
     const senderInput = (formData.get("sender") ?? "agente").toString();
@@ -567,7 +623,8 @@ export async function POST(
 
     // Get WABA phone number - prefer explicit parameter, then case field, then institution default
     const rawInstitutionId = caseRow.InstitutionID ?? caseRow["body.auth.institutionId"];
-    const institutionId = rawInstitutionId ? Number(String(rawInstitutionId).trim()) : undefined;
+    const caseInstId = rawInstitutionId ? Number(String(rawInstitutionId).trim()) : undefined;
+    const effectiveInstId = caseInstId || auth.institutionId;
 
     const explicitWabaNumber = formData.get("wabaPhoneNumber");
     const caseWabaNumber = caseRow.display_phone_number;
@@ -579,9 +636,9 @@ export async function POST(
     } else if (caseWabaNumber && typeof caseWabaNumber === "string") {
       // Usar número associado ao caso
       wabaPhoneNumber = caseWabaNumber.trim();
-    } else {
-      // Fallback: buscar número padrão da instituição
-      wabaPhoneNumber = await getInstitutionWabaPhoneNumber(institutionId);
+    } else if (effectiveInstId) {
+      // Fallback: buscar número padrão da instituição (nunca undefined)
+      wabaPhoneNumber = await getInstitutionWabaPhoneNumber(effectiveInstId);
     }
 
     const customerPhone = caseRow.CustumerPhone ? String(caseRow.CustumerPhone).trim() : "";

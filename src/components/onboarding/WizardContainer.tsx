@@ -31,6 +31,7 @@ import { StepCompanyInfo } from "./StepCompanyInfo";
 import { StepConfirmation } from "./StepConfirmation";
 import { StepConnections } from "./StepConnections";
 import { StepRagUpload } from "./StepRagUpload";
+import { StepAgentPhases } from "./StepAgentPhases";
 import { OnboardingLogin } from "./OnboardingLogin";
 import { useOnboarding } from "./onboarding-context";
 
@@ -100,6 +101,7 @@ const WizardContent = () => {
 
   const advancedOnlySteps: WizardStepEntry[] = [
     { key: "agentFlow", Component: StepAgentFlow },
+    { key: "agentPhases", Component: StepAgentPhases },
     { key: "agentTone", Component: StepAgentTone },
     { key: "ragUpload", Component: StepRagUpload },
   ];
@@ -126,6 +128,7 @@ const WizardContent = () => {
         agentFlow: enableOptional,
         agentPersonality: enableOptional,
         ragUpload: enableOptional,
+        agentPhases: enableOptional,
       },
     };
 

@@ -170,6 +170,16 @@ const DashboardPageContent = () => {
         },
         agentFlow: normalizedAgentFlow,
         ragFiles: data.ragFiles || [],
+        agentPhaseConfig: data.agentPhaseConfig || {
+          phases: {
+            initial: { customPrompt: "" },
+            questions: { customPrompt: "" },
+            finalization: { customPrompt: "" },
+          },
+          qualificationRules: "",
+          disqualificationMessage: "",
+          finalizationFeatures: { agendamento: true, assinatura_documentos: false },
+        },
         connections: data.connections,
         auth: {
           institutionId: id,
@@ -182,6 +192,7 @@ const DashboardPageContent = () => {
           agentFlow: true,
           agentPersonality: true,
           ragUpload: true,
+          agentPhases: true,
         },
       };
 

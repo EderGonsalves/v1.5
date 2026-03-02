@@ -1,4 +1,4 @@
-import type { OnboardingPayload } from "@/lib/validations";
+import type { OnboardingPayload, AgentPhaseConfig } from "@/lib/validations";
 
 const ensureString = (value: unknown): string => {
   if (typeof value === "string") {
@@ -77,5 +77,93 @@ export const buildBaserowRowFromPayload = (
   // Ativar IA por padrão no onboarding inicial
   data["ia_ativada"] = "sim";
 
+  // Fases do agente (campos stages ociosos reaproveitados)
+  if (payload.agentPhaseConfig) {
+    const phaseFields = buildPhaseConfigFields(
+      payload.agentPhaseConfig as AgentPhaseConfig,
+    );
+    Object.assign(data, phaseFields);
+  }
+
   return data;
+};
+
+/**
+ * Converte AgentPhaseConfig em campos Baserow (reaproveitando campos stages ociosos).
+ * Usado pela pagina /configuracoes/agente e pelo wizard step.
+ */
+export const buildPhaseConfigFields = (
+  config: AgentPhaseConfig,
+): Record<string, unknown> => {
+  const data: Record<string, unknown> = {};
+
+  // Prompts customizados por fase (campos stages ociosos)
+  data["body.agentSettings.stages.0.script"] =
+    config.phases.initial.customPrompt || "";
+  data["body.agentSettings.stages.1.script"] =
+    config.phases.questions.customPrompt || "";
+  data["body.agentSettings.stages.2.script"] =
+    config.phases.finalization.customPrompt || "";
+
+  // Regras de qualificacao
+  data["body.agentSettings.flow.qualificationPrompt"] =
+    config.qualificationRules || "";
+  data["body.agentSettings.flow.qualificationFallback"] =
+    config.disqualificationMessage || "";
+
+  // Funcionalidades ativas na etapa final (JSON)
+  data["body.agentSettings.flow.commitmentScript"] = JSON.stringify(
+    config.finalizationFeatures,
+  );
+
+  return data;
+};
+
+/**
+ * Le AgentPhaseConfig a partir de uma row Baserow (campos com dot notation).
+ */
+export const readPhaseConfigFromRow = (
+  row: Record<string, unknown>,
+): AgentPhaseConfig => {
+  let finalizationFeatures = { agendamento: true, assinatura_documentos: false };
+  try {
+    const raw = row["body.agentSettings.flow.commitmentScript"];
+    if (typeof raw === "string" && raw.trim().startsWith("{")) {
+      finalizationFeatures = { ...finalizationFeatures, ...JSON.parse(raw) };
+    }
+  } catch {
+    // fallback para defaults
+  }
+
+  return {
+    phases: {
+      initial: {
+        customPrompt:
+          typeof row["body.agentSettings.stages.0.script"] === "string"
+            ? row["body.agentSettings.stages.0.script"]
+            : "",
+      },
+      questions: {
+        customPrompt:
+          typeof row["body.agentSettings.stages.1.script"] === "string"
+            ? row["body.agentSettings.stages.1.script"]
+            : "",
+      },
+      finalization: {
+        customPrompt:
+          typeof row["body.agentSettings.stages.2.script"] === "string"
+            ? row["body.agentSettings.stages.2.script"]
+            : "",
+      },
+    },
+    qualificationRules:
+      typeof row["body.agentSettings.flow.qualificationPrompt"] === "string"
+        ? row["body.agentSettings.flow.qualificationPrompt"]
+        : "",
+    disqualificationMessage:
+      typeof row["body.agentSettings.flow.qualificationFallback"] === "string"
+        ? row["body.agentSettings.flow.qualificationFallback"]
+        : "",
+    finalizationFeatures,
+  };
 };

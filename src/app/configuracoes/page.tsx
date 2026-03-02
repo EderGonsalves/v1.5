@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
@@ -244,6 +244,49 @@ export default function ConfiguracoesPage() {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  // Agrupar configs por institutionId — 1 grupo = 1 escritório
+  const configGroups = useMemo(() => {
+    const map = new Map<number, BaserowConfigRow[]>();
+    for (const config of configs) {
+      const row = config as Record<string, unknown>;
+      const instId = Number(row["body.auth.institutionId"]) || 0;
+      if (!map.has(instId)) map.set(instId, []);
+      map.get(instId)!.push(config);
+    }
+    const groups: Array<{
+      institutionId: number;
+      companyName: string;
+      latestConfig: BaserowConfigRow;
+      allConfigs: BaserowConfigRow[];
+      phoneNumbers: string[];
+    }> = [];
+    for (const [instId, groupConfigs] of map) {
+      const sorted = [...groupConfigs].sort((a, b) => b.id - a.id);
+      const latest = sorted[0];
+      const latestRow = latest as Record<string, unknown>;
+      const phoneSet = new Set<string>();
+      for (const c of sorted) {
+        const r = c as Record<string, unknown>;
+        const phone =
+          typeof r.waba_phone_number === "string"
+            ? r.waba_phone_number.trim()
+            : typeof r["body.tenant.wabaPhoneNumber"] === "string"
+              ? (r["body.tenant.wabaPhoneNumber"] as string).trim()
+              : "";
+        if (phone) phoneSet.add(phone);
+      }
+      groups.push({
+        institutionId: instId,
+        companyName:
+          (latestRow["body.tenant.companyName"] as string) ||
+          `Escritório ${instId}`,
+        latestConfig: latest,
+        allConfigs: sorted,
+        phoneNumbers: Array.from(phoneSet),
+      });
+    }
+    return groups;
+  }, [configs]);
 
   useEffect(() => {
     if (!isHydrated) return;
@@ -769,8 +812,11 @@ export default function ConfiguracoesPage() {
       // Atualizar o estado com as novas configurações
       setConfigs(updatedConfigs);
 
-      // Usar a primeira configuração (ou a mais recente)
-      const configToSend = updatedConfigs[0];
+      // Usar a configuração mais recente (maior ID)
+      const configToSend = updatedConfigs.reduce(
+        (current, candidate) => (candidate.id > current.id ? candidate : current),
+        updatedConfigs[0],
+      );
       console.log("Transformando configuração do Baserow em payload...", configToSend);
       
       const payload = transformBaserowToPayload(configToSend);
@@ -894,27 +940,16 @@ export default function ConfiguracoesPage() {
         )}
 
 
-        {configs.length === 0 && !error && (
+        {configGroups.length === 0 && !error && (
           <div className="py-12 text-center text-muted-foreground">
             Nenhuma configuração encontrada para esta instituição (ID: {data.auth?.institutionId}).
           </div>
         )}
 
         <Accordion type="multiple" className="space-y-4">
-          {configs.map((config, index) => {
+          {configGroups.map((group) => {
+            const config = group.latestConfig;
             const rowData = config as Record<string, unknown>;
-            const institutionFromRow = rowData["body.auth.institutionId"];
-            const institutionLabel =
-              typeof institutionFromRow === "number" || typeof institutionFromRow === "string"
-                ? String(institutionFromRow)
-                : "N/D";
-            const fallbackCompanyName =
-              typeof config.id === "number" || typeof config.id === "string"
-                ? "Escritório " + String(config.id)
-                : "Escritório " + String(index + 1);
-            const companyName =
-              (rowData["body.tenant.companyName"] as string | undefined) ||
-              fallbackCompanyName;
 
             const sections = SECTION_ORDER.reduce(
               (acc, label) => {
@@ -957,17 +992,20 @@ export default function ConfiguracoesPage() {
 
             return (
               <AccordionItem
-                key={config.id ? "office-" + String(config.id) : "office-" + String(index)}
-                value={"office-" + String(config.id ?? index)}
+                key={"office-inst-" + String(group.institutionId)}
+                value={"office-inst-" + String(group.institutionId)}
                 className="border-b border-[#7E99B5] dark:border-border/60 px-0"
               >
                 <AccordionTrigger className="w-full px-3 sm:px-4 py-3 text-left hover:no-underline">
                   <div className="flex flex-col">
                     <span className="text-base font-semibold text-foreground">
-                      {companyName}
+                      {group.companyName}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      Instituição #{institutionLabel} - Registro #{config.id}
+                      Instituição #{group.institutionId}
+                      {group.allConfigs.length > 1
+                        ? ` - ${group.allConfigs.length} conexões`
+                        : ""}
                     </span>
                   </div>
                 </AccordionTrigger>
@@ -977,7 +1015,10 @@ export default function ConfiguracoesPage() {
                       <div>
                         <p className="text-sm font-semibold text-foreground">Dados do escritório</p>
                         <p className="text-xs text-muted-foreground">
-                          ID do registro: {config.id} | Instituição #{institutionLabel}
+                          Instituição #{group.institutionId}
+                          {group.phoneNumbers.length > 0 && (
+                            <> | {group.phoneNumbers.length === 1 ? "Telefone" : "Telefones"}: {group.phoneNumbers.join(", ")}</>
+                          )}
                         </p>
                       </div>
                       <Button

@@ -585,33 +585,28 @@ const buildFetchResult = (
 
 // ---------------------------------------------------------------------------
 // Condição para mensagens órfãs (CaseId null ou vazio) filtrada por telefone
-// Se o número WABA é conhecido, exige a dupla (cliente ↔ WABA) para
-// não misturar mensagens de escritórios diferentes com o mesmo cliente.
+// SEGURANÇA: SEMPRE exige a dupla (cliente ↔ WABA) para não misturar
+// mensagens de escritórios diferentes com o mesmo cliente.
+// Retorna null se wabaPhone não for fornecido — chamador deve pular órfãs.
 // ---------------------------------------------------------------------------
 
 const buildOrphanPhoneCondition = (
   customerPhone: string,
-  wabaPhone?: string,
+  wabaPhone: string | undefined,
 ) => {
-  const caseIdMissing = or(isNull(caseMessages.caseId), eq(caseMessages.caseId, ""));
-
-  if (wabaPhone) {
-    // Preciso: bate a conversa exata (cliente ↔ WABA)
-    return and(
-      caseIdMissing,
-      or(
-        and(eq(caseMessages.from, customerPhone), eq(caseMessages.to, wabaPhone)),
-        and(eq(caseMessages.from, wabaPhone), eq(caseMessages.to, customerPhone)),
-      ),
-    );
+  // SEGURANÇA: sem WABA, NÃO buscar mensagens órfãs (evita vazamento cross-WABA)
+  if (!wabaPhone) {
+    return null;
   }
 
-  // Fallback: sem WABA, busca só pelo telefone do cliente
+  const caseIdMissing = or(isNull(caseMessages.caseId), eq(caseMessages.caseId, ""));
+
+  // Preciso: bate a conversa exata (cliente ↔ WABA)
   return and(
     caseIdMissing,
     or(
-      eq(caseMessages.from, customerPhone),
-      eq(caseMessages.to, customerPhone),
+      and(eq(caseMessages.from, customerPhone), eq(caseMessages.to, wabaPhone)),
+      and(eq(caseMessages.from, wabaPhone), eq(caseMessages.to, customerPhone)),
     ),
   );
 };
@@ -647,13 +642,13 @@ const fetchIncrementalMessages = async (
         ? eq(caseMessages.caseId, normalizedIdentifiers[0])
         : inArray(caseMessages.caseId, normalizedIdentifiers);
 
-      // Condição extra: mensagens órfãs (CaseId null/vazio) filtradas por telefone+WABA
-      const phoneCondition = normalizedPhone
-        ? buildOrphanPhoneCondition(normalizedPhone, normalizedWabaPhone || undefined)
+      // Condição extra: mensagens órfãs — APENAS se WABA é conhecido (segurança)
+      const orphanCondition = normalizedPhone && normalizedWabaPhone
+        ? buildOrphanPhoneCondition(normalizedPhone, normalizedWabaPhone)
         : null;
 
-      const matchCondition = phoneCondition
-        ? or(caseIdCondition, phoneCondition)
+      const matchCondition = orphanCondition
+        ? or(caseIdCondition, orphanCondition)
         : caseIdCondition;
 
       const rows = await db
@@ -749,7 +744,6 @@ export const fetchCaseMessagesFromBaserow = async (
 
       // 1) Search by CaseId — inclui rowId, CaseId e BJCaseId (indexed — B-tree on field_1701)
       if (normalizedIdentifiers.length) {
-        // Use prepared statement for single caseId (most common), dynamic for multiple
         if (normalizedIdentifiers.length === 1) {
           const rows = await prepared.getMessagesByCaseId.execute({
             caseId: normalizedIdentifiers[0],
@@ -765,30 +759,44 @@ export const fetchCaseMessagesFromBaserow = async (
         }
       }
 
-      // 2) Mensagens órfãs (CaseId null/vazio) — filtradas por telefone + WABA
-      if (normalizedPhone) {
+      // 2) Derivar WABA a partir das mensagens já encontradas (se não veio como parâmetro)
+      //    SEGURANÇA: sem WABA confirmado, NÃO buscar órfãs para evitar vazamento cross-WABA
+      const effectiveWabaPhone = normalizedWabaPhone
+        || determineWabaNumberFromMessages(collected, normalizedPhone)
+        || "";
+
+      // 3) Mensagens órfãs (CaseId null/vazio) — APENAS se WABA é conhecido
+      if (normalizedPhone && effectiveWabaPhone) {
         const orphanCondition = buildOrphanPhoneCondition(
           normalizedPhone,
-          normalizedWabaPhone || undefined,
+          effectiveWabaPhone,
         );
-        const orphanRows = await db
-          .select()
-          .from(caseMessages)
-          .where(orphanCondition)
-          .orderBy(asc(caseMessages.createdOn), asc(caseMessages.id));
-        collected.push(...orphanRows.map(mapDrizzleToBaserowRow));
+        if (orphanCondition) {
+          const orphanRows = await db
+            .select()
+            .from(caseMessages)
+            .where(orphanCondition)
+            .orderBy(asc(caseMessages.createdOn), asc(caseMessages.id));
+          collected.push(...orphanRows.map(mapDrizzleToBaserowRow));
+        }
       }
 
-      // 3) Fallback: search by phone ONLY if nothing found yet
-      //    (mensagens antigas podem ter CaseId diferente — LIKE é lento em tabelas grandes)
-      if (!collected.length && normalizedPhone) {
+      // 4) Fallback LIKE: APENAS se nada encontrado E WABA é conhecido
+      //    Filtra pela dupla (phone + WABA) para evitar vazamento
+      if (!collected.length && normalizedPhone && effectiveWabaPhone) {
         const rows = await db
           .select()
           .from(caseMessages)
           .where(
             or(
-              like(caseMessages.from, `%${normalizedPhone}%`),
-              like(caseMessages.to, `%${normalizedPhone}%`),
+              and(
+                like(caseMessages.from, `%${normalizedPhone}%`),
+                like(caseMessages.to, `%${effectiveWabaPhone}%`),
+              ),
+              and(
+                like(caseMessages.from, `%${effectiveWabaPhone}%`),
+                like(caseMessages.to, `%${normalizedPhone}%`),
+              ),
             ),
           )
           .orderBy(asc(caseMessages.createdOn), asc(caseMessages.id));
@@ -847,19 +855,28 @@ export const fetchCaseMessagesFromBaserow = async (
     }
   }
 
-  // 2) Buscar por telefone APENAS se CaseId não retornou resultados
-  //    (mensagens antigas podem não ter CaseId — LIKE é lento em tabelas grandes)
-  if (!collected.length && normalizedPhone) {
+  // 2) Derivar WABA das mensagens encontradas por CaseId
+  const effectiveWabaPhoneApi = normalizedWabaPhone
+    || determineWabaNumberFromMessages(collected, normalizedPhone)
+    || "";
+
+  // 3) Buscar por telefone APENAS se CaseId não retornou resultados E WABA é conhecido
+  //    SEGURANÇA: filtrar pela dupla (phone + WABA) para evitar vazamento cross-WABA
+  if (!collected.length && normalizedPhone && effectiveWabaPhoneApi) {
+    // Buscar mensagens onde from=cliente E to=WABA
     const fromUrl = buildMessagesUrl(new URLSearchParams({
       page: "1",
       size: String(pageSize),
       order_by: "DataHora",
       "filter__from__contains": normalizedPhone,
+      "filter__to__contains": effectiveWabaPhoneApi,
     }));
+    // Buscar mensagens onde from=WABA E to=cliente
     const toUrl = buildMessagesUrl(new URLSearchParams({
       page: "1",
       size: String(pageSize),
       order_by: "DataHora",
+      "filter__from__contains": effectiveWabaPhoneApi,
       "filter__to__contains": normalizedPhone,
     }));
 
@@ -1081,11 +1098,10 @@ export const determineWabaNumberFromMessages = (
       }
     }
 
-    // Se não temos o telefone do cliente, usamos heurística
-    // Mensagens enviadas (não do cliente) têm from = WABA
-    if (from && msg.Sender !== "cliente") {
-      return from;
-    }
+    // Sem customerPhone não é possível determinar WABA com segurança.
+    // O campo Sender (multiple_select) não existe como coluna PG via Drizzle
+    // (sempre null), então a heurística baseada em Sender seria falha.
+    // Retorna null e o chamador deve usar o WABA da instituição como fallback.
   }
 
   return null;

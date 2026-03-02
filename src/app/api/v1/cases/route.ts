@@ -89,6 +89,8 @@ export async function GET(request: NextRequest) {
         newestFirst: true,
       });
       lightCases = resp.results.map(stripHeavyFields);
+      // Ensure consistent order (newest first) — Baserow pagination may mix pages
+      lightCases.sort((a, b) => (b.id || 0) - (a.id || 0));
     }
 
     // Cache result
