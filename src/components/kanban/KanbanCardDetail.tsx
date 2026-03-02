@@ -115,6 +115,46 @@ export function KanbanCardDetail({
   const [updatingResultado, setUpdatingResultado] = useState(false);
   const [formData, setFormData] = useState<Partial<ClientRow>>({});
 
+  // Lazy-load heavy fields (Conversa, Resumo, notas_caso) when dialog opens
+  const [fullCaseData, setFullCaseData] = useState<BaserowCaseRow | null>(null);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+
+  useEffect(() => {
+    if (!open || !caseData) {
+      setFullCaseData(null);
+      return;
+    }
+
+    // If heavy fields are already present (compatibility), skip fetch
+    if (caseData.Conversa !== undefined || caseData.Resumo !== undefined) {
+      setFullCaseData(null);
+      return;
+    }
+
+    let active = true;
+    setIsLoadingDetail(true);
+
+    fetch(`/api/v1/cases/${caseData.id}`, { credentials: "include" })
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (active && data?.case) {
+          setFullCaseData(data.case);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setIsLoadingDetail(false);
+      });
+
+    return () => { active = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, caseData?.id, caseData?.Conversa, caseData?.Resumo]);
+
+  // Merged data: use fullCaseData for heavy fields, caseData for everything else
+  const mergedConversation = fullCaseData?.Conversa ?? caseData?.Conversa ?? "";
+  const mergedResumo = fullCaseData?.Resumo ?? caseData?.Resumo;
+  const mergedNotas = fullCaseData?.notas_caso ?? caseData?.notas_caso ?? "";
+
   // Load department users when department changes
   useEffect(() => {
     if (!selectedDeptId) {
@@ -813,7 +853,7 @@ export function KanbanCardDetail({
                     : Number(caseData["body.auth.institutionId"]) || 0)
                 }
                 initialCnj={caseData.cnj_number || undefined}
-                initialNotes={caseData.notas_caso || ""}
+                initialNotes={mergedNotas}
                 onNotesChange={(notes) => onCaseUpdate?.(caseData.id, { notas_caso: notes })}
               />
             </TabsContent>
@@ -821,16 +861,28 @@ export function KanbanCardDetail({
             {/* Aba Conversa */}
             <TabsContent value="conversa" className="mt-0">
               <div className="rounded-lg border p-3 sm:p-4 min-h-[250px] sm:min-h-[400px] max-h-[60dvh] sm:max-h-[500px] overflow-y-auto bg-zinc-50 dark:bg-zinc-950">
-                <ConversationView conversation={caseData.Conversa || ""} />
+                {isLoadingDetail && !mergedConversation ? (
+                  <div className="flex items-center justify-center h-[200px] sm:h-[300px] text-muted-foreground">
+                    <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                    Carregando conversa...
+                  </div>
+                ) : (
+                  <ConversationView conversation={mergedConversation} />
+                )}
               </div>
             </TabsContent>
 
             {/* Aba Resumo */}
             <TabsContent value="resumo" className="mt-0">
               <div className="rounded-lg border p-3 sm:p-4 min-h-[250px] sm:min-h-[400px] max-h-[60dvh] sm:max-h-[500px] overflow-y-auto">
-                {caseData.Resumo ? (
+                {isLoadingDetail && !mergedResumo ? (
+                  <div className="flex items-center justify-center h-[200px] sm:h-[300px] text-muted-foreground">
+                    <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                    Carregando resumo...
+                  </div>
+                ) : mergedResumo ? (
                   <pre className="whitespace-pre-wrap text-sm font-mono leading-relaxed">
-                    {caseData.Resumo}
+                    {mergedResumo}
                   </pre>
                 ) : (
                   <div className="flex items-center justify-center h-[200px] sm:h-[300px] text-muted-foreground">

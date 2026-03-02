@@ -3,11 +3,19 @@ import { z } from "zod";
 
 import { getRequestAuth, resolveLegacyIdentifier } from "@/lib/auth/session";
 import { findUserInInstitution } from "@/services/permissions";
-import { createBaserowCase, baserowGet } from "@/services/api";
+import {
+  createBaserowCase,
+  baserowGet,
+  getBaserowCases,
+  mapCaseRowLight,
+  stripHeavyFields,
+  type BaserowCaseRow,
+} from "@/services/api";
 import { db } from "@/lib/db";
 import { cases as casesTable } from "@/lib/db/schema/cases";
 import { like, eq, and } from "drizzle-orm";
 import { useDirectDb, tryDrizzle } from "@/lib/db/repository";
+import { prepared } from "@/lib/db/prepared";
 
 const BASEROW_API_URL =
   process.env.BASEROW_API_URL || process.env.NEXT_PUBLIC_BASEROW_API_URL || "";
@@ -16,6 +24,102 @@ const BASEROW_CASES_TABLE_ID =
     process.env.NEXT_PUBLIC_BASEROW_CASES_TABLE_ID ||
       process.env.BASEROW_CASES_TABLE_ID,
   ) || 225;
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/cases — List all cases (light, no heavy fields)
+// ---------------------------------------------------------------------------
+
+type CasesCache = {
+  institutionId: number;
+  cases: BaserowCaseRow[];
+  totalCount: number;
+  timestamp: number;
+};
+
+const CASES_CACHE_TTL_MS = 30_000; // 30s
+let casesCache: CasesCache | null = null;
+
+export async function GET(request: NextRequest) {
+  try {
+    const auth = getRequestAuth(request);
+    if (!auth) {
+      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+    }
+
+    const refresh = request.nextUrl.searchParams.get("refresh") === "true";
+    const isSysAdmin = auth.institutionId === 4;
+
+    // Check cache
+    if (
+      !refresh &&
+      casesCache &&
+      casesCache.institutionId === auth.institutionId &&
+      Date.now() - casesCache.timestamp < CASES_CACHE_TTL_MS
+    ) {
+      return NextResponse.json({
+        cases: casesCache.cases,
+        totalCount: casesCache.totalCount,
+        cached: true,
+        cachedAt: casesCache.timestamp,
+      });
+    }
+
+    let lightCases: BaserowCaseRow[] = [];
+
+    // Path 1: Drizzle (direct DB)
+    if (useDirectDb("api")) {
+      const drResult = await tryDrizzle("api", async () => {
+        const rows = isSysAdmin
+          ? await prepared.getAllCasesLight.execute({})
+          : await prepared.getCasesLightByInstitution.execute({
+              institutionId: String(auth.institutionId),
+            });
+        return rows.map(mapCaseRowLight);
+      });
+      if (drResult !== undefined) {
+        lightCases = drResult;
+      }
+    }
+
+    // Path 2: Baserow fallback (server-side, no maxPages limit)
+    if (lightCases.length === 0) {
+      const resp = await getBaserowCases({
+        institutionId: isSysAdmin ? undefined : auth.institutionId,
+        fetchAll: true,
+        newestFirst: true,
+      });
+      lightCases = resp.results.map(stripHeavyFields);
+    }
+
+    // Cache result
+    casesCache = {
+      institutionId: auth.institutionId,
+      cases: lightCases,
+      totalCount: lightCases.length,
+      timestamp: Date.now(),
+    };
+
+    return NextResponse.json({
+      cases: lightCases,
+      totalCount: lightCases.length,
+      cached: false,
+      cachedAt: casesCache.timestamp,
+    });
+  } catch (error) {
+    console.error("[GET /api/v1/cases] error:", error);
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error ? error.message : "Erro ao listar casos",
+      },
+      { status: 500 },
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/cases — Create a new case
+// ---------------------------------------------------------------------------
 
 const createCaseSchema = z.object({
   customerName: z.string().min(1, "Nome é obrigatório").max(200),

@@ -9,7 +9,7 @@
  *   const rows = await prepared.getUsersByInstitution.execute({ institutionId: "123" });
  */
 
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "./index";
 import { users } from "./schema/users";
 import { cases } from "./schema/cases";
@@ -90,6 +90,50 @@ const countUserCases = db
     ),
   )
   .prepare("count_user_cases");
+
+/** Light case fields — excludes heavy text fields (conversa, resumo, etc.) */
+export const caseLightFields = {
+  id: cases.id,
+  caseId: cases.caseId,
+  custumerPhone: cases.custumerPhone,
+  custumerName: cases.custumerName,
+  data: cases.data,
+  etapaPerguntas: cases.etapaPerguntas,
+  etapaFinal: cases.etapaFinal,
+  depoimentoInicial: cases.depoimentoInicial,
+  iApause: cases.iApause,
+  bJCaseId: cases.bJCaseId,
+  institutionID: cases.institutionID,
+  responsavel: cases.responsavel,
+  departmentId: cases.departmentId,
+  departmentName: cases.departmentName,
+  assignedToUserId: cases.assignedToUserId,
+  valor: cases.valor,
+  resultado: cases.resultado,
+  caseSource: cases.caseSource,
+  statusCaso: cases.statusCaso,
+  cnjNumber: cases.cnjNumber,
+  lawsuitTrackingActive: cases.lawsuitTrackingActive,
+  signEnvelopeId: cases.signEnvelopeId,
+  signStatus: cases.signStatus,
+  createdByUserId: cases.createdByUserId,
+  createdByUserName: cases.createdByUserName,
+};
+
+/** getCasesLightByInstitution — all light cases for an institution, newest first */
+const getCasesLightByInstitution = db
+  .select(caseLightFields)
+  .from(cases)
+  .where(eq(cases.institutionID, sql.placeholder("institutionId")))
+  .orderBy(desc(cases.id))
+  .prepare("get_cases_light_by_institution");
+
+/** getAllCasesLight — all light cases (SysAdmin), newest first */
+const getAllCasesLight = db
+  .select(caseLightFields)
+  .from(cases)
+  .orderBy(desc(cases.id))
+  .prepare("get_all_cases_light");
 
 // ---------------------------------------------------------------------------
 // User Departments (table 248) — Authorization filters
@@ -219,6 +263,8 @@ export const prepared = {
   // Cases
   getCaseById,
   countUserCases,
+  getCasesLightByInstitution,
+  getAllCasesLight,
   // Chat Messages
   getMessagesByCaseId,
   // Departments

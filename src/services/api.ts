@@ -1152,6 +1152,78 @@ function mapCaseRow(row: typeof casesTable.$inferSelect): BaserowCaseRow {
   };
 }
 
+/** Heavy fields excluded from light case rows */
+const HEAVY_FIELDS = ["Conversa", "Resumo", "notas_caso", "lawsuit_summary", "image"] as const;
+
+/**
+ * Map a Drizzle light-case row (without heavy fields) to BaserowCaseRow shape.
+ * Heavy fields are left undefined (they are optional in the type).
+ */
+export function mapCaseRowLight(row: {
+  id: number;
+  caseId: number | null;
+  custumerPhone: string | null;
+  custumerName: string | null;
+  data: string | null;
+  etapaPerguntas: string | null;
+  etapaFinal: string | null;
+  depoimentoInicial: string | null;
+  iApause: string | null;
+  bJCaseId: string | null;
+  institutionID: string | null;
+  responsavel: string | null;
+  departmentId: string | null;
+  departmentName: string | null;
+  assignedToUserId: string | null;
+  valor: string | null;
+  resultado: string | null;
+  caseSource: string | null;
+  statusCaso: string | null;
+  cnjNumber: string | null;
+  lawsuitTrackingActive: string | null;
+  signEnvelopeId: string | null;
+  signStatus: string | null;
+  createdByUserId: string | null;
+  createdByUserName: string | null;
+}): BaserowCaseRow {
+  return {
+    id: row.id,
+    CaseId: row.caseId ?? undefined,
+    CustumerPhone: row.custumerPhone ?? undefined,
+    CustumerName: row.custumerName ?? undefined,
+    Data: formatDateBR(row.data) ?? undefined,
+    EtapaPerguntas: row.etapaPerguntas ?? undefined,
+    EtapaFinal: row.etapaFinal ?? undefined,
+    DepoimentoInicial: row.depoimentoInicial ?? undefined,
+    IApause: row.iApause ?? undefined,
+    BJCaseId: row.bJCaseId ?? undefined,
+    InstitutionID: row.institutionID ? Number(row.institutionID) : undefined,
+    responsavel: row.responsavel ?? undefined,
+    department_id: row.departmentId != null ? Number(row.departmentId) : undefined,
+    department_name: row.departmentName ?? undefined,
+    assigned_to_user_id: row.assignedToUserId != null ? Number(row.assignedToUserId) : undefined,
+    valor: row.valor != null ? Number(row.valor) : undefined,
+    resultado: row.resultado ?? undefined,
+    case_source: row.caseSource ?? undefined,
+    status_caso: row.statusCaso ?? undefined,
+    cnj_number: row.cnjNumber ?? undefined,
+    lawsuit_tracking_active: row.lawsuitTrackingActive ?? undefined,
+    sign_envelope_id: row.signEnvelopeId ?? undefined,
+    sign_status: row.signStatus ?? undefined,
+    created_by_user_id: row.createdByUserId != null ? Number(row.createdByUserId) : undefined,
+    created_by_user_name: row.createdByUserName ?? undefined,
+  };
+}
+
+/** Strip heavy text/blob fields from a full BaserowCaseRow (for API response) */
+export function stripHeavyFields(row: BaserowCaseRow): BaserowCaseRow {
+  const light = { ...row };
+  for (const key of HEAVY_FIELDS) {
+    delete (light as Record<string, unknown>)[key];
+  }
+  return light;
+}
+
 /** Build a Drizzle-compatible set object from a Baserow-shaped partial case row */
 function buildCaseSetObj(data: Partial<BaserowCaseRow>): Record<string, unknown> {
   const set: Record<string, unknown> = {};

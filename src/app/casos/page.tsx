@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  getBaserowCases,
   getBaserowConfigs,
   updateBaserowCase,
   type BaserowCaseRow,
@@ -58,7 +57,6 @@ type CasesMemoryCache = {
   institutionId: number;
   cases: BaserowCaseRow[];
   totalCount: number;
-  nextPage: number | null;
   timestamp: number;
 };
 
@@ -163,8 +161,6 @@ export default function CasosPage() {
   const [pauseErrors, setPauseErrors] = useState<Record<number, string | null>>({});
   const [totalCasesCount, setTotalCasesCount] = useState<number | null>(null);
   const [visibleCount, setVisibleCount] = useState(50); // Quantos casos exibir por vez
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const nextPageRef = useRef<number | null>(null); // próxima página a buscar (decrescente)
   const isSysAdmin = normalizedInstitutionId === 4;
   const [selectedInstitution, setSelectedInstitution] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -413,10 +409,9 @@ export default function CasosPage() {
     return assignedVisibleCases.slice(0, visibleCount);
   }, [assignedVisibleCases, visibleCount]);
 
-  // Verifica se há mais casos para exibir (virtual) ou buscar (servidor)
+  // Verifica se há mais casos para exibir (paginação virtual)
   const hasMoreToShow = visibleCases.length > visibleCount;
-  const hasMoreFromServer = nextPageRef.current !== null;
-  const showSentinel = hasMoreToShow || hasMoreFromServer;
+  const showSentinel = hasMoreToShow;
 
   // Calcular estatísticas localmente a partir dos casos carregados
   const localStats = useMemo(() => {
@@ -528,7 +523,6 @@ export default function CasosPage() {
     ) {
       setCases(casesMemoryCache.cases);
       setTotalCasesCount(casesMemoryCache.totalCount);
-      nextPageRef.current = casesMemoryCache.nextPage;
       setIsLoading(false);
       loadCases(true);
       return;
@@ -554,14 +548,10 @@ export default function CasosPage() {
         institutionId: normalizedInstitutionId,
         cases,
         totalCount: totalCasesCount ?? cases.length,
-        nextPage: nextPageRef.current,
         timestamp: Date.now(),
       };
     }
   }, [cases, totalCasesCount, normalizedInstitutionId]);
-
-  const PAGE_SIZE = 200;
-  const INITIAL_MAX_PAGES = 3;
 
   const sortDesc = useCallback(
     (arr: BaserowCaseRow[]) => {
@@ -591,36 +581,25 @@ export default function CasosPage() {
         setIsLoading(true);
         setCases([]);
         setError(null);
-        nextPageRef.current = null;
         casesMemoryCache = null;
       }
 
-      const response = await getBaserowCases({
-        institutionId,
-        pageSize: PAGE_SIZE,
-        fetchAll: true,
-        newestFirst: true,
-        maxPages: INITIAL_MAX_PAGES,
-        onPageLoaded: (partial, total) => {
-          setCases(sortDesc(partial));
-          setTotalCasesCount(total);
-          if (!silent) setIsLoading(false);
-        },
+      const refresh = !silent ? "?refresh=true" : "";
+      const res = await fetch(`/api/v1/cases${refresh}`, {
+        credentials: "include",
       });
 
-      const sortedResults = sortDesc(response.results);
-      setCases(sortedResults);
-      setTotalCasesCount(response.totalCount);
-
-      // Calcular próxima página a buscar (indo de trás para frente)
-      if (response.hasNextPage) {
-        const totalPages = Math.ceil(response.totalCount / PAGE_SIZE);
-        const pageBudget = INITIAL_MAX_PAGES - 1; // pages fetched from the end
-        nextPageRef.current = totalPages - pageBudget;
-      } else {
-        nextPageRef.current = null;
-        setCasesCache(institutionId, sortedResults, response.totalCount);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Erro ${res.status}`);
       }
+
+      const resp: { cases: BaserowCaseRow[]; totalCount: number } = await res.json();
+      const sortedResults = sortDesc(resp.cases);
+
+      setCases(sortedResults);
+      setTotalCasesCount(resp.totalCount);
+      setCasesCache(institutionId, sortedResults, resp.totalCount);
 
       // Auto-assign unassigned cases (fire-and-forget) — skip in manual queue mode
       if (queueMode !== "manual") {
@@ -640,54 +619,6 @@ export default function CasosPage() {
     }
   };
 
-  // Buscar mais páginas do Baserow (scroll infinito)
-  const loadMoreFromServer = useCallback(async () => {
-    if (isLoadingMore || nextPageRef.current === null || nextPageRef.current < 1) return;
-    if (!Number.isFinite(normalizedInstitutionId)) return;
-
-    setIsLoadingMore(true);
-
-    try {
-      const startPage = nextPageRef.current;
-      const endPage = Math.max(1, startPage - 2); // até 3 páginas por vez
-      const pagesToFetch: number[] = [];
-      for (let p = startPage; p >= endPage; p--) {
-        pagesToFetch.push(p);
-      }
-
-      const results = await Promise.all(
-        pagesToFetch.map((p) =>
-          getBaserowCases({
-            institutionId: normalizedInstitutionId!,
-            page: p,
-            pageSize: PAGE_SIZE,
-          }),
-        ),
-      );
-
-      const newCases = results.flatMap((r) => r.results);
-      setCases((prev) => {
-        const existingIds = new Set(prev.map((c) => c.id));
-        const unique = newCases.filter((c) => !existingIds.has(c.id));
-        return [...prev, ...unique].sort((a, b) => (b.id || 0) - (a.id || 0));
-      });
-
-      nextPageRef.current = endPage > 1 ? endPage - 1 : null;
-
-      // Se carregou tudo, salvar no cache
-      if (nextPageRef.current === null) {
-        setCases((prev) => {
-          setCasesCache(normalizedInstitutionId!, prev, totalCasesCount ?? prev.length);
-          return prev;
-        });
-      }
-    } catch (err) {
-      console.error("Erro ao carregar mais casos:", err);
-    } finally {
-      setIsLoadingMore(false);
-    }
-  }, [isLoadingMore, normalizedInstitutionId, totalCasesCount, sortDesc]);
-
   // Função para mostrar mais casos (paginação virtual)
   const showMoreCases = useCallback(() => {
     setVisibleCount((prev) => prev + 50);
@@ -696,7 +627,7 @@ export default function CasosPage() {
   // Ref para o elemento sentinela do infinite scroll
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
-  // Infinite scroll com IntersectionObserver (virtual + server)
+  // Infinite scroll com IntersectionObserver (paginação virtual apenas)
   useEffect(() => {
     const sentinel = loadMoreRef.current;
     if (!sentinel) return;
@@ -704,12 +635,8 @@ export default function CasosPage() {
     const observer = new IntersectionObserver(
       (entries) => {
         const entry = entries[0];
-        if (entry.isIntersecting) {
-          if (hasMoreToShow) {
-            showMoreCases();
-          } else if (hasMoreFromServer && !isLoadingMore) {
-            loadMoreFromServer();
-          }
+        if (entry.isIntersecting && hasMoreToShow) {
+          showMoreCases();
         }
       },
       { threshold: 0.1, rootMargin: "100px" }
@@ -720,7 +647,7 @@ export default function CasosPage() {
     return () => {
       observer.disconnect();
     };
-  }, [hasMoreToShow, hasMoreFromServer, isLoadingMore, showMoreCases, loadMoreFromServer]);
+  }, [hasMoreToShow, showMoreCases]);
 
   // Resetar visibleCount quando filtros mudam
   useEffect(() => {
@@ -1326,7 +1253,7 @@ export default function CasosPage() {
                   })}
                 </div>
               )}
-              {/* Sentinela para infinite scroll (virtual + server) */}
+              {/* Sentinela para paginação virtual */}
               {showSentinel && (
                 <div ref={loadMoreRef} className="py-4 text-center">
                   <div className="flex items-center justify-center gap-2 text-muted-foreground">
