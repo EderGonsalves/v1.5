@@ -68,6 +68,7 @@ export async function POST(request: NextRequest) {
   const fetchOptions: RequestInit = {
     method: allowedMethod,
     headers,
+    cache: "no-store",
   };
 
   if (data !== undefined && allowedMethod !== "GET" && allowedMethod !== "DELETE") {

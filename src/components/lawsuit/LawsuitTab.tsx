@@ -36,8 +36,10 @@ type LawsuitTabProps = {
   caseId: number;
   institutionId: number;
   initialCnj?: string;
+  initialTrackingActive?: boolean;
   initialNotes?: string;
   onNotesChange?: (notes: string) => void;
+  onTrackingActiveChange?: (active: boolean) => void;
 };
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof CheckCircle }> = {
@@ -79,7 +81,15 @@ function formatCnj(value: string): string {
   return formatted;
 }
 
-export function LawsuitTab({ caseId, institutionId, initialCnj, initialNotes, onNotesChange }: LawsuitTabProps) {
+export function LawsuitTab({
+  caseId,
+  institutionId,
+  initialCnj,
+  initialTrackingActive,
+  initialNotes,
+  onNotesChange,
+  onTrackingActiveChange,
+}: LawsuitTabProps) {
   const [tracking, setTracking] = useState<LawsuitTracking | null>(null);
   const [movements, setMovements] = useState<LawsuitMovement[]>([]);
   const [movementsCount, setMovementsCount] = useState(0);
@@ -96,6 +106,10 @@ export function LawsuitTab({ caseId, institutionId, initialCnj, initialNotes, on
   const [notes, setNotes] = useState(initialNotes || "");
   const [isSavingNotes, setIsSavingNotes] = useState(false);
   const [notesSaved, setNotesSaved] = useState(false);
+
+  // Estado de acompanhamento ativo (campo do caso, independente do tracking Codilo)
+  const [isTrackingActive, setIsTrackingActive] = useState(initialTrackingActive ?? false);
+  const [isTogglingActive, setIsTogglingActive] = useState(false);
 
   // Load tracking data
   const loadTracking = useCallback(async () => {
@@ -136,7 +150,35 @@ export function LawsuitTab({ caseId, institutionId, initialCnj, initialNotes, on
     loadTracking();
   }, [loadTracking]);
 
-  // Start monitoring
+  // Toggle acompanhamento ativo (campo do caso — independe de CNJ)
+  const handleToggleActive = async (active: boolean) => {
+    try {
+      setIsTogglingActive(true);
+      setError("");
+      await updateBaserowCase(caseId, {
+        lawsuit_tracking_active: active ? "true" : "false",
+      });
+      setIsTrackingActive(active);
+      onTrackingActiveChange?.(active);
+
+      // Se tem tracking Codilo, sincronizar o toggle
+      if (tracking) {
+        try {
+          const updated = await toggleTracking(tracking.id, active);
+          setTracking(updated);
+        } catch {
+          // Não bloquear — o campo do caso já foi atualizado
+        }
+      }
+    } catch (err) {
+      console.error("[LawsuitTab] Error toggling active:", err);
+      setError(err instanceof Error ? err.message : "Erro ao alternar");
+    } finally {
+      setIsTogglingActive(false);
+    }
+  };
+
+  // Start monitoring (requer CNJ válido)
   const handleStartMonitoring = async () => {
     const cnj = cnjInput.trim();
     if (!CNJ_REGEX.test(cnj)) {
@@ -149,6 +191,11 @@ export function LawsuitTab({ caseId, institutionId, initialCnj, initialNotes, on
       setError("");
       const result = await startMonitoring(caseId, cnj, institutionId);
       setTracking(result);
+      // Ativar acompanhamento automaticamente ao iniciar monitoramento
+      if (!isTrackingActive) {
+        setIsTrackingActive(true);
+        onTrackingActiveChange?.(true);
+      }
     } catch (err) {
       console.error("[LawsuitTab] Error starting monitoring:", err);
       setError(err instanceof Error ? err.message : "Erro ao iniciar monitoramento");
@@ -157,8 +204,8 @@ export function LawsuitTab({ caseId, institutionId, initialCnj, initialNotes, on
     }
   };
 
-  // Toggle active
-  const handleToggle = async (active: boolean) => {
+  // Toggle Codilo tracking active (quando já existe tracking)
+  const handleToggleCodilo = async (active: boolean) => {
     if (!tracking) return;
     try {
       setIsToggling(true);
@@ -246,210 +293,225 @@ export function LawsuitTab({ caseId, institutionId, initialCnj, initialNotes, on
     );
   }
 
-  // No tracking yet — show CNJ input form
-  if (!tracking) {
-    return (
-      <div className="rounded-lg border bg-card p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <Scale className="h-5 w-5 text-primary" />
-          <h3 className="font-semibold text-base">Acompanhamento Processual</h3>
-        </div>
-
-        <div className="max-w-md space-y-4">
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground uppercase tracking-wide">
-              Número CNJ
-            </Label>
-            <Input
-              value={cnjInput}
-              onChange={(e) => {
-                setCnjInput(formatCnj(e.target.value));
-                setError("");
-              }}
-              placeholder="0000000-00.0000.0.00.0000"
-              className="font-mono"
-            />
-            <p className="text-xs text-muted-foreground">
-              Formato: NNNNNNN-DD.AAAA.J.TR.OOOO
-            </p>
-          </div>
-
-          {error && (
-            <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
-              <AlertCircle className="h-4 w-4 flex-shrink-0" />
-              {error}
-            </div>
-          )}
-
-          <Button
-            onClick={handleStartMonitoring}
-            disabled={isStarting || !cnjInput.trim()}
-            className="w-full"
-          >
-            {isStarting ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <PlayCircle className="h-4 w-4 mr-2" />
-            )}
-            Iniciar Monitoramento
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  // Tracking exists — show status + movements
-  const statusConfig = STATUS_CONFIG[tracking.status] || STATUS_CONFIG.pending;
-  const StatusIcon = statusConfig.icon;
-  const isActive = tracking.is_active === "true";
+  const hasCodilo = tracking !== null;
+  const codiloStatusConfig = hasCodilo
+    ? STATUS_CONFIG[tracking.status] || STATUS_CONFIG.pending
+    : null;
+  const CodiloStatusIcon = codiloStatusConfig?.icon;
+  const isCodiloActive = hasCodilo && tracking.is_active === "true";
 
   return (
     <div className="space-y-4">
-      {/* Status Card */}
+      {/* Toggle principal do acompanhamento */}
       <div className="rounded-lg border bg-card p-5">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Scale className="h-5 w-5 text-primary" />
             <h3 className="font-semibold text-base">Acompanhamento Processual</h3>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={loadTracking}
-            className="h-8 w-8 p-0"
-          >
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          {/* CNJ */}
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground uppercase tracking-wide">
-              Número CNJ
-            </Label>
-            <p className="text-sm font-mono font-medium">{tracking.cnj}</p>
-          </div>
-
-          {/* Status */}
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground uppercase tracking-wide">
-              Status
-            </Label>
-            <div className="flex items-center gap-2">
-              <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium rounded-full ${statusConfig.color}`}>
-                <StatusIcon className="h-3 w-3" />
-                {statusConfig.label}
-              </span>
-            </div>
-          </div>
-
-          {/* Toggle */}
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground uppercase tracking-wide">
-              Monitoramento
-            </Label>
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={isActive}
-                onCheckedChange={handleToggle}
-                disabled={isToggling}
-              />
-              <span className="text-sm text-muted-foreground">
-                {isActive ? "Ativo" : "Inativo"}
-              </span>
-              {isToggling && <Loader2 className="h-3 w-3 animate-spin" />}
-            </div>
-          </div>
-
-          {/* Movements count */}
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground uppercase tracking-wide">
-              Movimentações
-            </Label>
-            <p className="text-sm font-medium">{tracking.movements_count || 0}</p>
-          </div>
-
-          {/* Error message */}
-          {tracking.error_message && (
-            <div className="col-span-2">
-              <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-md px-3 py-2">
-                <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                {tracking.error_message}
-              </div>
-            </div>
-          )}
-
-          {/* Last update */}
-          {tracking.last_update_at && (
-            <div className="col-span-2 space-y-1">
-              <Label className="text-xs text-muted-foreground uppercase tracking-wide">
-                Última Atualização
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                {new Date(tracking.last_update_at).toLocaleString("pt-BR")}
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* Action buttons */}
-        <div className="flex items-center gap-2 mt-4 pt-4 border-t">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleQuery}
-            disabled={isQuerying || !isActive}
-          >
-            {isQuerying ? (
-              <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-            ) : (
-              <Search className="h-4 w-4 mr-1.5" />
-            )}
-            Consultar Agora
-          </Button>
-
-          {!confirmDelete ? (
+          {hasCodilo && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setConfirmDelete(true)}
-              className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 ml-auto"
+              onClick={loadTracking}
+              className="h-8 w-8 p-0"
             >
-              <XCircle className="h-4 w-4 mr-1.5" />
-              Remover
+              <RefreshCw className="h-4 w-4" />
             </Button>
-          ) : (
-            <div className="flex items-center gap-2 ml-auto">
-              <span className="text-xs text-muted-foreground">Confirmar remoção?</span>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={handleDelete}
-                disabled={isDeleting}
-              >
-                {isDeleting ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  "Sim"
-                )}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setConfirmDelete(false)}
-              >
-                Não
-              </Button>
-            </div>
           )}
         </div>
 
-        {queryProgress && (
-          <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 mt-3 bg-blue-50 dark:bg-blue-900/20 rounded-md px-3 py-2">
-            {isQuerying && <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />}
-            {!isQuerying && <CheckCircle className="h-4 w-4 flex-shrink-0" />}
-            {queryProgress}
+        {/* Toggle ativar/desativar acompanhamento */}
+        <div className="flex items-center gap-3 pb-4 border-b mb-4">
+          <Switch
+            checked={isTrackingActive}
+            onCheckedChange={handleToggleActive}
+            disabled={isTogglingActive}
+          />
+          <div className="flex-1">
+            <span className={`text-sm font-medium ${isTrackingActive ? "text-green-700 dark:text-green-400" : "text-muted-foreground"}`}>
+              {isTrackingActive ? "Acompanhamento Ativo" : "Acompanhamento Inativo"}
+            </span>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {isTrackingActive
+                ? "O agente utilizará as informações do processo nas conversas"
+                : "Ative para que o agente acompanhe este caso"}
+            </p>
+          </div>
+          {isTogglingActive && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+        </div>
+
+        {/* CNJ + Monitoramento Codilo */}
+        {hasCodilo ? (
+          /* Tracking Codilo existe — mostrar status completo */
+          <>
+            <div className="grid grid-cols-2 gap-4">
+              {/* CNJ */}
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide">
+                  Número CNJ
+                </Label>
+                <p className="text-sm font-mono font-medium">{tracking.cnj}</p>
+              </div>
+
+              {/* Status */}
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide">
+                  Status Codilo
+                </Label>
+                <div className="flex items-center gap-2">
+                  {codiloStatusConfig && CodiloStatusIcon && (
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium rounded-full ${codiloStatusConfig.color}`}>
+                      <CodiloStatusIcon className="h-3 w-3" />
+                      {codiloStatusConfig.label}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Toggle Codilo */}
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide">
+                  Monitoramento CNJ
+                </Label>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={isCodiloActive}
+                    onCheckedChange={handleToggleCodilo}
+                    disabled={isToggling}
+                  />
+                  <span className="text-sm text-muted-foreground">
+                    {isCodiloActive ? "Ativo" : "Inativo"}
+                  </span>
+                  {isToggling && <Loader2 className="h-3 w-3 animate-spin" />}
+                </div>
+              </div>
+
+              {/* Movements count */}
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide">
+                  Movimentações
+                </Label>
+                <p className="text-sm font-medium">{tracking.movements_count || 0}</p>
+              </div>
+
+              {/* Error message */}
+              {tracking.error_message && (
+                <div className="col-span-2">
+                  <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-md px-3 py-2">
+                    <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                    {tracking.error_message}
+                  </div>
+                </div>
+              )}
+
+              {/* Last update */}
+              {tracking.last_update_at && (
+                <div className="col-span-2 space-y-1">
+                  <Label className="text-xs text-muted-foreground uppercase tracking-wide">
+                    Última Atualização
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(tracking.last_update_at).toLocaleString("pt-BR")}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex items-center gap-2 mt-4 pt-4 border-t">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleQuery}
+                disabled={isQuerying || !isCodiloActive}
+              >
+                {isQuerying ? (
+                  <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                ) : (
+                  <Search className="h-4 w-4 mr-1.5" />
+                )}
+                Consultar Agora
+              </Button>
+
+              {!confirmDelete ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setConfirmDelete(true)}
+                  className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 ml-auto"
+                >
+                  <XCircle className="h-4 w-4 mr-1.5" />
+                  Remover
+                </Button>
+              ) : (
+                <div className="flex items-center gap-2 ml-auto">
+                  <span className="text-xs text-muted-foreground">Confirmar remoção?</span>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleDelete}
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      "Sim"
+                    )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setConfirmDelete(false)}
+                  >
+                    Não
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {queryProgress && (
+              <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 mt-3 bg-blue-50 dark:bg-blue-900/20 rounded-md px-3 py-2">
+                {isQuerying && <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />}
+                {!isQuerying && <CheckCircle className="h-4 w-4 flex-shrink-0" />}
+                {queryProgress}
+              </div>
+            )}
+          </>
+        ) : (
+          /* Sem tracking Codilo — formulário para adicionar CNJ (opcional) */
+          <div className="max-w-md space-y-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground uppercase tracking-wide">
+                Número CNJ (opcional)
+              </Label>
+              <Input
+                value={cnjInput}
+                onChange={(e) => {
+                  setCnjInput(formatCnj(e.target.value));
+                  setError("");
+                }}
+                placeholder="0000000-00.0000.0.00.0000"
+                className="font-mono"
+              />
+              <p className="text-xs text-muted-foreground">
+                Se informado, o sistema monitora movimentações automaticamente via Codilo
+              </p>
+            </div>
+
+            <Button
+              onClick={handleStartMonitoring}
+              disabled={isStarting || !cnjInput.trim()}
+              variant="outline"
+              size="sm"
+            >
+              {isStarting ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <PlayCircle className="h-4 w-4 mr-2" />
+              )}
+              Iniciar Monitoramento CNJ
+            </Button>
           </div>
         )}
 
@@ -461,7 +523,7 @@ export function LawsuitTab({ caseId, institutionId, initialCnj, initialNotes, on
         )}
       </div>
 
-      {/* Notes + Movements */}
+      {/* Notes + Movements (sempre visível) */}
       <div className="rounded-lg border bg-card p-5 space-y-5">
         {/* Case Notes */}
         <div>
@@ -477,7 +539,7 @@ export function LawsuitTab({ caseId, institutionId, initialCnj, initialNotes, on
               setNotes(e.target.value);
               setNotesSaved(false);
             }}
-            placeholder="Anotações sobre o processo..."
+            placeholder="Anotações sobre o processo... O agente utilizará estas informações quando o acompanhamento estiver ativo."
             className="min-h-[100px] resize-y"
           />
           <div className="flex items-center justify-end mt-2">
@@ -500,17 +562,20 @@ export function LawsuitTab({ caseId, institutionId, initialCnj, initialNotes, on
           </div>
         </div>
 
-        <div className="border-t" />
-
-        {/* Movements Timeline */}
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-base">
-              Movimentações {movementsCount > 0 && `(${movementsCount})`}
-            </h3>
-          </div>
-          <MovementTimeline movements={movements} isLoading={isLoadingMovements} />
-        </div>
+        {/* Movements Timeline (só exibe se tem tracking Codilo) */}
+        {hasCodilo && (
+          <>
+            <div className="border-t" />
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-base">
+                  Movimentações {movementsCount > 0 && `(${movementsCount})`}
+                </h3>
+              </div>
+              <MovementTimeline movements={movements} isLoading={isLoadingMovements} />
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

@@ -71,11 +71,20 @@ export const Header = () => {
     };
 
     const normalizePhone = (row: BaserowConfigRow): string => {
-      const waba =
-        (row["body.waba_phone_number"] as string | undefined) ??
-        (row["body.tenant.wabaPhoneNumber"] as string | undefined) ??
-        "";
-      return waba.trim();
+      const record = row as Record<string, unknown>;
+      // Verificar todos os candidatos de campo WABA (ordem: canônico → legado)
+      for (const field of [
+        "waba_phone_number",
+        "body.waba_phone_number",
+        "body.tenant.wabaPhoneNumber",
+        "body.tenant.phoneNumber",
+      ]) {
+        const val = record[field];
+        if (typeof val === "string" && val.trim()) {
+          return val.trim();
+        }
+      }
+      return "";
     };
 
     const normalizeAgentStates = (states: AgentStateRow[], target: string) => {
@@ -112,16 +121,13 @@ export const Header = () => {
         const hasIaAtivada = iaAtivada !== "" && iaAtivada !== "null" && iaAtivada !== "undefined";
         const iaAtivadaValue = iaAtivada === "sim" || iaAtivada === "yes" || iaAtivada === "true";
 
-        if (!normalizedPhone) {
-          setIsAgentConnected(false);
-          return;
-        }
-
         let nextState = false;
 
         if (hasIaAtivada) {
+          // ia_ativada é a fonte autoritativa — usar independente do telefone
           nextState = iaAtivadaValue;
-        } else {
+        } else if (normalizedPhone) {
+          // Fallback legado: verificar tabela de agent_state pelo telefone
           try {
             const agentStates = await getAgentStateRows(normalizedPhone);
             if (isCancelled) return;

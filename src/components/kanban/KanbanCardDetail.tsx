@@ -853,8 +853,12 @@ export function KanbanCardDetail({
                     : Number(caseData["body.auth.institutionId"]) || 0)
                 }
                 initialCnj={caseData.cnj_number || undefined}
+                initialTrackingActive={caseData.lawsuit_tracking_active === "true"}
                 initialNotes={mergedNotas}
                 onNotesChange={(notes) => onCaseUpdate?.(caseData.id, { notas_caso: notes })}
+                onTrackingActiveChange={(active) =>
+                  onCaseUpdate?.(caseData.id, { lawsuit_tracking_active: active ? "true" : "false" })
+                }
               />
             </TabsContent>
 
