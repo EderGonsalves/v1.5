@@ -122,6 +122,7 @@ export type BaserowUserRow = {
   is_active?: boolean;
   is_office_admin?: boolean;
   receives_cases?: boolean;
+  agenda_enabled?: boolean;
   created_at?: string;
   updated_at?: string;
   [key: string]: unknown;
@@ -136,6 +137,7 @@ export type UserPublicRow = {
   isActive: boolean;
   isOfficeAdmin: boolean;
   receivesCases: boolean;
+  agendaEnabled: boolean;
   institutionId?: number;
 };
 
@@ -334,6 +336,7 @@ function mapUserRow(r: typeof usersTable.$inferSelect): BaserowUserRow {
     is_active: r.isActive ?? undefined,
     is_office_admin: r.isOfficeAdmin ?? undefined,
     receives_cases: r.receivesCases ?? undefined,
+    agenda_enabled: r.agendaEnabled ?? undefined,
     created_at: r.createdAt?.toISOString() ?? undefined,
     updated_at: r.updatedAt?.toISOString() ?? undefined,
     institution_id: r.institutionId ? Number(r.institutionId) : undefined,
@@ -1640,6 +1643,7 @@ const toUserPublic = (row: BaserowUserRow): UserPublicRow => {
     isActive: isActiveValue(row.is_active),
     isOfficeAdmin: row.is_office_admin === true,
     receivesCases: row.receives_cases === true || String(row.receives_cases) === "true",
+    agendaEnabled: row.agenda_enabled === true || String(row.agenda_enabled) === "true",
     institutionId: Number.isFinite(instId) && instId > 0 ? instId : undefined,
   };
 };
@@ -1714,6 +1718,7 @@ export const createInstitutionUser = async (
     phone?: string;
     oab?: string;
     isOfficeAdmin?: boolean;
+    agendaEnabled?: boolean;
   },
 ): Promise<UserPublicRow> => {
   const normalizedEmail = data.email.trim().toLowerCase();
@@ -1747,6 +1752,7 @@ export const createInstitutionUser = async (
           isActive: true,
           isOfficeAdmin: data.isOfficeAdmin === true,
           receivesCases: false,
+          agendaEnabled: data.agendaEnabled === true,
           phone: data.phone?.trim() ?? null,
           oab: data.oab?.trim() ?? null,
           createdAt: now,
@@ -1795,6 +1801,7 @@ export const createInstitutionUser = async (
     is_active: true,
     is_office_admin: data.isOfficeAdmin === true,
     receives_cases: false,
+    agenda_enabled: data.agendaEnabled === true,
     created_at: now,
     updated_at: now,
   };
@@ -1829,6 +1836,7 @@ export const updateInstitutionUser = async (
     isActive?: boolean;
     isOfficeAdmin?: boolean;
     receivesCases?: boolean;
+    agendaEnabled?: boolean;
   },
 ): Promise<UserPublicRow> => {
   // --- Drizzle branch ---
@@ -1877,13 +1885,14 @@ export const updateInstitutionUser = async (
       if (data.isActive !== undefined) setFields.isActive = data.isActive;
       if (data.isOfficeAdmin !== undefined) setFields.isOfficeAdmin = data.isOfficeAdmin;
       if (data.receivesCases !== undefined) setFields.receivesCases = data.receivesCases;
-  
+      if (data.agendaEnabled !== undefined) setFields.agendaEnabled = data.agendaEnabled;
+
       const updated = await db
         .update(usersTable)
         .set(setFields)
         .where(eq(usersTable.id, userId))
         .returning();
-  
+
       invalidateUsersCache(institutionId);
       return toUserPublic(mapUserRow(updated[0]));
     });
@@ -1927,6 +1936,7 @@ export const updateInstitutionUser = async (
   if (data.isActive !== undefined) payload.is_active = data.isActive;
   if (data.isOfficeAdmin !== undefined) payload.is_office_admin = data.isOfficeAdmin;
   if (data.receivesCases !== undefined) payload.receives_cases = data.receivesCases;
+  if (data.agendaEnabled !== undefined) payload.agenda_enabled = data.agendaEnabled;
 
   const client = baserowClient();
   const response = await client.patch<BaserowUserRow>(

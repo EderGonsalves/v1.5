@@ -69,11 +69,13 @@ export const fetchCalendarEvents = async (options: {
   institutionId: number;
   start?: string;
   end?: string;
+  userId?: number;
 }): Promise<CalendarEvent[]> => {
   const query = buildQuery({
     institutionId: options.institutionId,
     start: options.start,
     end: options.end,
+    userId: options.userId,
   });
   return handleResponse<CalendarEvent[]>(
     await fetch(`/api/v1/calendar/events${query}`, {

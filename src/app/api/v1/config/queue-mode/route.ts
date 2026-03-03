@@ -51,9 +51,9 @@ export async function PATCH(request: NextRequest) {
   }
 
   const { queueMode } = body as { queueMode?: string };
-  if (queueMode !== "round_robin" && queueMode !== "manual") {
+  if (queueMode !== "round_robin" && queueMode !== "manual" && queueMode !== "round_robin_agenda") {
     return NextResponse.json(
-      { error: "queueMode deve ser 'round_robin' ou 'manual'" },
+      { error: "queueMode deve ser 'round_robin', 'manual' ou 'round_robin_agenda'" },
       { status: 400 },
     );
   }

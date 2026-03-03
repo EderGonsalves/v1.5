@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   fetchCalendarSettings,
   upsertCalendarSettings,
+  deleteUserCalendarSettings,
   type CalendarSettingsRow,
 } from "@/services/calendar-settings";
 import { getCalendarAuth } from "@/lib/calendar/request";
@@ -40,6 +41,7 @@ const normalizeSettings = (row: CalendarSettingsRow) => ({
   meet_link: row.meet_link ?? "",
   created_at: row.created_at,
   updated_at: row.updated_at,
+  user_id: row.user_id ?? null,
 });
 
 // ---------------------------------------------------------------------------
@@ -53,7 +55,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const settings = await fetchCalendarSettings(auth.institutionId);
+    const userIdParam = request.nextUrl.searchParams.get("userId");
+    const userId = userIdParam ? Number(userIdParam) : undefined;
+
+    const settings = await fetchCalendarSettings(auth.institutionId, userId);
     return NextResponse.json({
       settings: settings ? normalizeSettings(settings) : null,
     });
@@ -74,6 +79,9 @@ export async function PUT(request: NextRequest) {
 
   try {
     const body = await request.json();
+
+    const userIdParam = request.nextUrl.searchParams.get("userId");
+    const userId = userIdParam ? Number(userIdParam) : undefined;
 
     // Validate numeric fields
     const numericFields = [
@@ -128,13 +136,42 @@ export async function PUT(request: NextRequest) {
     delete body.institution_id;
     delete body.created_at;
     delete body.updated_at;
+    delete body.user_id;
 
-    const settings = await upsertCalendarSettings(auth.institutionId, body);
+    const settings = await upsertCalendarSettings(auth.institutionId, body, userId);
     return NextResponse.json({ settings: normalizeSettings(settings) });
   } catch (err) {
     console.error("Erro ao salvar calendar settings:", err);
     return NextResponse.json(
       { error: "Erro ao salvar configurações da agenda" },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  const auth = getCalendarAuth(request);
+  if (!auth) {
+    return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  }
+
+  try {
+    const userIdParam = request.nextUrl.searchParams.get("userId");
+    const userId = userIdParam ? Number(userIdParam) : undefined;
+
+    if (!userId) {
+      return NextResponse.json(
+        { error: "userId é obrigatório para deletar settings de usuário" },
+        { status: 400 },
+      );
+    }
+
+    const deleted = await deleteUserCalendarSettings(auth.institutionId, userId);
+    return NextResponse.json({ deleted });
+  } catch (err) {
+    console.error("Erro ao deletar calendar settings:", err);
+    return NextResponse.json(
+      { error: "Erro ao deletar configurações da agenda" },
       { status: 500 },
     );
   }

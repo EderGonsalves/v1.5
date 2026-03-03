@@ -40,6 +40,7 @@ export const createUserClient = async (payload: {
   oab?: string;
   institutionId?: number;
   isOfficeAdmin?: boolean;
+  agendaEnabled?: boolean;
 }): Promise<UserPublicRow> => {
   const data = await handleResponse<{ user: UserPublicRow }>(
     await fetch("/api/v1/users", {
@@ -62,6 +63,7 @@ export const updateUserClient = async (
     isActive?: boolean;
     isOfficeAdmin?: boolean;
     receivesCases?: boolean;
+    agendaEnabled?: boolean;
   },
 ): Promise<UserPublicRow> => {
   const data = await handleResponse<{ user: UserPublicRow }>(

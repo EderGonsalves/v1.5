@@ -18,6 +18,7 @@ const createUserSchema = z.object({
   oab: z.string().max(50).optional(),
   institutionId: z.number().int().positive().optional(),
   isOfficeAdmin: z.boolean().optional(),
+  agendaEnabled: z.boolean().optional(),
 });
 
 export async function GET(request: NextRequest) {
@@ -80,10 +81,11 @@ export async function POST(request: NextRequest) {
         ? parsed.data.institutionId
         : auth.institutionId;
 
-    const { institutionId: _, isOfficeAdmin, ...userData } = parsed.data;
+    const { institutionId: _, isOfficeAdmin, agendaEnabled, ...userData } = parsed.data;
     const user = await createInstitutionUser(targetInstitutionId, {
       ...userData,
       isOfficeAdmin,
+      agendaEnabled,
     });
     return NextResponse.json({ user }, { status: 201 });
   } catch (error) {

@@ -1,6 +1,6 @@
 import { getBaserowConfigs } from "@/services/api";
 
-export type QueueMode = "round_robin" | "manual";
+export type QueueMode = "round_robin" | "manual" | "round_robin_agenda";
 
 /**
  * Fetch the queue_mode for a given institution from Config table (224).
@@ -29,6 +29,7 @@ export async function getQueueMode(institutionId: number): Promise<QueueMode> {
           : undefined;
 
   if (modeValue === "manual") return "manual";
+  if (modeValue === "round_robin_agenda") return "round_robin_agenda";
   return "round_robin";
 }
 

@@ -572,6 +572,37 @@ if (
 
 const _isServer = typeof window === "undefined";
 
+// ---------------------------------------------------------------------------
+// Circuit breaker para Baserow API (server-side)
+// Quando chamadas falham, bloqueia novas requisições por BREAKER_COOLDOWN_MS
+// para não sobrecarregar o Baserow/PostgreSQL em cascata.
+// ---------------------------------------------------------------------------
+let _baserowFailedAt = 0;
+let _baserowConsecutiveFailures = 0;
+const BREAKER_COOLDOWN_MS = 30_000; // 30s de cooldown após falha
+const BREAKER_FAILURE_THRESHOLD = 2; // abre após 2 falhas consecutivas
+
+function _baserowBreakerIsOpen(): boolean {
+  if (!_isServer) return false;
+  if (_baserowConsecutiveFailures < BREAKER_FAILURE_THRESHOLD) return false;
+  return Date.now() - _baserowFailedAt < BREAKER_COOLDOWN_MS;
+}
+
+function _baserowBreakerOnSuccess(): void {
+  _baserowConsecutiveFailures = 0;
+}
+
+function _baserowBreakerOnFailure(): void {
+  _baserowConsecutiveFailures++;
+  _baserowFailedAt = Date.now();
+  if (_baserowConsecutiveFailures === BREAKER_FAILURE_THRESHOLD) {
+    console.warn(
+      `[Baserow] Circuit breaker ABERTO — ${BREAKER_FAILURE_THRESHOLD} falhas consecutivas, ` +
+      `bloqueando chamadas por ${BREAKER_COOLDOWN_MS / 1000}s`,
+    );
+  }
+}
+
 class BaserowHttpError extends Error {
   status: number;
   responseData: unknown;
@@ -610,29 +641,68 @@ async function _handleProxyResponse<T>(resp: Response): Promise<{ data: T; statu
 
 export async function baserowGet<T = unknown>(url: string, timeout = 30000): Promise<{ data: T; status: number }> {
   if (_isServer) {
-    return axios.get<T>(url, { headers: _baserowHeaders(), timeout });
+    if (_baserowBreakerIsOpen()) {
+      throw new BaserowHttpError("Baserow circuit breaker aberto", 503);
+    }
+    try {
+      const result = await axios.get<T>(url, { headers: _baserowHeaders(), timeout });
+      _baserowBreakerOnSuccess();
+      return result;
+    } catch (err) {
+      _baserowBreakerOnFailure();
+      throw err;
+    }
   }
   return _handleProxyResponse<T>(await _proxyFetch(url, "GET"));
 }
 
 export async function baserowPost<T = unknown>(url: string, body: unknown, timeout = 30000): Promise<{ data: T; status: number }> {
   if (_isServer) {
-    return axios.post<T>(url, body, { headers: _baserowHeaders(), timeout });
+    if (_baserowBreakerIsOpen()) {
+      throw new BaserowHttpError("Baserow circuit breaker aberto", 503);
+    }
+    try {
+      const result = await axios.post<T>(url, body, { headers: _baserowHeaders(), timeout });
+      _baserowBreakerOnSuccess();
+      return result;
+    } catch (err) {
+      _baserowBreakerOnFailure();
+      throw err;
+    }
   }
   return _handleProxyResponse<T>(await _proxyFetch(url, "POST", body));
 }
 
 export async function baserowPatch<T = unknown>(url: string, body: unknown, timeout = 30000): Promise<{ data: T; status: number }> {
   if (_isServer) {
-    return axios.patch<T>(url, body, { headers: _baserowHeaders(), timeout });
+    if (_baserowBreakerIsOpen()) {
+      throw new BaserowHttpError("Baserow circuit breaker aberto", 503);
+    }
+    try {
+      const result = await axios.patch<T>(url, body, { headers: _baserowHeaders(), timeout });
+      _baserowBreakerOnSuccess();
+      return result;
+    } catch (err) {
+      _baserowBreakerOnFailure();
+      throw err;
+    }
   }
   return _handleProxyResponse<T>(await _proxyFetch(url, "PATCH", body));
 }
 
 export async function baserowDelete(url: string, timeout = 30000): Promise<void> {
   if (_isServer) {
-    await axios.delete(url, { headers: _baserowHeaders(), timeout });
-    return;
+    if (_baserowBreakerIsOpen()) {
+      throw new BaserowHttpError("Baserow circuit breaker aberto", 503);
+    }
+    try {
+      await axios.delete(url, { headers: _baserowHeaders(), timeout });
+      _baserowBreakerOnSuccess();
+      return;
+    } catch (err) {
+      _baserowBreakerOnFailure();
+      throw err;
+    }
   }
   const resp = await _proxyFetch(url, "DELETE");
   if (!resp.ok && resp.status !== 204) {
@@ -3415,6 +3485,7 @@ export type CalendarEventGuestRow = {
 
 export type ListCalendarEventsParams = {
   institutionId?: number;
+  userId?: number;
   start?: string;
   end?: string;
   pageSize?: number;
@@ -3606,6 +3677,9 @@ export const listCalendarEvents = async (
       if (params.institutionId) {
         conditions.push(eq(eventsTable.institutionID, String(params.institutionId)));
       }
+      if (params.userId) {
+        conditions.push(eq(eventsTable.userId, String(params.userId)));
+      }
       const rows = await db
         .select()
         .from(eventsTable)
@@ -3632,6 +3706,13 @@ export const listCalendarEvents = async (
       baseUrl.searchParams.set(
         "filter__InstitutionID__equal",
         String(params.institutionId),
+      );
+    }
+
+    if (params.userId) {
+      baseUrl.searchParams.set(
+        "filter__user_id__equal",
+        String(params.userId),
       );
     }
 

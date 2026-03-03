@@ -4,12 +4,13 @@ import axios from "axios";
 import { getRequestAuth } from "@/lib/auth/session";
 import { getQueueMode } from "@/lib/queue-mode";
 import { createAssignmentGhostMessage } from "@/lib/chat/assignment-message";
-import { fetchInstitutionUsers } from "@/services/permissions";
+import { fetchInstitutionUsers, type UserPublicRow } from "@/services/permissions";
 import { updateBaserowCase } from "@/services/api";
 import type { BaserowCaseRow } from "@/services/api";
 import { fetchDepartmentUserIds } from "@/services/departments";
 import { getPhoneDepartmentMap } from "@/lib/waba";
-import { fetchQueueRecords, recordAssignmentsBatch, pickNextUser } from "@/services/assignment-queue";
+import { fetchQueueRecords, recordAssignmentsBatch, pickNextUser, pickNextUserWithAvailability } from "@/services/assignment-queue";
+import { checkBatchAvailability, type UserAvailabilityMap } from "@/services/user-availability";
 
 const BASEROW_API_URL =
   process.env.BASEROW_API_URL ||
@@ -84,6 +85,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ assigned: [], skipped: true, reason: "manual_queue_mode" });
   }
 
+  const useAgendaCheck = queueMode === "round_robin_agenda";
+
   // Throttle check
   const lastRun = lastRunMap.get(institutionId) ?? 0;
   if (Date.now() - lastRun < THROTTLE_MS) {
@@ -115,6 +118,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ assigned: [] });
     }
 
+    // Pre-compute availability map (1 batch call) for round_robin_agenda mode
+    let availability: UserAvailabilityMap | null = null;
+    if (useAgendaCheck) {
+      try {
+        availability = await checkBatchAvailability(eligibleUsers, institutionId);
+      } catch (err) {
+        console.error("[auto-assign] Erro ao verificar disponibilidade, fallback round-robin puro:", err);
+        availability = null;
+      }
+    }
+
+    // Helper: pick user with or without availability check
+    const pickUser = (candidates: UserPublicRow[]): UserPublicRow | null => {
+      if (availability) {
+        return pickNextUserWithAvailability(candidates, queueRecords, availability);
+      }
+      return pickNextUser(candidates, queueRecords);
+    };
+
     // Cache dept user lookups to avoid repeated API calls for same dept
     const deptUsersCache = new Map<number, number[]>();
 
@@ -124,6 +146,7 @@ export async function POST(request: NextRequest) {
       userName: string;
       departmentName?: string | null;
     }> = [];
+    let skippedByAvailability = 0;
 
     // Accumulate assignments for batch update at the end
     const pendingAssignments: Array<{ userId: number; institutionId: number }> = [];
@@ -132,7 +155,7 @@ export async function POST(request: NextRequest) {
       try {
         let assignDeptId: number | null = null;
         let assignDeptName: string | null = null;
-        let targetUser;
+        let targetUser: UserPublicRow | null = null;
 
         // Preservar departamento já definido manualmente (não sobrescrever)
         const existingDeptId = Number(caseRow.department_id);
@@ -153,13 +176,13 @@ export async function POST(request: NextRequest) {
               deptUserIds!.includes(u.id),
             );
             if (deptEligibleUsers.length > 0) {
-              targetUser = pickNextUser(deptEligibleUsers, queueRecords);
+              targetUser = pickUser(deptEligibleUsers);
             } else {
               // Nenhum elegível no departamento — round-robin global
-              targetUser = pickNextUser(eligibleUsers, queueRecords);
+              targetUser = pickUser(eligibleUsers);
             }
           } catch {
-            targetUser = pickNextUser(eligibleUsers, queueRecords);
+            targetUser = pickUser(eligibleUsers);
           }
         } else {
           // Caso sem departamento — tentar mapear pelo telefone
@@ -182,19 +205,25 @@ export async function POST(request: NextRequest) {
                   deptUserIds!.includes(u.id),
                 );
                 if (deptEligibleUsers.length > 0) {
-                  targetUser = pickNextUser(deptEligibleUsers, queueRecords);
+                  targetUser = pickUser(deptEligibleUsers);
                 } else {
-                  targetUser = pickNextUser(eligibleUsers, queueRecords);
+                  targetUser = pickUser(eligibleUsers);
                 }
               } catch {
-                targetUser = pickNextUser(eligibleUsers, queueRecords);
+                targetUser = pickUser(eligibleUsers);
               }
             } else {
-              targetUser = pickNextUser(eligibleUsers, queueRecords);
+              targetUser = pickUser(eligibleUsers);
             }
           } else {
-            targetUser = pickNextUser(eligibleUsers, queueRecords);
+            targetUser = pickUser(eligibleUsers);
           }
+        }
+
+        // If no user available (all busy, no future slots) → skip case
+        if (!targetUser) {
+          skippedByAvailability++;
+          continue;
         }
 
         await updateBaserowCase(caseRow.id, {
@@ -257,7 +286,10 @@ export async function POST(request: NextRequest) {
       console.error("Erro ao registrar assignments em batch:", err),
     );
 
-    return NextResponse.json({ assigned });
+    return NextResponse.json({
+      assigned,
+      ...(skippedByAvailability > 0 ? { skippedByAvailability } : {}),
+    });
   } catch (err) {
     console.error("Erro no auto-assign:", err);
     return NextResponse.json(

@@ -46,6 +46,7 @@ export type CalendarSettingsRow = {
   meet_link: string;
   created_at: string;
   updated_at: string;
+  user_id?: number | null;
 };
 
 export type CalendarSettingsInput = Omit<
@@ -79,39 +80,93 @@ const baserowClient = () => {
 // CRUD
 // ---------------------------------------------------------------------------
 
+/**
+ * Fetch calendar settings for an institution, optionally for a specific user.
+ * When userId is provided, tries user-specific settings first, then falls back
+ * to institutional settings (user_id IS NULL).
+ */
 export async function fetchCalendarSettings(
   institutionId: number,
+  userId?: number,
 ): Promise<CalendarSettingsRow | null> {
   const client = baserowClient();
+
+  if (userId) {
+    // Try user-specific settings first
+    const userParams = new URLSearchParams({
+      user_field_names: "true",
+      size: "1",
+    });
+    userParams.append("filter__institution_id__equal", String(institutionId));
+    userParams.append("filter__user_id__equal", String(userId));
+
+    const userUrl = `/database/rows/table/${TABLE_ID}/?${userParams.toString()}`;
+    const userResponse = await client.get<{ results?: CalendarSettingsRow[] }>(userUrl);
+    const userRows = userResponse.data.results ?? [];
+    if (userRows[0]) return userRows[0];
+  }
+
+  // Institutional settings (user_id is empty/null)
   const params = new URLSearchParams({
     user_field_names: "true",
-    size: "1",
+    size: "10",
   });
   params.append("filter__institution_id__equal", String(institutionId));
 
   const url = `/database/rows/table/${TABLE_ID}/?${params.toString()}`;
   const response = await client.get<{ results?: CalendarSettingsRow[] }>(url);
   const rows = response.data.results ?? [];
-  return rows[0] ?? null;
+  // Return the row without user_id (institutional default)
+  const institutional = rows.find(
+    (r) => r.user_id === null || r.user_id === undefined || r.user_id === 0,
+  );
+  return institutional ?? rows[0] ?? null;
 }
 
 export async function upsertCalendarSettings(
   institutionId: number,
   data: Partial<CalendarSettingsInput>,
+  userId?: number,
 ): Promise<CalendarSettingsRow> {
-  const existing = await fetchCalendarSettings(institutionId);
+  const client = baserowClient();
   const now = new Date().toISOString();
+
+  // Find existing row matching institution + user
+  let existing: CalendarSettingsRow | null = null;
+  if (userId) {
+    const userParams = new URLSearchParams({
+      user_field_names: "true",
+      size: "1",
+    });
+    userParams.append("filter__institution_id__equal", String(institutionId));
+    userParams.append("filter__user_id__equal", String(userId));
+    const userUrl = `/database/rows/table/${TABLE_ID}/?${userParams.toString()}`;
+    const userResponse = await client.get<{ results?: CalendarSettingsRow[] }>(userUrl);
+    const userRows = userResponse.data.results ?? [];
+    existing = userRows[0] ?? null;
+  } else {
+    // Find institutional row (no user_id)
+    const params = new URLSearchParams({
+      user_field_names: "true",
+      size: "10",
+    });
+    params.append("filter__institution_id__equal", String(institutionId));
+    const url = `/database/rows/table/${TABLE_ID}/?${params.toString()}`;
+    const response = await client.get<{ results?: CalendarSettingsRow[] }>(url);
+    const rows = response.data.results ?? [];
+    existing = rows.find(
+      (r) => r.user_id === null || r.user_id === undefined || r.user_id === 0,
+    ) ?? null;
+  }
 
   if (existing) {
     // Update
-    const client = baserowClient();
     const url = `/database/rows/table/${TABLE_ID}/${existing.id}/?user_field_names=true`;
     const payload: Record<string, unknown> = { ...data, updated_at: now };
     const response = await client.patch<CalendarSettingsRow>(url, payload);
     return response.data;
   } else {
     // Create with defaults
-    const client = baserowClient();
     const url = `/database/rows/table/${TABLE_ID}/?user_field_names=true`;
     const defaults: Record<string, unknown> = {
       institution_id: institutionId,
@@ -138,7 +193,35 @@ export async function upsertCalendarSettings(
       updated_at: now,
       ...data,
     };
+    if (userId) {
+      defaults.user_id = userId;
+    }
     const response = await client.post<CalendarSettingsRow>(url, defaults);
     return response.data;
   }
+}
+
+/**
+ * Delete user-specific settings row, reverting to institutional defaults.
+ */
+export async function deleteUserCalendarSettings(
+  institutionId: number,
+  userId: number,
+): Promise<boolean> {
+  const client = baserowClient();
+  const params = new URLSearchParams({
+    user_field_names: "true",
+    size: "1",
+  });
+  params.append("filter__institution_id__equal", String(institutionId));
+  params.append("filter__user_id__equal", String(userId));
+
+  const url = `/database/rows/table/${TABLE_ID}/?${params.toString()}`;
+  const response = await client.get<{ results?: CalendarSettingsRow[] }>(url);
+  const rows = response.data.results ?? [];
+  if (rows[0]) {
+    await client.delete(`/database/rows/table/${TABLE_ID}/${rows[0].id}/`);
+    return true;
+  }
+  return false;
 }

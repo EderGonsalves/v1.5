@@ -41,7 +41,10 @@ import type { CalendarSettingsRow } from "@/services/calendar-settings";
 import {
   fetchCalendarSettingsClient,
   updateCalendarSettingsClient,
+  deleteUserCalendarSettingsClient,
 } from "@/services/calendar-settings-client";
+import { useUsers } from "@/hooks/use-users";
+import type { UserPublicRow } from "@/services/permissions";
 
 const formatDateOnly = (date: Date): string => {
   const iso = date.toISOString();
@@ -152,6 +155,8 @@ type EventFormDialogProps = {
   defaultTimezone: string;
   errorMessage: string | null;
   isLoadingDetails?: boolean;
+  agendaUsers?: UserPublicRow[];
+  defaultUserId?: number;
 };
 
 const mapGuestsFromEvent = (event?: CalendarEvent | null): EventFormValues["guests"] => {
@@ -219,7 +224,10 @@ const EventFormDialog = ({
   defaultTimezone,
   errorMessage,
   isLoadingDetails = false,
+  agendaUsers = [],
+  defaultUserId,
 }: EventFormDialogProps) => {
+  const [formUserId, setFormUserId] = useState<number | undefined>(defaultUserId);
   const form = useForm<EventFormValues>({
     resolver: zodResolver(eventFormSchema),
     defaultValues: buildDefaultFormValues(event, defaultTimezone),
@@ -236,8 +244,9 @@ const EventFormDialog = ({
   useEffect(() => {
     if (open) {
       form.reset(buildDefaultFormValues(event, defaultTimezone));
+      setFormUserId(defaultUserId);
     }
-  }, [open, event, defaultTimezone, form]);
+  }, [open, event, defaultTimezone, form, defaultUserId]);
 
   const handleAddGuest = () => {
     appendGuest({ name: "", email: "", phone: "" });
@@ -266,6 +275,7 @@ const EventFormDialog = ({
         : undefined,
       notify_by_email: values.notify_by_email,
       notify_by_phone: values.notify_by_phone,
+      user_id: formUserId,
     };
 
     const guests: CalendarGuestInput[] = values.guests
@@ -332,15 +342,37 @@ const EventFormDialog = ({
                 )}
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="timezone">Timezone (IANA)</Label>
-              <Input
-                id="timezone"
-                placeholder="America/Sao_Paulo"
-                {...form.register("timezone")}
-              />
-              {form.formState.errors.timezone && (
-                <p className="text-sm text-red-500">{form.formState.errors.timezone.message}</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="timezone">Timezone (IANA)</Label>
+                <Input
+                  id="timezone"
+                  placeholder="America/Sao_Paulo"
+                  {...form.register("timezone")}
+                />
+                {form.formState.errors.timezone && (
+                  <p className="text-sm text-red-500">{form.formState.errors.timezone.message}</p>
+                )}
+              </div>
+              {agendaUsers.length > 0 && (
+                <div className="space-y-2">
+                  <Label htmlFor="user_id">Responsável</Label>
+                  <select
+                    id="user_id"
+                    value={formUserId ?? ""}
+                    onChange={(e) =>
+                      setFormUserId(e.target.value ? Number(e.target.value) : undefined)
+                    }
+                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="">Sem responsável</option>
+                    {agendaUsers.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name || u.email}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               )}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -603,6 +635,8 @@ function CalendarSettingsDialog({
   isLoading,
   isSaving,
   onSave,
+  userName,
+  onResetUserSettings,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -610,6 +644,8 @@ function CalendarSettingsDialog({
   isLoading: boolean;
   isSaving: boolean;
   onSave: (data: Record<string, unknown>) => void;
+  userName?: string;
+  onResetUserSettings?: () => void;
 }) {
   const [form, setForm] = useState({
     scheduling_enabled: false,
@@ -671,7 +707,7 @@ function CalendarSettingsDialog({
         <DialogHeader>
           <DialogTitle className="text-sm flex items-center gap-2">
             <Settings className="h-4 w-4" />
-            Configurações da Agenda
+            {userName ? `Configurações de ${userName}` : "Configurações da Agenda"}
           </DialogTitle>
         </DialogHeader>
 
@@ -833,7 +869,18 @@ function CalendarSettingsDialog({
           </div>
         )}
 
-        <DialogFooter>
+        <DialogFooter className="flex flex-wrap gap-2">
+          {onResetUserSettings && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={onResetUserSettings}
+              disabled={isSaving || isLoading}
+              className="mr-auto"
+            >
+              Restaurar padrão da instituição
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -883,6 +930,14 @@ const AgendaPage = () => {
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [calSettings, setCalSettings] = useState<CalendarSettingsRow | null>(null);
 
+  // User-level agenda
+  const [selectedUserId, setSelectedUserId] = useState<number | undefined>(undefined);
+  const { users } = useUsers(institutionId);
+  const agendaUsers = useMemo(
+    () => users.filter((u) => u.agendaEnabled),
+    [users],
+  );
+
   const resolvedTimezone = useMemo(() => {
     try {
       return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -909,6 +964,7 @@ const AgendaPage = () => {
         institutionId,
         start: normalizeFilterDate(filters.startDate),
         end: normalizeFilterDate(filters.endDate, { isEnd: true }),
+        userId: selectedUserId,
       });
       setEvents(data);
       } catch (err) {
@@ -922,7 +978,7 @@ const AgendaPage = () => {
         }
       }
     },
-    [institutionId, filters.startDate, filters.endDate],
+    [institutionId, filters.startDate, filters.endDate, selectedUserId],
   );
 
   useEffect(() => {
@@ -942,7 +998,7 @@ const AgendaPage = () => {
     setIsSettingsOpen(true);
     setSettingsLoading(true);
     try {
-      const s = await fetchCalendarSettingsClient();
+      const s = await fetchCalendarSettingsClient(selectedUserId);
       setCalSettings(s);
     } catch {
       // Will show empty form with defaults
@@ -954,13 +1010,29 @@ const AgendaPage = () => {
   const handleSaveSettings = async (data: Record<string, unknown>) => {
     setSettingsSaving(true);
     try {
-      const saved = await updateCalendarSettingsClient(data);
+      const saved = await updateCalendarSettingsClient(data, selectedUserId);
       setCalSettings(saved);
       setIsSettingsOpen(false);
       setFeedback("Configurações da agenda salvas com sucesso");
       setTimeout(() => setFeedback(null), 3000);
     } catch (err) {
       console.error("Erro ao salvar configurações:", err);
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
+  const handleResetUserSettings = async () => {
+    if (!selectedUserId) return;
+    setSettingsSaving(true);
+    try {
+      await deleteUserCalendarSettingsClient(selectedUserId);
+      setCalSettings(null);
+      setIsSettingsOpen(false);
+      setFeedback("Configurações do usuário restauradas ao padrão da instituição");
+      setTimeout(() => setFeedback(null), 3000);
+    } catch (err) {
+      console.error("Erro ao restaurar configurações:", err);
     } finally {
       setSettingsSaving(false);
     }
@@ -1021,7 +1093,11 @@ const AgendaPage = () => {
         }
         setFeedback("Evento atualizado com sucesso.");
       } else {
-        await createCalendarEventClient(institutionId, { ...eventPayload, guests });
+        const createPayload = { ...eventPayload, guests };
+        if (selectedUserId) {
+          createPayload.user_id = selectedUserId;
+        }
+        await createCalendarEventClient(institutionId, createPayload);
         setFeedback("Evento criado com sucesso.");
       }
       closeForm();
@@ -1105,7 +1181,7 @@ const AgendaPage = () => {
         </div>
 
         {/* Filtros */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 px-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 px-4">
           <div className="flex flex-col gap-1">
             <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Data inicial
@@ -1132,6 +1208,27 @@ const AgendaPage = () => {
               className="w-full"
             />
           </div>
+          {agendaUsers.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Responsável
+              </label>
+              <select
+                value={selectedUserId ?? ""}
+                onChange={(e) =>
+                  setSelectedUserId(e.target.value ? Number(e.target.value) : undefined)
+                }
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">Todos</option>
+                {agendaUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name || u.email}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="flex flex-col gap-1">
             <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Eventos
@@ -1287,6 +1384,8 @@ const AgendaPage = () => {
         onSubmit={handleSubmitEvent}
         errorMessage={formError}
         isLoadingDetails={loadingEventDetails}
+        agendaUsers={agendaUsers}
+        defaultUserId={selectedUserId}
       />
 
       {/* Calendar Settings Dialog */}
@@ -1297,6 +1396,8 @@ const AgendaPage = () => {
         isLoading={settingsLoading}
         isSaving={settingsSaving}
         onSave={handleSaveSettings}
+        userName={selectedUserId ? agendaUsers.find((u) => u.id === selectedUserId)?.name : undefined}
+        onResetUserSettings={selectedUserId ? handleResetUserSettings : undefined}
       />
     </div>
   );

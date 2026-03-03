@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,12 +28,7 @@ type EditableField = {
   isEditing: boolean;
 };
 
-type SectionLabel =
-  | "Sobre a sua empresa"
-  | "Quem fala com o seu cliente"
-  | "Briefing juridico estruturado (perguntas)"
-  | "Tom de voz e mensagens-chave"
-  | "Arquivos de apoio";
+type SectionLabel = "Dados do escritório";
 
 type SectionRule = {
   label: SectionLabel;
@@ -47,109 +41,31 @@ type SectionRule = {
 
 const SECTION_RULES: SectionRule[] = [
   {
-    label: "Sobre a sua empresa",
+    label: "Dados do escritório",
     exact: [
       "body.tenant.companyName",
+      "body.tenant.businessHours",
       "body.tenant.wabaPhoneNumber",
-      "body.waba_phone_number",
       "body.tenant.address.fullAddress",
-      "body.agentSettings.personality.greeting",
-    ],
-  },
-  {
-    label: "Quem fala com o seu cliente",
-    exact: [
-      "body.agentSettings.profile.agentName",
-      "body.agentSettings.profile.personalityDescription",
-      "body.agentSettings.profile.expertiseArea",
-    ],
-  },
-  {
-    label: "Briefing juridico estruturado (perguntas)",
-    exact: [
-      "body.agentSettings.flow.briefingScope",
-      "body.agentSettings.flow.maxQuestions",
-      "perguntas",
-      "quantidadePerguntas",
-      "body.agentSettings.flow.directedQuestionsList",
-      "body.agentSettings.flow.institutionalAdditionalInfo",
-    ],
-  },
-  {
-    label: "Tom de voz e mensagens-chave",
-    exact: [
-      "body.agentSettings.personality.closing",
-      "body.agentSettings.personality.forbiddenWords.0",
-    ],
-  },
-  {
-    label: "Arquivos de apoio",
-    dynamic: [
-      {
-        prefix: "body.ragFiles.",
-        allowedFields: ["name", "mime", "size", "storagePath", "tempUrl"],
-      },
     ],
   },
 ];
 
-const SECTION_ORDER: SectionLabel[] = [
-  "Sobre a sua empresa",
-  "Quem fala com o seu cliente",
-  "Briefing juridico estruturado (perguntas)",
-  "Tom de voz e mensagens-chave",
-  "Arquivos de apoio",
-];
+const SECTION_ORDER: SectionLabel[] = ["Dados do escritório"];
 
 const SECTION_METADATA: Record<
   SectionLabel,
   { title: string; description: string; fieldOrder: string[] }
 > = {
-  "Sobre a sua empresa": {
+  "Dados do escritório": {
     title: "",
     description: "",
     fieldOrder: [
       "body.tenant.companyName",
+      "body.tenant.businessHours",
       "body.tenant.wabaPhoneNumber",
-      "body.waba_phone_number",
       "body.tenant.address.fullAddress",
-      "body.agentSettings.personality.greeting",
     ],
-  },
-  "Quem fala com o seu cliente": {
-    title: "",
-    description: "",
-    fieldOrder: [
-      "body.agentSettings.profile.agentName",
-      "body.agentSettings.profile.personalityDescription",
-      "body.agentSettings.profile.expertiseArea",
-    ],
-  },
-  "Briefing juridico estruturado (perguntas)": {
-    title: "",
-    description: "",
-    fieldOrder: [
-      "perguntas",
-      "quantidadePerguntas",
-      "body.agentSettings.flow.briefingScope",
-      "body.agentSettings.flow.maxQuestions",
-      "body.agentSettings.flow.directedQuestionsList",
-      "body.agentSettings.flow.institutionalAdditionalInfo",
-    ],
-  },
-  "Tom de voz e mensagens-chave": {
-    title: "",
-    description: "",
-    fieldOrder: [
-      "body.agentSettings.personality.closing",
-      "body.agentSettings.personality.forbiddenWords.0",
-    ],
-  },
-  "Arquivos de apoio": {
-    title: "Arquivos de apoio",
-    description:
-      "Envie laudos, contratos, planilhas ou apresentações que o agente possa consultar durante o atendimento.",
-    fieldOrder: ["body.ragFiles."],
   },
 };
 
@@ -480,22 +396,7 @@ export default function ConfiguracoesPage() {
     "body.tenant.companyName": "Nome do escritório",
     "body.tenant.businessHours": "Horários de atendimento",
     "body.tenant.wabaPhoneNumber": "Número do WhatsApp conectado à Meta",
-    "body.waba_phone_number": "Número do WhatsApp conectado à Meta",
     "body.tenant.address.fullAddress": "Endereço completo",
-    "body.agentSettings.profile.agentName": "Nome do agente",
-    "body.agentSettings.profile.language": "Idioma principal",
-    "body.agentSettings.profile.personalityDescription": "Descrição da personalidade",
-    "body.agentSettings.profile.expertiseArea": "Área de expertise",
-    "body.agentSettings.flow.briefingScope": "Escopo do briefing",
-    "body.agentSettings.flow.maxQuestions": "Limite máximo de perguntas",
-    "perguntas": "Perguntas direcionadas",
-    "quantidadePerguntas": "Quantidade de perguntas",
-    "body.agentSettings.flow.directedQuestionsList": "Perguntas direcionadas (JSON)",
-    "body.agentSettings.flow.institutionalAdditionalInfo": "Informações institucionais adicionais",
-    "body.agentSettings.flow.companyOfferings": "Informações institucionais adicionais (legado)",
-    "body.agentSettings.personality.greeting": "Saudação inicial",
-    "body.agentSettings.personality.closing": "Frase de despedida",
-    "body.agentSettings.personality.forbiddenWords.0": "Palavras proibidas",
   };
 
   const formatFieldName = (fieldName: string): string => {
@@ -971,7 +872,7 @@ export default function ConfiguracoesPage() {
             });
 
             // Sintetizar campo fullAddress a partir dos campos legados se não existir
-            const empresaSection = sections["Sobre a sua empresa"];
+            const empresaSection = sections["Dados do escritório"];
             if (!empresaSection.some(([k]) => k === "body.tenant.address.fullAddress")) {
               const legacyStreet = (rowData["body.tenant.address.street"] as string)?.trim() || "";
               const legacyCity = (rowData["body.tenant.address.city"] as string)?.trim() || "";

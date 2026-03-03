@@ -19,6 +19,7 @@ type AvailableSlot = {
 
 type AvailabilityResponse = {
   institution_id: number;
+  user_id?: number;
   scheduling_enabled: boolean;
   slot_duration_minutes: number;
   buffer_minutes: number;
@@ -151,12 +152,13 @@ function generateSlotsForDay(
 }
 
 // ---------------------------------------------------------------------------
-// GET /api/v1/calendar/availability?institutionId=123&days=7&timezone=America/Sao_Paulo
+// GET /api/v1/calendar/availability?institutionId=123&userId=456&days=7&timezone=America/Sao_Paulo
 // ---------------------------------------------------------------------------
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const institutionIdParam = searchParams.get("institutionId");
+  const userIdParam = searchParams.get("userId");
   const daysParam = searchParams.get("days");
   const timezoneParam = searchParams.get("timezone") ?? "America/Sao_Paulo";
 
@@ -175,9 +177,11 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const userId = userIdParam ? Number(userIdParam) : undefined;
+
   try {
-    // Fetch settings (use sensible defaults when not yet configured)
-    const settings = await fetchCalendarSettings(institutionId);
+    // Fetch settings — user-specific (with fallback) or institutional
+    const settings = await fetchCalendarSettings(institutionId, userId);
 
     const DEFAULT_SETTINGS = {
       scheduling_enabled: false,
@@ -215,6 +219,7 @@ export async function GET(request: NextRequest) {
 
     const events = await listCalendarEvents({
       institutionId,
+      userId,
       start: fetchStart.toISOString(),
       end: fetchEnd.toISOString(),
       pageSize: 200,
@@ -285,6 +290,10 @@ export async function GET(request: NextRequest) {
       meet_link: cfg.meet_link || "",
       available_slots: allSlots,
     };
+
+    if (userId) {
+      response.user_id = userId;
+    }
 
     return NextResponse.json(response);
   } catch (err) {

@@ -55,6 +55,7 @@ export default function DistribuicaoPage() {
           className="h-9 rounded-md border border-input bg-background px-3 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
         >
           <option value="round_robin">Round-Robin (automático)</option>
+          <option value="round_robin_agenda">Round-Robin + Agenda</option>
           <option value="manual">Fila de Espera (manual)</option>
         </select>
         {isUpdating && (
@@ -65,7 +66,9 @@ export default function DistribuicaoPage() {
       <p className="text-sm text-muted-foreground">
         {queueMode === "manual"
           ? "Casos novos ficam na fila de espera. Atendentes devem clicar em 'Pegar' para assumir um caso."
-          : "Casos novos são atribuídos automaticamente ao próximo atendente disponível."}
+          : queueMode === "round_robin_agenda"
+            ? "Casos são atribuídos automaticamente, priorizando atendentes dentro do horário de expediente e sem compromissos. Se todos estiverem ocupados, o caso vai para quem ficará livre mais cedo."
+            : "Casos novos são atribuídos automaticamente ao próximo atendente disponível."}
       </p>
     </div>
   );

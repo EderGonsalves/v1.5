@@ -419,6 +419,12 @@ export const FINALIZATION_FEATURES = {
     description:
       "O agente envia documento para assinatura eletrônica via RIA Sign",
   },
+  acompanhamento_processual: {
+    id: "acompanhamento_processual" as const,
+    label: "Acompanhamento Processual",
+    description:
+      "Monitoramento automático de processos judiciais",
+  },
 } as const;
 
 export type FinalizationFeatureId = keyof typeof FINALIZATION_FEATURES;
@@ -450,6 +456,7 @@ export const DEFAULT_DISQUALIFICATION_MESSAGE =
 export const DEFAULT_FINALIZATION_FEATURES: FinalizationFeatures = {
   agendamento: true,
   assinatura_documentos: false,
+  acompanhamento_processual: false,
 };
 
 export const defaultAgentPhaseConfig: AgentPhaseConfig = {
@@ -501,15 +508,15 @@ export const defaultOnboardingData: OnboardingData = {
 
     address: true,
 
-    agentProfile: true,
+    agentProfile: false,
 
-    agentFlow: true,
+    agentFlow: false,
 
-    agentPersonality: true,
+    agentPersonality: false,
 
-    ragUpload: true,
+    ragUpload: false,
 
-    agentPhases: true,
+    agentPhases: false,
 
   },
 

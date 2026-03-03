@@ -1,4 +1,4 @@
-export type QueueMode = "round_robin" | "manual";
+export type QueueMode = "round_robin" | "manual" | "round_robin_agenda";
 
 export type BulkAssignResult = {
   assigned: Array<{ caseId: number; userName: string }>;
@@ -12,7 +12,9 @@ export async function fetchQueueMode(): Promise<QueueMode> {
   const res = await fetch("/api/v1/config/queue-mode");
   if (!res.ok) return "round_robin";
   const data = await res.json();
-  return data.queueMode === "manual" ? "manual" : "round_robin";
+  if (data.queueMode === "manual") return "manual";
+  if (data.queueMode === "round_robin_agenda") return "round_robin_agenda";
+  return "round_robin";
 }
 
 export async function updateQueueMode(mode: QueueMode): Promise<void> {

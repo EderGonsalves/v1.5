@@ -3,6 +3,7 @@ import { or, like, inArray, asc, gt, and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { prepared } from "@/lib/db/prepared";
 import { useDirectDb, tryDrizzle } from "@/lib/db/repository";
+
 import { caseMessages } from "@/lib/db/schema/caseMessages";
 
 import type {
@@ -668,6 +669,8 @@ const fetchIncrementalMessages = async (
     }
   }
 
+
+
   // ── Baserow REST API (fallback) ──────────────────────────────────────
   ensureBaserowConfig();
   const headers = {
@@ -811,6 +814,8 @@ export const fetchCaseMessagesFromBaserow = async (
       return _dr;
     }
   }
+
+
 
   // ── Baserow REST API (fallback) ──────────────────────────────────────
   ensureBaserowConfig();
@@ -1007,6 +1012,8 @@ export const createCaseMessageRow = async (input: CreateCaseMessageRowInput) => 
     });
     if (_dr !== undefined) return _dr;
   }
+
+
 
   // ── Baserow REST API (fallback) ──────────────────────────────────────
   ensureBaserowConfig();

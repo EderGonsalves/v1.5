@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   ListOrdered,
   CalendarClock,
+  Calendar,
   Hash,
 } from "lucide-react";
 
@@ -46,6 +47,7 @@ type UserFormData = {
   oab: string;
   isActive: boolean;
   isOfficeAdmin: boolean;
+  agendaEnabled: boolean;
 };
 
 const emptyForm: UserFormData = {
@@ -56,6 +58,7 @@ const emptyForm: UserFormData = {
   oab: "",
   isActive: true,
   isOfficeAdmin: false,
+  agendaEnabled: false,
 };
 
 function UserForm({
@@ -175,6 +178,20 @@ function UserForm({
             />
             <span className="text-sm font-medium text-foreground">
               {form.isOfficeAdmin ? "Admin do Escritório" : "Usuário comum"}
+            </span>
+          </div>
+        )}
+        {canToggleAdmin && (
+          <div className="flex items-center gap-2 h-9">
+            <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+            <Switch
+              checked={form.agendaEnabled}
+              onCheckedChange={(checked) =>
+                setForm({ ...form, agendaEnabled: checked })
+              }
+            />
+            <span className="text-sm text-foreground">
+              {form.agendaEnabled ? "Agenda habilitada" : "Sem agenda"}
             </span>
           </div>
         )}
@@ -413,6 +430,7 @@ export default function UsuariosPage() {
           oab: form.oab || undefined,
           institutionId: selectedInstitutionId,
           isOfficeAdmin: form.isOfficeAdmin || undefined,
+          agendaEnabled: form.agendaEnabled || undefined,
         });
         setShowCreateForm(false);
       } finally {
@@ -438,6 +456,7 @@ export default function UsuariosPage() {
         }
         if (canManageAdmins) {
           payload.isOfficeAdmin = form.isOfficeAdmin;
+          payload.agendaEnabled = form.agendaEnabled;
         }
         await updateUser(userId, payload);
         setEditingId(null);
@@ -615,6 +634,7 @@ export default function UsuariosPage() {
                           oab: user.oab,
                           isActive: user.isActive,
                           isOfficeAdmin: user.isOfficeAdmin,
+                          agendaEnabled: user.agendaEnabled,
                         }}
                         isEdit
                         onSubmit={(form) => handleUpdate(user.id, form)}
@@ -799,6 +819,11 @@ export default function UsuariosPage() {
                     {!user.isActive && (
                       <span className="shrink-0 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-900 dark:text-red-200">
                         Inativo
+                      </span>
+                    )}
+                    {user.agendaEnabled && (
+                      <span className="shrink-0 rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900 dark:text-green-200">
+                        Agenda
                       </span>
                     )}
                   </div>

@@ -2,55 +2,20 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, RotateCcw } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import {
   getBaserowConfigs,
   updateBaserowConfig,
-  type BaserowConfigRow,
 } from "@/services/api";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import { LoadingScreen } from "@/components/ui/loading-screen";
+import { InstructionList } from "@/components/agent-config/InstructionList";
 import {
-  type AgentPhaseConfig,
-  DEFAULT_PHASE_PROMPTS,
-  DEFAULT_DISQUALIFICATION_MESSAGE,
-  DEFAULT_FINALIZATION_FEATURES,
-  FINALIZATION_FEATURES,
-  type FinalizationFeatureId,
-} from "@/lib/validations";
-import { buildPhaseConfigFields, readPhaseConfigFromRow } from "@/lib/baserow";
-
-type PhaseKey = "initial" | "questions" | "finalization";
-
-const PHASE_META: Record<
-  PhaseKey,
-  { title: string; description: string; defaultPrompt: string }
-> = {
-  initial: {
-    title: "Etapa Inicial (Boas-Vindas)",
-    description:
-      "O agente se apresenta, coleta o nome do cliente e solicita o relato livre do caso.",
-    defaultPrompt: DEFAULT_PHASE_PROMPTS.initial,
-  },
-  questions: {
-    title: "Etapa de Perguntas (Coleta)",
-    description:
-      "O agente faz perguntas complementares para completar o briefing jurídico.",
-    defaultPrompt: DEFAULT_PHASE_PROMPTS.questions,
-  },
-  finalization: {
-    title: "Etapa Final (Fechamento)",
-    description:
-      "O agente agradece, oferece funcionalidades ativas e encerra o atendimento.",
-    defaultPrompt: DEFAULT_PHASE_PROMPTS.finalization,
-  },
-};
+  type InstructionType,
+  INSTRUCTION_DEFINITIONS,
+  readActiveInstructions,
+  buildInstructionFields,
+} from "@/lib/agent-instructions";
 
 export default function AgentConfigPage() {
   const router = useRouter();
@@ -60,16 +25,9 @@ export default function AgentConfigPage() {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [configRowId, setConfigRowId] = useState<number | null>(null);
-  const [phaseConfig, setPhaseConfig] = useState<AgentPhaseConfig>({
-    phases: {
-      initial: { customPrompt: "" },
-      questions: { customPrompt: "" },
-      finalization: { customPrompt: "" },
-    },
-    qualificationRules: "",
-    disqualificationMessage: DEFAULT_DISQUALIFICATION_MESSAGE,
-    finalizationFeatures: { ...DEFAULT_FINALIZATION_FEATURES },
-  });
+  const [instructions, setInstructions] = useState<
+    Map<InstructionType, unknown>
+  >(new Map());
 
   useEffect(() => {
     if (!isHydrated) return;
@@ -91,14 +49,13 @@ export default function AgentConfigPage() {
         setIsLoading(false);
         return;
       }
-      // Usar o config mais recente (maior ID)
-      const latest = configs.reduce((cur, cand) =>
-        cand.id > cur.id ? cand : cur,
+      const latest = configs.reduce(
+        (cur, cand) => (cand.id > cur.id ? cand : cur),
         configs[0],
       );
       setConfigRowId(latest.id);
       const row = latest as Record<string, unknown>;
-      setPhaseConfig(readPhaseConfigFromRow(row));
+      setInstructions(readActiveInstructions(row));
     } catch (err) {
       console.error("Erro ao carregar configuração do agente:", err);
       setError(
@@ -109,6 +66,35 @@ export default function AgentConfigPage() {
     }
   }, [data.auth]);
 
+  const handleChange = (type: InstructionType, value: unknown) => {
+    setInstructions((prev) => {
+      const next = new Map(prev);
+      next.set(type, value);
+      return next;
+    });
+  };
+
+  const handleAdd = (type: InstructionType) => {
+    setInstructions((prev) => {
+      const next = new Map(prev);
+      const def = INSTRUCTION_DEFINITIONS[type];
+      let defaultValue: unknown = "";
+      if (def.fieldType === "number") defaultValue = 5;
+      if (def.fieldType === "list") defaultValue = [""];
+      if (def.fieldType === "toggle") defaultValue = false;
+      next.set(type, defaultValue);
+      return next;
+    });
+  };
+
+  const handleRemove = (type: InstructionType) => {
+    setInstructions((prev) => {
+      const next = new Map(prev);
+      next.delete(type);
+      return next;
+    });
+  };
+
   const handleSave = async () => {
     if (!configRowId) {
       setError("Nenhuma configuração encontrada para salvar");
@@ -118,7 +104,7 @@ export default function AgentConfigPage() {
     setError(null);
     setSuccessMessage(null);
     try {
-      const fields = buildPhaseConfigFields(phaseConfig);
+      const fields = buildInstructionFields(instructions);
       await updateBaserowConfig(configRowId, fields);
       setSuccessMessage("Configurações do agente salvas com sucesso!");
       setTimeout(() => setSuccessMessage(null), 4000);
@@ -130,30 +116,6 @@ export default function AgentConfigPage() {
     } finally {
       setIsSaving(false);
     }
-  };
-
-  const updatePhasePrompt = (phase: PhaseKey, value: string) => {
-    setPhaseConfig((prev) => ({
-      ...prev,
-      phases: {
-        ...prev.phases,
-        [phase]: { customPrompt: value },
-      },
-    }));
-  };
-
-  const resetPhasePrompt = (phase: PhaseKey) => {
-    updatePhasePrompt(phase, "");
-  };
-
-  const toggleFeature = (featureId: FinalizationFeatureId) => {
-    setPhaseConfig((prev) => ({
-      ...prev,
-      finalizationFeatures: {
-        ...prev.finalizationFeatures,
-        [featureId]: !prev.finalizationFeatures[featureId],
-      },
-    }));
   };
 
   if (isLoading) {
@@ -185,174 +147,16 @@ export default function AgentConfigPage() {
         )}
 
         {configRowId && (
-          <>
-            {/* Fases do agente */}
-            {(Object.keys(PHASE_META) as PhaseKey[]).map((phaseKey, idx) => {
-              const meta = PHASE_META[phaseKey];
-              const currentPrompt = phaseConfig.phases[phaseKey].customPrompt;
-
-              return (
-                <div
-                  key={phaseKey}
-                  className={`border-b border-[#7E99B5] dark:border-border/60 px-3 sm:px-4 py-4 ${
-                    idx === 0 ? "" : ""
-                  }`}
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <p className="text-sm font-semibold text-foreground">
-                        {meta.title}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {meta.description}
-                      </p>
-                    </div>
-                    {currentPrompt && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="text-xs h-7"
-                        onClick={() => resetPhasePrompt(phaseKey)}
-                        title="Restaurar comportamento padrão"
-                      >
-                        <RotateCcw className="h-3 w-3 mr-1" />
-                        Padrão
-                      </Button>
-                    )}
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">
-                      Instruções adicionais (opcional)
-                    </Label>
-                    <Textarea
-                      value={currentPrompt}
-                      onChange={(e) =>
-                        updatePhasePrompt(phaseKey, e.target.value)
-                      }
-                      placeholder={meta.defaultPrompt}
-                      className="text-xs min-h-[80px]"
-                      rows={3}
-                    />
-                    <p className="text-[10px] text-muted-foreground">
-                      Deixe vazio para usar o comportamento padrão. Texto
-                      adicionado aqui será incluído como instrução extra no
-                      prompt do agente.
-                    </p>
-                  </div>
-
-                  {/* Qualificacao: aparece apenas na fase de perguntas */}
-                  {phaseKey === "questions" && (
-                    <div className="mt-4 pt-4 border-t border-border/40 space-y-3">
-                      <div>
-                        <Label className="text-sm font-semibold text-foreground">
-                          Regras de Qualificação
-                        </Label>
-                        <p className="text-xs text-muted-foreground mb-1.5">
-                          Defina critérios que o agente deve usar para
-                          qualificar ou desqualificar clientes durante a coleta.
-                        </p>
-                        <Textarea
-                          value={phaseConfig.qualificationRules}
-                          onChange={(e) =>
-                            setPhaseConfig((prev) => ({
-                              ...prev,
-                              qualificationRules: e.target.value,
-                            }))
-                          }
-                          placeholder='Ex: "Se o cliente mora fora do Brasil, informar que não atendemos casos internacionais. Se a dívida é inferior a R$ 5.000, orientar a procurar o Juizado Especial."'
-                          className="text-xs min-h-[80px]"
-                          rows={3}
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-xs text-muted-foreground">
-                          Mensagem de desqualificação
-                        </Label>
-                        <Input
-                          value={phaseConfig.disqualificationMessage}
-                          onChange={(e) =>
-                            setPhaseConfig((prev) => ({
-                              ...prev,
-                              disqualificationMessage: e.target.value,
-                            }))
-                          }
-                          placeholder={DEFAULT_DISQUALIFICATION_MESSAGE}
-                          className="text-xs"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Funcionalidades: aparecem apenas na fase final */}
-                  {phaseKey === "finalization" && (
-                    <div className="mt-4 pt-4 border-t border-border/40 space-y-3">
-                      <div>
-                        <Label className="text-sm font-semibold text-foreground">
-                          Funcionalidades da Etapa Final
-                        </Label>
-                        <p className="text-xs text-muted-foreground mb-2">
-                          Ative ou desative funcionalidades que o agente pode
-                          oferecer ao encerrar o atendimento.
-                        </p>
-                      </div>
-                      {(
-                        Object.keys(FINALIZATION_FEATURES) as FinalizationFeatureId[]
-                      ).map((featureId) => {
-                        const feature = FINALIZATION_FEATURES[featureId];
-                        return (
-                          <div
-                            key={featureId}
-                            className="flex items-center justify-between rounded-md border border-border/50 bg-muted/30 p-3"
-                          >
-                            <div className="flex-1 min-w-0 mr-3">
-                              <p className="text-sm font-medium text-foreground">
-                                {feature.label}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {feature.description}
-                              </p>
-                            </div>
-                            <Switch
-                              checked={
-                                phaseConfig.finalizationFeatures[featureId]
-                              }
-                              onCheckedChange={() => toggleFeature(featureId)}
-                            />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-            {/* Botoes */}
-            <div className="flex items-center justify-center gap-4 py-4">
-              <Button
-                variant="outline"
-                onClick={loadConfig}
-                disabled={isLoading || isSaving}
-              >
-                Recarregar
-              </Button>
-              <Button
-                onClick={handleSave}
-                disabled={isSaving || !configRowId}
-                className="bg-primary text-primary-foreground hover:bg-primary/90"
-              >
-                {isSaving ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Salvando...
-                  </>
-                ) : (
-                  "Salvar Configurações"
-                )}
-              </Button>
-            </div>
-          </>
+          <InstructionList
+            instructions={instructions}
+            onChange={handleChange}
+            onAdd={handleAdd}
+            onRemove={handleRemove}
+            onSave={handleSave}
+            onReload={loadConfig}
+            isSaving={isSaving}
+            isLoading={isLoading}
+          />
         )}
       </div>
     </div>

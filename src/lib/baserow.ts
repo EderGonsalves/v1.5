@@ -125,7 +125,7 @@ export const buildPhaseConfigFields = (
 export const readPhaseConfigFromRow = (
   row: Record<string, unknown>,
 ): AgentPhaseConfig => {
-  let finalizationFeatures = { agendamento: true, assinatura_documentos: false };
+  let finalizationFeatures = { agendamento: true, assinatura_documentos: false, acompanhamento_processual: false };
   try {
     const raw = row["body.agentSettings.flow.commitmentScript"];
     if (typeof raw === "string" && raw.trim().startsWith("{")) {

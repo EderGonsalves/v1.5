@@ -74,10 +74,14 @@ export async function GET(request: NextRequest) {
       return respondWithError("Parâmetro 'end' inválido. Use YYYY-MM-DD ou datetime UTC.");
     }
 
+    const userIdParam = request.nextUrl.searchParams.get("userId");
+    const userId = userIdParam ? Number(userIdParam) : undefined;
+
     const events = await listCalendarEvents({
       institutionId,
       start,
       end,
+      userId: userId && Number.isFinite(userId) ? userId : undefined,
     });
 
     return NextResponse.json(events.map((event) => serializeEvent(event)));

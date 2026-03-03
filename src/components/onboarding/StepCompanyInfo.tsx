@@ -52,14 +52,28 @@ export const StepCompanyInfo = () => {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <h3 className="text-lg font-semibold">Sobre a sua empresa</h3>
+        <h3 className="text-lg font-semibold">Conecte seu WhatsApp</h3>
         <p className="text-sm text-muted-foreground">
-          Conte como o seu escritório ou negócio se apresenta para que possamos criar a experiência certa nas próximas etapas.
+          Informe o número do WhatsApp conectado à Meta e os dados do seu escritório para iniciar a configuração.
         </p>
       </div>
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <FormField
+            control={form.control}
+            name="wabaPhoneNumber"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Número do WhatsApp conectado à Meta</FormLabel>
+                <FormControl>
+                  <Input placeholder="+5511999999999" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
           <FormField
             control={form.control}
             name="companyName"
@@ -82,20 +96,6 @@ export const StepCompanyInfo = () => {
                 <FormLabel>Horários de atendimento</FormLabel>
                 <FormControl>
                   <Input placeholder="Seg a Sex - 8h as 18h" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name="wabaPhoneNumber"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Número do WhatsApp conectado a Meta</FormLabel>
-                <FormControl>
-                  <Input placeholder="+5511999999999" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>

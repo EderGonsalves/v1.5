@@ -56,10 +56,12 @@ function getPool() {
       const pg = _nativeRequire("pg") as { Pool: new (opts: unknown) => unknown };
       _pool = new pg.Pool({
         connectionString: connStr,
-        max: 30,
+        max: 10,
         idleTimeoutMillis: 30_000,
-        connectionTimeoutMillis: 5_000,
-        statement_timeout: 30_000, // cancel queries after 30s (safety net)
+        connectionTimeoutMillis: 10_000,
+        statement_timeout: 30_000,
+        keepAlive: true,
+        keepAliveInitialDelayMillis: 10_000,
       });
     } catch (err) {
       console.error("[db] Failed to load pg module:", (err as Error).message);

@@ -28,4 +28,5 @@ export const calendarSettings = pgTable("database_table_246", {
   updatedAt: text("field_1888"), // updated_at (text)
   meetLink: text("field_1889"), // meet_link (text)
   schedulingEnabled: boolean("field_1890"), // scheduling_enabled (boolean)
+  userId: numeric("field_2008"), // user_id (number)
 });

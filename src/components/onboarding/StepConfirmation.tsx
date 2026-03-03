@@ -88,12 +88,12 @@ export const StepConfirmation = () => {
       content: (
         <div>
           <h4 className="text-sm font-semibold text-muted-foreground">Empresa</h4>
+          <p className="text-sm text-muted-foreground">
+            WhatsApp: <span className="font-medium text-foreground">{data.companyInfo.wabaPhoneNumber || "-"}</span>
+          </p>
           <p className="text-base font-medium">{data.companyInfo.companyName || "-"}</p>
           <p className="text-sm text-muted-foreground">
             Atendimento: {data.companyInfo.businessHours || "-"}
-          </p>
-          <p className="text-sm text-muted-foreground">
-            Número do WhatsApp conectado a Meta: {data.companyInfo.wabaPhoneNumber || "-"}
           </p>
         </div>
       ),
@@ -107,116 +107,7 @@ export const StepConfirmation = () => {
         </div>
       ),
     },
-    {
-      key: "agent-profile",
-      content: (
-        <div>
-          <h4 className="text-sm font-semibold text-muted-foreground">Agente orquestrador</h4>
-          <p className="text-sm text-muted-foreground">
-            Nome: <span className="font-medium text-foreground">{data.agentProfile.agentName || "-"}</span>
-          </p>
-          <p className="text-sm text-muted-foreground">
-            Idioma: {data.agentProfile.language || "-"}
-          </p>
-          <p className="text-sm text-muted-foreground">Descrição:</p>
-          <p className="rounded-md bg-muted/40 p-2 text-sm">
-            {data.agentProfile.personalityDescription || "-"}
-          </p>
-          <p className="text-sm text-muted-foreground">Área de expertise:</p>
-          <p className="rounded-md bg-muted/40 p-2 text-sm">
-            {data.agentProfile.expertiseArea || "-"}
-          </p>
-        </div>
-      ),
-    },
   ];
-
-  if (data.includedSteps.agentFlow) {
-    sections.push({
-      key: "agent-flow",
-      content: (
-        <div className="space-y-3">
-          <h4 className="text-sm font-semibold text-muted-foreground">Configuração avançada</h4>
-          <div className="rounded-md bg-muted/40 p-3 text-sm">
-            <p className="text-xs font-semibold uppercase text-muted-foreground">Escopo do briefing</p>
-            <p className="mt-1 text-foreground">{data.agentFlow.briefingScope || "-"}</p>
-          </div>
-          <div className="rounded-md border border-border/40 p-3 text-sm">
-            <p className="text-xs font-semibold uppercase text-muted-foreground">Limite de perguntas</p>
-            <p className="mt-1 text-foreground">{data.agentFlow.maxQuestions} perguntas</p>
-          </div>
-          <div className="rounded-md border border-border/40 p-3 text-sm">
-            <p className="text-xs font-semibold uppercase text-muted-foreground">Perguntas direcionadas</p>
-            {data.agentFlow.directedQuestions.length > 0 ? (
-              <ul className="mt-2 space-y-2">
-                {data.agentFlow.directedQuestions.map((question, index) => (
-                  <li key={`${question}-${index}`}>
-                    <p className="font-medium">Q{index + 1}: {question}</p>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Nenhuma pergunta configurada. O agente gera perguntas automaticamente com base no nicho configurado.
-              </p>
-            )}
-          </div>
-          {data.agentFlow.institutionalAdditionalInfo ? (
-            <div className="rounded-md bg-muted/40 p-3 text-sm">
-              <p className="text-xs font-semibold uppercase text-muted-foreground">Informações institucionais adicionais</p>
-              <p className="mt-1 text-foreground">{data.agentFlow.institutionalAdditionalInfo}</p>
-            </div>
-          ) : null}
-        </div>
-      ),
-    });
-  }
-
-  if (data.includedSteps.agentPersonality) {
-    sections.push({
-      key: "personality",
-      content: (
-        <div>
-          <h4 className="text-sm font-semibold text-muted-foreground">Mensagem base</h4>
-          <p className="text-sm text-muted-foreground">Saudação inicial:</p>
-          <p className="rounded-md bg-muted/40 p-2 text-sm">
-            {data.agentPersonality.greeting || "-"}
-          </p>
-          <p className="text-sm text-muted-foreground">Despedida:</p>
-          <p className="rounded-md bg-muted/40 p-2 text-sm">
-            {data.agentPersonality.closing || "-"}
-          </p>
-          <p className="text-sm text-muted-foreground">
-            Palavras proibidas: {data.agentPersonality.forbiddenWords.length > 0 ? data.agentPersonality.forbiddenWords.join(", ") : "-"}
-          </p>
-        </div>
-      ),
-    });
-  }
-
-  if (data.includedSteps.ragUpload) {
-    sections.push({
-      key: "rag",
-      content: (
-        <div className="space-y-2">
-          <h4 className="text-sm font-semibold text-muted-foreground">Arquivos RAG</h4>
-          {data.ragFiles.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Nenhum arquivo enviado. Ainda não é possível concluir o onboarding.</p>
-          ) : (
-            <ul className="space-y-2 text-sm">
-              {data.ragFiles.map((file) => (
-                <li key={file.storagePath} className="rounded-md border border-border/40 p-3">
-                  <p className="font-medium">{file.name}</p>
-                  <p className="text-xs text-muted-foreground">{file.mime} • {Math.round(file.size / 1024)} KB</p>
-                  <p className="text-xs text-muted-foreground break-all">URL temporária: {file.tempUrl}</p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      ),
-    });
-  }
 
   return (
     <div className="space-y-6">

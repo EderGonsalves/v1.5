@@ -16,6 +16,7 @@ import { cases as casesTable } from "@/lib/db/schema/cases";
 import { like, eq, and } from "drizzle-orm";
 import { useDirectDb, tryDrizzle } from "@/lib/db/repository";
 import { prepared } from "@/lib/db/prepared";
+import { cachedQuery, invalidateCachePrefix } from "@/lib/db/cache";
 
 const BASEROW_API_URL =
   process.env.BASEROW_API_URL || process.env.NEXT_PUBLIC_BASEROW_API_URL || "";
@@ -65,24 +66,33 @@ export async function GET(request: NextRequest) {
     }
 
     let lightCases: BaserowCaseRow[] = [];
+    let drizzleHandled = false;
 
-    // Path 1: Drizzle (direct DB)
+    // Path 1: Drizzle (direct DB) com cache stale-while-revalidate
     if (useDirectDb("api")) {
-      const drResult = await tryDrizzle("api", async () => {
-        const rows = isSysAdmin
-          ? await prepared.getAllCasesLight.execute({})
-          : await prepared.getCasesLightByInstitution.execute({
-              institutionId: String(auth.institutionId),
-            });
-        return rows.map(mapCaseRowLight);
+      const cacheKey = `cases:${isSysAdmin ? "all" : auth.institutionId}`;
+      const cached = await cachedQuery(cacheKey, 30, async () => {
+        const drResult = await tryDrizzle("api", async () => {
+          const rows = isSysAdmin
+            ? await prepared.getAllCasesLight.execute({})
+            : await prepared.getCasesLightByInstitution.execute({
+                institutionId: String(auth.institutionId),
+              });
+          return rows.map(mapCaseRowLight);
+        });
+        if (drResult === undefined) {
+          throw new Error("Drizzle query failed");
+        }
+        return drResult;
       });
-      if (drResult !== undefined) {
-        lightCases = drResult;
+      if (cached) {
+        lightCases = cached.data;
+        drizzleHandled = true;
       }
     }
 
-    // Path 2: Baserow fallback (server-side, no maxPages limit)
-    if (lightCases.length === 0) {
+    // Path 2: Baserow fallback — só quando Drizzle não é o caminho principal
+    if (!drizzleHandled && lightCases.length === 0) {
       const resp = await getBaserowCases({
         institutionId: isSysAdmin ? undefined : auth.institutionId,
         fetchAll: true,
@@ -226,6 +236,9 @@ export async function POST(request: NextRequest) {
       created_by_user_id: currentUser?.id || null,
       created_by_user_name: userName,
     });
+
+    // Invalidar cache de cases para esta instituição
+    invalidateCachePrefix("cases:");
 
     return NextResponse.json({ case: newCase }, { status: 201 });
   } catch (error) {

@@ -7,6 +7,7 @@ import { assignmentQueue } from "@/lib/db/schema/assignmentQueue";
 import { cases } from "@/lib/db/schema/cases";
 import { useDirectDb, tryDrizzle } from "@/lib/db/repository";
 import type { UserPublicRow } from "@/services/permissions";
+import type { UserAvailabilityMap } from "@/services/user-availability";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -343,6 +344,47 @@ export const pickNextUser = (
   }
 
   return picked;
+};
+
+/**
+ * Pick the next user considering agenda availability.
+ * 1. Among available-now users → standard round-robin
+ * 2. Nobody available now → pick whoever has the earliest nextSlotStart
+ * 3. Nobody has a future slot → return null (case stays unassigned)
+ */
+export const pickNextUserWithAvailability = (
+  eligibleUsers: UserPublicRow[],
+  queueRecords: QueueRecord[],
+  availability: UserAvailabilityMap,
+): UserPublicRow | null => {
+  // 1. Filter only those available NOW
+  const availableNow = eligibleUsers.filter(
+    (u) => availability.get(u.id)?.available !== false,
+  );
+  if (availableNow.length > 0) {
+    return pickNextUser(availableNow, queueRecords);
+  }
+
+  // 2. Nobody available NOW → find who has the earliest next slot
+  const withNextSlot = eligibleUsers
+    .filter((u) => availability.get(u.id)?.nextSlotStart)
+    .sort((a, b) => {
+      const slotA = availability.get(a.id)!.nextSlotStart!;
+      const slotB = availability.get(b.id)!.nextSlotStart!;
+      return slotA.localeCompare(slotB);
+    });
+
+  if (withNextSlot.length > 0) {
+    // Round-robin among those tied for earliest slot
+    const earliest = availability.get(withNextSlot[0].id)!.nextSlotStart!;
+    const tied = withNextSlot.filter(
+      (u) => availability.get(u.id)!.nextSlotStart === earliest,
+    );
+    return pickNextUser(tied, queueRecords);
+  }
+
+  // 3. Nobody has a future slot → null (case goes to manual queue)
+  return null;
 };
 
 // ---------------------------------------------------------------------------
