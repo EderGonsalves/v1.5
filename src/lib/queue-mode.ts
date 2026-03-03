@@ -4,12 +4,12 @@ export type QueueMode = "round_robin" | "manual" | "round_robin_agenda";
 
 /**
  * Fetch the queue_mode for a given institution from Config table (224).
- * Returns "round_robin" as default if not set.
+ * Returns "manual" as default if not set.
  * Server-side only (uses Baserow API key directly).
  */
 export async function getQueueMode(institutionId: number): Promise<QueueMode> {
   const configs = await getBaserowConfigs(institutionId);
-  if (!configs.length) return "round_robin";
+  if (!configs.length) return "manual";
 
   const latestRow = configs.reduce(
     (current, candidate) => (candidate.id > current.id ? candidate : current),
@@ -28,9 +28,9 @@ export async function getQueueMode(institutionId: number): Promise<QueueMode> {
           ? (rawMode as { value?: string }).value
           : undefined;
 
-  if (modeValue === "manual") return "manual";
+  if (modeValue === "round_robin") return "round_robin";
   if (modeValue === "round_robin_agenda") return "round_robin_agenda";
-  return "round_robin";
+  return "manual";
 }
 
 /**

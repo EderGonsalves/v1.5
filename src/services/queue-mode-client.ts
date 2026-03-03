@@ -10,11 +10,11 @@ export type BulkAssignResult = {
 
 export async function fetchQueueMode(): Promise<QueueMode> {
   const res = await fetch("/api/v1/config/queue-mode");
-  if (!res.ok) return "round_robin";
+  if (!res.ok) return "manual";
   const data = await res.json();
-  if (data.queueMode === "manual") return "manual";
+  if (data.queueMode === "round_robin") return "round_robin";
   if (data.queueMode === "round_robin_agenda") return "round_robin_agenda";
-  return "round_robin";
+  return "manual";
 }
 
 export async function updateQueueMode(mode: QueueMode): Promise<void> {
