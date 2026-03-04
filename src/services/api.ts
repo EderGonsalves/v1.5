@@ -1576,7 +1576,7 @@ export const getActiveUsersSQL = async (
 
     const rows = await db.execute(sql`
       SELECT
-        COALESCE(field_1798, '') AS institution_id,
+        COALESCE(field_1798::text, '') AS institution_id,
         CAST(COUNT(*) AS integer) AS total_users,
         CAST(COUNT(*) FILTER (WHERE last_active_at >= NOW() - INTERVAL '5 minutes') AS integer) AS online_now,
         CAST(COUNT(*) FILTER (WHERE last_active_at >= NOW() - INTERVAL '24 hours') AS integer) AS active_24h,
@@ -1584,7 +1584,7 @@ export const getActiveUsersSQL = async (
       FROM database_table_236
       WHERE field_1801 = true
         ${whereInst}
-      GROUP BY COALESCE(field_1798, '')
+      GROUP BY COALESCE(field_1798::text, '')
     `);
 
     return rows.rows as ActiveUsersSQLRow[];
