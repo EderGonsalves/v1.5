@@ -20,4 +20,5 @@ export const users = pgTable("database_table_236", {
   isOfficeAdmin: boolean("field_1909"), // is_office_admin (boolean)
   receivesCases: boolean("field_1923"), // receives_cases (boolean)
   agendaEnabled: boolean("field_2007"), // agenda_enabled (boolean)
+  lastActiveAt: timestamp("last_active_at", { withTimezone: true }), // heartbeat (added directly in PG)
 });

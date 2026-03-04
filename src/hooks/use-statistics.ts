@@ -5,10 +5,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CaseStatistics } from "@/lib/case-stats";
 import { getEmptyCaseStatistics } from "@/lib/case-stats";
 
+export type ActiveUsersData = {
+  onlineNow: number;
+  active24h: number;
+  active7d: number;
+  totalUsers: number;
+  byInstitution?: Record<string, { onlineNow: number; active24h: number; active7d: number; totalUsers: number }>;
+};
+
 export type StatisticsResponse = CaseStatistics & {
   cached: boolean;
   cachedAt: string | null;
   institutionBreakdown?: Record<string, CaseStatistics>;
+  activeUsers?: ActiveUsersData;
 };
 
 type FetchOptions = {
@@ -19,6 +28,7 @@ type FetchOptions = {
 type CachedStats = {
   stats: CaseStatistics;
   institutionBreakdown?: Record<string, CaseStatistics>;
+  activeUsers?: ActiveUsersData;
   timestamp: number;
   institutionId: number;
 };
@@ -44,12 +54,14 @@ const setSessionCache = (
   institutionId: number,
   stats: CaseStatistics,
   institutionBreakdown?: Record<string, CaseStatistics>,
+  activeUsers?: ActiveUsersData,
 ): void => {
   if (typeof window === "undefined") return;
   try {
     const cached: CachedStats = {
       stats,
       institutionBreakdown,
+      activeUsers,
       timestamp: Date.now(),
       institutionId,
     };
@@ -64,6 +76,7 @@ export const useStatistics = (institutionId: number | undefined) => {
   const [institutionBreakdown, setInstitutionBreakdown] = useState<
     Record<string, CaseStatistics> | undefined
   >();
+  const [activeUsers, setActiveUsers] = useState<ActiveUsersData | undefined>();
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -124,16 +137,20 @@ export const useStatistics = (institutionId: number | undefined) => {
           pausedPercentage: data.pausedPercentage,
           casesLast7Days: data.casesLast7Days ?? 0,
           casesLast30Days: data.casesLast30Days ?? 0,
+          outcomeCounts: data.outcomeCounts ?? { won: 0, lost: 0, pending: 0 },
+          outcomePercentages: data.outcomePercentages ?? { won: 0, lost: 0, pending: 0 },
+          responsavelBreakdown: data.responsavelBreakdown ?? [],
         };
 
         setStats(newStats);
         setInstitutionBreakdown(data.institutionBreakdown);
+        setActiveUsers(data.activeUsers);
         setIsCached(data.cached);
         const updatedAt = data.cachedAt ? new Date(data.cachedAt) : new Date();
         setLastUpdated(updatedAt);
 
         // Salvar no sessionStorage
-        setSessionCache(institutionId, newStats, data.institutionBreakdown);
+        setSessionCache(institutionId, newStats, data.institutionBreakdown, data.activeUsers);
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "Erro desconhecido ao carregar estatísticas",
@@ -163,6 +180,7 @@ export const useStatistics = (institutionId: number | undefined) => {
       // Carregar do cache imediatamente
       setStats(cached.stats);
       setInstitutionBreakdown(cached.institutionBreakdown);
+      setActiveUsers(cached.activeUsers);
       setLastUpdated(new Date(cached.timestamp));
       setIsCached(true);
       setIsLoading(false);
@@ -182,6 +200,7 @@ export const useStatistics = (institutionId: number | undefined) => {
   return {
     stats,
     institutionBreakdown,
+    activeUsers,
     isLoading,
     isRefreshing,
     error,

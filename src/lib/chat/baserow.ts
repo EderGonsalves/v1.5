@@ -156,7 +156,8 @@ const normalizeAttachment = (value: BaserowFileValue): CaseMessageAttachment => 
   };
 };
 
-const extractSenderValue = (value: unknown): string => {
+/** @internal exported for testing */
+export const extractSenderValue = (value: unknown): string => {
   if (value == null) {
     return "";
   }
@@ -212,7 +213,8 @@ const extractSenderValue = (value: unknown): string => {
   return strValue;
 };
 
-const normalizeSender = (value?: unknown): CaseMessageSender => {
+/** @internal exported for testing */
+export const normalizeSender = (value?: unknown): CaseMessageSender => {
   const extracted = extractSenderValue(value);
   const normalized = extracted.trim().toLowerCase();
 
@@ -252,7 +254,8 @@ const normalizeSender = (value?: unknown): CaseMessageSender => {
   return extracted ? "bot" : "sistema";
 };
 
-const guessKind = (
+/** @internal exported for testing */
+export const guessKind = (
   attachments: CaseMessageAttachment[],
   fallback?: CaseMessageKind,
 ): CaseMessageKind => {
@@ -283,7 +286,8 @@ const formatDateTimeBR = (date: Date): string => {
   return `${day}/${month}/${year} ${hours}:${minutes}`;
 };
 
-const parseBrazilianDate = (value: string): Date | null => {
+/** @internal exported for testing */
+export const parseBrazilianDate = (value: string): Date | null => {
   // Format: DD/MM/YYYY HH:mm or DD/MM/YYYY, HH:mm or DD/MM/YYYY HH:mm:ss
   const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?$/);
   if (match) {
@@ -304,7 +308,8 @@ const parseBrazilianDate = (value: string): Date | null => {
   return null;
 };
 
-const normalizeDate = (value?: string | null): string => {
+/** @internal exported for testing */
+export const normalizeDate = (value?: string | null): string => {
   if (!value || !value.trim()) {
     return new Date().toISOString();
   }
@@ -366,7 +371,8 @@ const extractRawSender = (row: BaserowCaseMessageRow): unknown => {
 // Determina o sender baseado nos campos from/to
 // - Se "from" = telefone do cliente → mensagem enviada pelo cliente
 // - Se "to" = telefone do cliente → mensagem enviada para o cliente (pelo bot)
-const inferSenderFromPhoneFields = (
+/** @internal exported for testing */
+export const inferSenderFromPhoneFields = (
   row: BaserowCaseMessageRow,
   customerPhone?: string,
 ): CaseMessageSender | null => {

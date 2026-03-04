@@ -14,7 +14,7 @@ export type UserAvailabilityInfo = {
 export type UserAvailabilityMap = Map<number, UserAvailabilityInfo>;
 
 /** Event pre-parsed to ms timestamps for fast overlap checks */
-type EventRange = {
+export type EventRange = {
   userId: number;
   startMs: number;
   endMs: number;

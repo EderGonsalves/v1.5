@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { ALWAYS_ALLOWED_PATHS } from "@/lib/feature-registry";
 import { usePermissionsStatus } from "@/hooks/use-permissions-status";
 import { PwaModals } from "@/components/pwa/PwaModals";
+import { useHeartbeat } from "@/hooks/use-heartbeat";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { data } = useOnboarding();
@@ -29,6 +30,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   const hasAuth = isMounted && data.auth;
+
+  useHeartbeat(hasAuth ? data.auth : null);
 
   // Login page: no sidebar, no header, just render children full-width
   if (!hasAuth) {

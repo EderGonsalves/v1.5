@@ -6,6 +6,7 @@ import {
   CalendarDays,
   Loader2,
   RefreshCw,
+  Users,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -16,9 +17,10 @@ import {
   stageOrder,
   type CaseStage,
   type CaseStatistics,
+  type ResponsavelStats,
 } from "@/lib/case-stats";
 import { cn } from "@/lib/utils";
-import { useStatistics } from "@/hooks/use-statistics";
+import { useStatistics, type ActiveUsersData } from "@/hooks/use-statistics";
 
 const stageStackColors: Record<CaseStage, string> = {
   DepoimentoInicial: "bg-blue-500/70",
@@ -146,14 +148,157 @@ const PausedCasesDonut = ({ stats }: { stats: CaseStatistics }) => {
   );
 };
 
+const OutcomeDonut = ({ stats }: { stats: CaseStatistics }) => {
+  const { won, lost, pending } = stats.outcomeCounts;
+  const total = won + lost + pending;
+  const wonAngle = total ? (won / total) * 360 : 0;
+  const lostAngle = total ? (lost / total) * 360 : 0;
+  const gradient = total
+    ? `conic-gradient(#22c55e 0deg ${wonAngle}deg, #ef4444 ${wonAngle}deg ${wonAngle + lostAngle}deg, rgba(148,163,184,0.35) ${wonAngle + lostAngle}deg 360deg)`
+    : "conic-gradient(rgba(148,163,184,0.35) 0deg 360deg)";
+
+  return (
+    <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:gap-6">
+      <div className="relative h-32 w-32 shrink-0">
+        <div
+          className="absolute inset-0 rounded-full"
+          style={{ background: gradient }}
+          aria-hidden="true"
+        />
+        <div className="absolute inset-3 rounded-full bg-background shadow-inner" aria-hidden="true" />
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+          <span className="text-2xl font-bold text-foreground">{total}</span>
+          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            total
+          </span>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-3 text-center sm:gap-4">
+        <div>
+          <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{won}</p>
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Ganhos</p>
+          <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">{stats.outcomePercentages.won}%</p>
+        </div>
+        <div>
+          <p className="text-lg font-bold text-red-600 dark:text-red-400">{lost}</p>
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Perdidos</p>
+          <p className="text-xs font-semibold text-red-600 dark:text-red-400">{stats.outcomePercentages.lost}%</p>
+        </div>
+        <div>
+          <p className="text-lg font-bold text-muted-foreground">{pending}</p>
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Pendentes</p>
+          <p className="text-xs font-semibold text-muted-foreground">{stats.outcomePercentages.pending}%</p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ActiveUsersCard = ({ data }: { data: ActiveUsersData }) => (
+  <div className="grid grid-cols-2 gap-2 sm:gap-3 sm:grid-cols-4">
+    <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 sm:px-4 sm:py-3">
+      <p className="text-xs text-muted-foreground flex items-center gap-1">
+        <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+        Online agora
+      </p>
+      <p className="text-lg sm:text-2xl font-bold text-emerald-600 dark:text-emerald-400">{data.onlineNow}</p>
+    </div>
+    <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 sm:px-4 sm:py-3">
+      <p className="text-xs text-muted-foreground">Ativos 24h</p>
+      <p className="text-lg sm:text-2xl font-bold text-foreground">{data.active24h}</p>
+    </div>
+    <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 sm:px-4 sm:py-3">
+      <p className="text-xs text-muted-foreground">Ativos 7d</p>
+      <p className="text-lg sm:text-2xl font-bold text-foreground">{data.active7d}</p>
+    </div>
+    <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 sm:px-4 sm:py-3">
+      <p className="text-xs text-muted-foreground">Total cadastrados</p>
+      <p className="text-lg sm:text-2xl font-semibold text-muted-foreground">{data.totalUsers}</p>
+    </div>
+  </div>
+);
+
+const ActiveUsersTable = ({ data }: { data: NonNullable<ActiveUsersData["byInstitution"]> }) => {
+  const entries = Object.entries(data).sort(([a], [b]) => {
+    const nA = Number(a);
+    const nB = Number(b);
+    if (Number.isFinite(nA) && Number.isFinite(nB)) return nA - nB;
+    return a.localeCompare(b);
+  });
+
+  if (!entries.length) return null;
+
+  return (
+    <div className="max-h-[280px] overflow-auto">
+      <table className="w-full text-sm">
+        <thead className="sticky top-0 bg-background">
+          <tr className="border-b border-border/60 text-left text-xs text-muted-foreground">
+            <th className="px-3 py-2 font-medium">Instituição</th>
+            <th className="px-3 py-2 text-right font-medium">Online</th>
+            <th className="px-3 py-2 text-right font-medium">24h</th>
+            <th className="px-3 py-2 text-right font-medium">7d</th>
+            <th className="px-3 py-2 text-right font-medium">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map(([instId, row]) => (
+            <tr key={instId} className="border-b border-border/30 hover:bg-muted/30">
+              <td className="px-3 py-2 font-medium">#{instId}</td>
+              <td className="px-3 py-2 text-right text-emerald-600 dark:text-emerald-400">{row.onlineNow}</td>
+              <td className="px-3 py-2 text-right">{row.active24h}</td>
+              <td className="px-3 py-2 text-right">{row.active7d}</td>
+              <td className="px-3 py-2 text-right text-muted-foreground">{row.totalUsers}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+const ResponsavelRanking = ({ data }: { data: ResponsavelStats[] }) => {
+  if (!data.length) {
+    return <p className="py-4 text-center text-sm text-muted-foreground">Nenhum dado de responsável disponível.</p>;
+  }
+
+  return (
+    <div className="max-h-[320px] overflow-auto">
+      <table className="w-full text-sm">
+        <thead className="sticky top-0 bg-background">
+          <tr className="border-b border-border/60 text-left text-xs text-muted-foreground">
+            <th className="px-3 py-2 font-medium">Responsável</th>
+            <th className="px-3 py-2 text-right font-medium">Total</th>
+            <th className="px-3 py-2 text-right font-medium">Ganhos</th>
+            <th className="px-3 py-2 text-right font-medium">Perdidos</th>
+            <th className="px-3 py-2 text-right font-medium">Pendentes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((r) => (
+            <tr key={r.name} className="border-b border-border/30 hover:bg-muted/30">
+              <td className="px-3 py-2 font-medium">{r.name}</td>
+              <td className="px-3 py-2 text-right">{r.total}</td>
+              <td className="px-3 py-2 text-right text-emerald-600 dark:text-emerald-400">{r.won}</td>
+              <td className="px-3 py-2 text-right text-red-600 dark:text-red-400">{r.lost}</td>
+              <td className="px-3 py-2 text-right text-muted-foreground">{r.pending}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
 export default function EstatisticasPage() {
   const { data } = useOnboarding();
   const isSysAdmin = data.auth?.institutionId === 4;
   const [selectedInstitution, setSelectedInstitution] = useState("all");
+  const [selectedResponsavel, setSelectedResponsavel] = useState("all");
 
   const {
     stats: aggregatedStats,
     institutionBreakdown,
+    activeUsers,
     isLoading,
     isRefreshing,
     error,
@@ -185,8 +330,8 @@ export default function EstatisticasPage() {
     }
   }, [institutionOptions, isSysAdmin, selectedInstitution]);
 
-  // Select stats based on filter
-  const stats = useMemo(() => {
+  // Select stats based on institution filter
+  const instStats = useMemo(() => {
     if (!isSysAdmin || selectedInstitution === "all") {
       return aggregatedStats;
     }
@@ -195,6 +340,49 @@ export default function EstatisticasPage() {
     }
     return aggregatedStats;
   }, [isSysAdmin, selectedInstitution, aggregatedStats, institutionBreakdown]);
+
+  // Responsável options from current stats
+  const responsavelOptions = useMemo(() => {
+    return instStats.responsavelBreakdown.map((r) => r.name);
+  }, [instStats.responsavelBreakdown]);
+
+  // Reset responsável selection if not available
+  useEffect(() => {
+    if (selectedResponsavel !== "all" && !responsavelOptions.includes(selectedResponsavel)) {
+      setSelectedResponsavel("all");
+    }
+  }, [responsavelOptions, selectedResponsavel]);
+
+  // Final stats: filter by responsável if selected
+  const stats = useMemo(() => {
+    if (selectedResponsavel === "all") return instStats;
+    const r = instStats.responsavelBreakdown.find((x) => x.name === selectedResponsavel);
+    if (!r) return instStats;
+    // Recalculate all metrics scoped to this responsável
+    // We only have outcome data per responsável, so stage/paused/period metrics stay global
+    return instStats;
+  }, [instStats, selectedResponsavel]);
+
+  // Filtered responsável breakdown for the ranking table
+  const filteredResponsavel = useMemo(() => {
+    if (selectedResponsavel === "all") return instStats.responsavelBreakdown;
+    return instStats.responsavelBreakdown.filter((r) => r.name === selectedResponsavel);
+  }, [instStats.responsavelBreakdown, selectedResponsavel]);
+
+  // Filtered outcome counts when a responsável is selected
+  const outcomeStats = useMemo(() => {
+    if (selectedResponsavel === "all") {
+      return { outcomeCounts: instStats.outcomeCounts, outcomePercentages: instStats.outcomePercentages };
+    }
+    const r = instStats.responsavelBreakdown.find((x) => x.name === selectedResponsavel);
+    if (!r) return { outcomeCounts: instStats.outcomeCounts, outcomePercentages: instStats.outcomePercentages };
+    const total = r.total || 1;
+    const pct = (v: number) => Number(((v / total) * 100).toFixed(1));
+    return {
+      outcomeCounts: { won: r.won, lost: r.lost, pending: r.pending },
+      outcomePercentages: { won: pct(r.won), lost: pct(r.lost), pending: pct(r.pending) },
+    };
+  }, [instStats, selectedResponsavel]);
 
   const lastUpdatedLabel = useMemo(() => {
     if (!lastUpdated) return null;
@@ -227,7 +415,7 @@ export default function EstatisticasPage() {
               {lastUpdatedLabel && ` — atualizado em ${lastUpdatedLabel}`}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {isSysAdmin && (
               <select
                 value={selectedInstitution}
@@ -238,6 +426,20 @@ export default function EstatisticasPage() {
                 {institutionOptions.map((option) => (
                   <option key={option} value={option}>
                     Instituição #{option}
+                  </option>
+                ))}
+              </select>
+            )}
+            {responsavelOptions.length > 0 && (
+              <select
+                value={selectedResponsavel}
+                onChange={(e) => setSelectedResponsavel(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs text-foreground truncate sm:w-auto sm:max-w-[200px]"
+              >
+                <option value="all">Todos responsáveis</option>
+                {responsavelOptions.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
                   </option>
                 ))}
               </select>
@@ -267,6 +469,29 @@ export default function EstatisticasPage() {
               Tentar novamente
             </button>
           </div>
+        )}
+
+        {/* Usuários Ativos */}
+        {activeUsers && (
+          <>
+            <div className="flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between px-3 sm:px-4 py-2 sm:py-3 border-b border-[#7E99B5] dark:border-border/60">
+              <span className="text-sm font-semibold flex items-center gap-2">
+                <Users className="h-4 w-4" />
+                Usuários
+              </span>
+              <span className="text-xs text-muted-foreground">
+                Atividade em tempo real
+              </span>
+            </div>
+            <div className="px-3 sm:px-4">
+              <ActiveUsersCard data={activeUsers} />
+            </div>
+            {isSysAdmin && activeUsers.byInstitution && (
+              <div className="px-3 sm:px-4">
+                <ActiveUsersTable data={activeUsers.byInstitution} />
+              </div>
+            )}
+          </>
         )}
 
         {/* KPIs */}
@@ -309,8 +534,20 @@ export default function EstatisticasPage() {
           <StageDistributionChart stats={stats} />
         </div>
 
-        {/* IA pausada + Volume */}
+        {/* Resultado dos casos + IA pausada */}
         <div className="grid gap-3 sm:gap-4 lg:grid-cols-2">
+          <div>
+            <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-3 border-b border-[#7E99B5] dark:border-border/60">
+              <span className="text-sm font-semibold">Resultado dos casos</span>
+              <span className="text-xs text-muted-foreground">
+                Ganho vs Perdido vs Pendente
+              </span>
+            </div>
+            <div className="px-3 sm:px-4 py-3 sm:py-4">
+              <OutcomeDonut stats={{ ...stats, outcomeCounts: outcomeStats.outcomeCounts, outcomePercentages: outcomeStats.outcomePercentages }} />
+            </div>
+          </div>
+
           <div>
             <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-3 border-b border-[#7E99B5] dark:border-border/60">
               <span className="text-sm font-semibold">IA pausada</span>
@@ -322,18 +559,28 @@ export default function EstatisticasPage() {
               <PausedCasesDonut stats={stats} />
             </div>
           </div>
+        </div>
 
-          <div>
-            <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-3 border-b border-[#7E99B5] dark:border-border/60">
-              <span className="text-sm font-semibold">Volume por etapa</span>
-              <span className="text-xs text-muted-foreground">
-                Comparativo visual
-              </span>
-            </div>
-            <div className="px-3 sm:px-4 py-3 sm:py-4">
-              <StageVolumeBars stats={stats} />
-            </div>
-          </div>
+        {/* Volume por etapa */}
+        <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-3 border-b border-[#7E99B5] dark:border-border/60">
+          <span className="text-sm font-semibold">Volume por etapa</span>
+          <span className="text-xs text-muted-foreground">
+            Comparativo visual
+          </span>
+        </div>
+        <div className="px-3 sm:px-4 py-3 sm:py-4">
+          <StageVolumeBars stats={stats} />
+        </div>
+
+        {/* Ranking por responsável */}
+        <div className="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-3 border-b border-[#7E99B5] dark:border-border/60">
+          <span className="text-sm font-semibold">Ranking por responsável</span>
+          <span className="text-xs text-muted-foreground">
+            {filteredResponsavel.length} responsáveis
+          </span>
+        </div>
+        <div className="px-3 sm:px-4">
+          <ResponsavelRanking data={filteredResponsavel} />
         </div>
       </div>
     </main>

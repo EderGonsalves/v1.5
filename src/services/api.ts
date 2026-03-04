@@ -1150,7 +1150,8 @@ export type BaserowCaseRow = {
  * Aceita ISO ("2026-02-26T20:30:45.719Z") ou já formatado ("20/02/2026").
  * Retorna undefined se vazio/inválido.
  */
-function formatDateBR(value: unknown): string | undefined {
+/** @internal exported for testing */
+export function formatDateBR(value: unknown): string | undefined {
   if (!value || typeof value !== "string") return undefined;
   const trimmed = value.trim();
   if (!trimmed) return undefined;
@@ -1295,7 +1296,8 @@ export function stripHeavyFields(row: BaserowCaseRow): BaserowCaseRow {
 }
 
 /** Build a Drizzle-compatible set object from a Baserow-shaped partial case row */
-function buildCaseSetObj(data: Partial<BaserowCaseRow>): Record<string, unknown> {
+/** @internal exported for testing */
+export function buildCaseSetObj(data: Partial<BaserowCaseRow>): Record<string, unknown> {
   const set: Record<string, unknown> = {};
 
   if (data.CustumerPhone !== undefined) set.custumerPhone = data.CustumerPhone;
@@ -1480,7 +1482,9 @@ export const getCaseStatisticsSQL = async (
           field_1699 IS NOT NULL AND field_1699 != ''
           AND field_1699 ~ '^\\d{4}-'
           AND field_1699::timestamptz >= NOW() - INTERVAL '30 days'
-        ) AS integer) AS last_30_days
+        ) AS integer) AS last_30_days,
+        CAST(COUNT(*) FILTER (WHERE lower(trim(COALESCE(field_1753,''))) = 'ganho') AS integer) AS won,
+        CAST(COUNT(*) FILTER (WHERE lower(trim(COALESCE(field_1753,''))) = 'perdido') AS integer) AS lost
       FROM database_table_225
       ${whereClause}
       GROUP BY field_1692
@@ -1502,6 +1506,92 @@ type CaseStatsSQLRow = {
   depoimento_inicial: number;
   last_7_days: number;
   last_30_days: number;
+  won: number;
+  lost: number;
+};
+
+export type ResponsavelStatsSQLRow = {
+  responsavel: string;
+  total: number;
+  won: number;
+  lost: number;
+};
+
+/**
+ * Query SQL para ranking por responsável com outcome counts.
+ * Falls back to null so the caller can use computeCaseStatistics fallback.
+ */
+export const getResponsavelStatsSQL = async (
+  institutionId?: number,
+): Promise<ResponsavelStatsSQLRow[] | null> => {
+  if (!useDirectDb("api")) return null;
+
+  const result = await tryDrizzle("api", async () => {
+    const isSysAdmin = institutionId === 4 || institutionId === undefined;
+    const whereClause = isSysAdmin
+      ? sql``
+      : sql`WHERE field_1692 = ${String(institutionId)}`;
+
+    const result = await db.execute(sql`
+      SELECT
+        COALESCE(NULLIF(trim(field_1771), ''), 'Sem responsável') AS responsavel,
+        CAST(COUNT(*) AS integer) AS total,
+        CAST(COUNT(*) FILTER (WHERE lower(trim(COALESCE(field_1753,''))) = 'ganho') AS integer) AS won,
+        CAST(COUNT(*) FILTER (WHERE lower(trim(COALESCE(field_1753,''))) = 'perdido') AS integer) AS lost
+      FROM database_table_225
+      ${whereClause}
+      GROUP BY COALESCE(NULLIF(trim(field_1771), ''), 'Sem responsável')
+      ORDER BY total DESC
+    `);
+
+    return result.rows as ResponsavelStatsSQLRow[];
+  });
+
+  if (result === undefined) return null;
+  return result as ResponsavelStatsSQLRow[];
+};
+
+// ---------------------------------------------------------------------------
+// Active Users (heartbeat)
+// ---------------------------------------------------------------------------
+
+export type ActiveUsersSQLRow = {
+  institution_id: string;
+  total_users: number;
+  online_now: number;
+  active_24h: number;
+  active_7d: number;
+};
+
+export const getActiveUsersSQL = async (
+  institutionId?: number,
+): Promise<ActiveUsersSQLRow[] | null> => {
+  if (!useDirectDb("api")) return null;
+
+  const result = await tryDrizzle("api", async () => {
+    const isSysAdmin = institutionId === 4 || institutionId === undefined;
+    const whereInst = isSysAdmin
+      ? sql``
+      : sql`AND field_1798 = ${String(institutionId)}`;
+
+    const rows = await db.execute(sql`
+      SELECT
+        COALESCE(field_1798, '') AS institution_id,
+        CAST(COUNT(*) AS integer) AS total_users,
+        CAST(COUNT(*) FILTER (WHERE last_active_at >= NOW() - INTERVAL '5 minutes') AS integer) AS online_now,
+        CAST(COUNT(*) FILTER (WHERE last_active_at >= NOW() - INTERVAL '24 hours') AS integer) AS active_24h,
+        CAST(COUNT(*) FILTER (WHERE last_active_at >= NOW() - INTERVAL '7 days') AS integer) AS active_7d
+      FROM database_table_236
+      WHERE field_1801 = true
+        ${whereInst}
+      GROUP BY COALESCE(field_1798, '')
+    `);
+
+    return rows.rows as ActiveUsersSQLRow[];
+  });
+
+  if (result === undefined) return null;
+  return result as ActiveUsersSQLRow[];
 };
 
 export const getBaserowCases = async ({

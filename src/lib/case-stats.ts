@@ -88,6 +88,14 @@ export const getCaseInstitutionId = (
   return null;
 };
 
+export type ResponsavelStats = {
+  name: string;
+  total: number;
+  won: number;
+  lost: number;
+  pending: number;
+};
+
 export type CaseStatistics = {
   totalCases: number;
   pausedCases: number;
@@ -96,6 +104,9 @@ export type CaseStatistics = {
   pausedPercentage: number;
   casesLast7Days: number;
   casesLast30Days: number;
+  outcomeCounts: { won: number; lost: number; pending: number };
+  outcomePercentages: { won: number; lost: number; pending: number };
+  responsavelBreakdown: ResponsavelStats[];
 };
 
 const createEmptyCounts = (): Record<CaseStage, number> =>
@@ -124,6 +135,9 @@ export const getEmptyCaseStatistics = (): CaseStatistics => ({
   pausedPercentage: 0,
   casesLast7Days: 0,
   casesLast30Days: 0,
+  outcomeCounts: { won: 0, lost: 0, pending: 0 },
+  outcomePercentages: { won: 0, lost: 0, pending: 0 },
+  responsavelBreakdown: [],
 });
 
 export const isCasePaused = (caseRow: BaserowCaseRow): boolean =>
@@ -147,12 +161,16 @@ export const computeCaseStatistics = (
 
   const stageCounts = createEmptyCounts();
   let pausedCases = 0;
+  let won = 0;
+  let lost = 0;
 
   const now = Date.now();
   const ms7Days = 7 * 24 * 60 * 60 * 1000;
   const ms30Days = 30 * 24 * 60 * 60 * 1000;
   let casesLast7Days = 0;
   let casesLast30Days = 0;
+
+  const responsavelMap = new Map<string, { total: number; won: number; lost: number; pending: number }>();
 
   rows.forEach((caseRow) => {
     const stage = getCaseStage(caseRow);
@@ -174,9 +192,31 @@ export const computeCaseStatistics = (
         }
       }
     }
+
+    // Outcome
+    const resultado = typeof caseRow.resultado === "string"
+      ? caseRow.resultado.trim().toLowerCase()
+      : "";
+    const isWon = resultado === "ganho";
+    const isLost = resultado === "perdido";
+    if (isWon) won += 1;
+    if (isLost) lost += 1;
+
+    // Responsável
+    const respName = (typeof caseRow.responsavel === "string" && caseRow.responsavel.trim())
+      ? caseRow.responsavel.trim()
+      : "Sem responsável";
+    const entry = responsavelMap.get(respName) ?? { total: 0, won: 0, lost: 0, pending: 0 };
+    entry.total += 1;
+    if (isWon) entry.won += 1;
+    else if (isLost) entry.lost += 1;
+    else entry.pending += 1;
+    responsavelMap.set(respName, entry);
   });
 
   const totalCases = rows.length;
+  const pending = totalCases - won - lost;
+
   const stagePercentages = stageOrder.reduce(
     (acc, stage) => {
       acc[stage] = totalCases
@@ -191,6 +231,12 @@ export const computeCaseStatistics = (
     ? Number(((pausedCases / totalCases) * 100).toFixed(1))
     : 0;
 
+  const pct = (v: number) => totalCases ? Number(((v / totalCases) * 100).toFixed(1)) : 0;
+
+  const responsavelBreakdown: ResponsavelStats[] = Array.from(responsavelMap.entries())
+    .map(([name, s]) => ({ name, ...s }))
+    .sort((a, b) => b.total - a.total);
+
   return {
     totalCases,
     pausedCases,
@@ -199,5 +245,8 @@ export const computeCaseStatistics = (
     pausedPercentage,
     casesLast7Days,
     casesLast30Days,
+    outcomeCounts: { won, lost, pending },
+    outcomePercentages: { won: pct(won), lost: pct(lost), pending: pct(pending) },
+    responsavelBreakdown,
   };
 };
