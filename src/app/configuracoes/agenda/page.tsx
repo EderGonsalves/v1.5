@@ -44,6 +44,8 @@ import {
   deleteUserCalendarSettingsClient,
 } from "@/services/calendar-settings-client";
 import { useUsers } from "@/hooks/use-users";
+import { usePermissionsStatus } from "@/hooks/use-permissions-status";
+import { useMyDepartments } from "@/hooks/use-my-departments";
 import type { UserPublicRow } from "@/services/permissions";
 
 const formatDateOnly = (date: Date): string => {
@@ -911,6 +913,13 @@ function CalendarSettingsDialog({
 const AgendaPage = () => {
   const { data, isHydrated } = useOnboarding();
   const institutionId = data.auth?.institutionId;
+  const authSignature = data.auth
+    ? `${data.auth.institutionId}:${data.auth.legacyUserId ?? ""}`
+    : null;
+  const { isSysAdmin, isOfficeAdmin: isPermOfficeAdmin, userId: permUserId } = usePermissionsStatus(authSignature);
+  const { isOfficeAdmin } = useMyDepartments();
+  const isAdmin = isSysAdmin || isOfficeAdmin || isPermOfficeAdmin;
+
   const [filters, setFilters] = useState<AgendaFilters>(buildInitialFilters);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -930,13 +939,16 @@ const AgendaPage = () => {
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [calSettings, setCalSettings] = useState<CalendarSettingsRow | null>(null);
 
-  // User-level agenda
+  // User-level agenda — regular users see only their own
   const [selectedUserId, setSelectedUserId] = useState<number | undefined>(undefined);
   const { users } = useUsers(institutionId);
   const agendaUsers = useMemo(
     () => users.filter((u) => u.agendaEnabled),
     [users],
   );
+
+  // Lock selectedUserId for regular users
+  const effectiveUserId = isAdmin ? selectedUserId : permUserId;
 
   const resolvedTimezone = useMemo(() => {
     try {
@@ -964,7 +976,7 @@ const AgendaPage = () => {
         institutionId,
         start: normalizeFilterDate(filters.startDate),
         end: normalizeFilterDate(filters.endDate, { isEnd: true }),
-        userId: selectedUserId,
+        userId: effectiveUserId,
       });
       setEvents(data);
       } catch (err) {
@@ -978,7 +990,7 @@ const AgendaPage = () => {
         }
       }
     },
-    [institutionId, filters.startDate, filters.endDate, selectedUserId],
+    [institutionId, filters.startDate, filters.endDate, effectiveUserId],
   );
 
   useEffect(() => {
@@ -998,7 +1010,7 @@ const AgendaPage = () => {
     setIsSettingsOpen(true);
     setSettingsLoading(true);
     try {
-      const s = await fetchCalendarSettingsClient(selectedUserId);
+      const s = await fetchCalendarSettingsClient(effectiveUserId);
       setCalSettings(s);
     } catch {
       // Will show empty form with defaults
@@ -1010,7 +1022,7 @@ const AgendaPage = () => {
   const handleSaveSettings = async (data: Record<string, unknown>) => {
     setSettingsSaving(true);
     try {
-      const saved = await updateCalendarSettingsClient(data, selectedUserId);
+      const saved = await updateCalendarSettingsClient(data, effectiveUserId);
       setCalSettings(saved);
       setIsSettingsOpen(false);
       setFeedback("Configurações da agenda salvas com sucesso");
@@ -1023,10 +1035,10 @@ const AgendaPage = () => {
   };
 
   const handleResetUserSettings = async () => {
-    if (!selectedUserId) return;
+    if (!effectiveUserId) return;
     setSettingsSaving(true);
     try {
-      await deleteUserCalendarSettingsClient(selectedUserId);
+      await deleteUserCalendarSettingsClient(effectiveUserId);
       setCalSettings(null);
       setIsSettingsOpen(false);
       setFeedback("Configurações do usuário restauradas ao padrão da instituição");
@@ -1094,8 +1106,8 @@ const AgendaPage = () => {
         setFeedback("Evento atualizado com sucesso.");
       } else {
         const createPayload = { ...eventPayload, guests };
-        if (selectedUserId) {
-          createPayload.user_id = selectedUserId;
+        if (effectiveUserId) {
+          createPayload.user_id = effectiveUserId;
         }
         await createCalendarEventClient(institutionId, createPayload);
         setFeedback("Evento criado com sucesso.");
@@ -1208,7 +1220,7 @@ const AgendaPage = () => {
               className="w-full"
             />
           </div>
-          {agendaUsers.length > 0 && (
+          {isAdmin && agendaUsers.length > 0 && (
             <div className="flex flex-col gap-1">
               <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Responsável
@@ -1384,8 +1396,8 @@ const AgendaPage = () => {
         onSubmit={handleSubmitEvent}
         errorMessage={formError}
         isLoadingDetails={loadingEventDetails}
-        agendaUsers={agendaUsers}
-        defaultUserId={selectedUserId}
+        agendaUsers={isAdmin ? agendaUsers : []}
+        defaultUserId={effectiveUserId}
       />
 
       {/* Calendar Settings Dialog */}
@@ -1396,8 +1408,8 @@ const AgendaPage = () => {
         isLoading={settingsLoading}
         isSaving={settingsSaving}
         onSave={handleSaveSettings}
-        userName={selectedUserId ? agendaUsers.find((u) => u.id === selectedUserId)?.name : undefined}
-        onResetUserSettings={selectedUserId ? handleResetUserSettings : undefined}
+        userName={isAdmin && selectedUserId ? agendaUsers.find((u) => u.id === selectedUserId)?.name : undefined}
+        onResetUserSettings={isAdmin && selectedUserId ? handleResetUserSettings : undefined}
       />
     </div>
   );

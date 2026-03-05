@@ -14,8 +14,6 @@ import {
   Bell,
   CircleHelp,
   CalendarDays,
-  Plug,
-  ListChecks,
 } from "lucide-react";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
 import { useSidebar } from "@/components/sidebar/sidebar-context";
@@ -36,8 +34,6 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/chat", label: "Chat", icon: MessageCircle },
   { href: "/agenda", label: "Agenda", icon: CalendarDays },
   { href: "/estatisticas", label: "Estatísticas", icon: BarChart3 },
-  { href: "/follow-up", label: "Follow-up", icon: ListChecks },
-  { href: "/conexoes", label: "Conexões", icon: Plug },
   { href: "/configuracoes", label: "Configurações", icon: Settings, requiresAdmin: true },
   { href: "/notificacoes", label: "Notificações", icon: Bell, requiresSysAdmin: true },
 ];

@@ -12,6 +12,7 @@ import { fetchPermissionsStatusClient } from "@/services/permissions-client";
 type PermissionsState = {
   isSysAdmin: boolean;
   isOfficeAdmin: boolean;
+  userId?: number;
   enabledPages: string[];
   enabledActions: string[];
   isLoading: boolean;
@@ -20,6 +21,7 @@ type PermissionsState = {
 const INITIAL_STATE: PermissionsState = {
   isSysAdmin: false,
   isOfficeAdmin: false,
+  userId: undefined,
   enabledPages: [],
   enabledActions: [],
   isLoading: true,
@@ -36,6 +38,7 @@ type StoredPermissions = {
   authSignature: string;
   isSysAdmin: boolean;
   isOfficeAdmin: boolean;
+  userId?: number;
   enabledPages: string[];
   enabledActions: string[];
   ts: number;
@@ -54,6 +57,7 @@ const readStoredPermissions = (
     return {
       isSysAdmin: stored.isSysAdmin,
       isOfficeAdmin: stored.isOfficeAdmin,
+      userId: stored.userId,
       enabledPages: stored.enabledPages,
       enabledActions: stored.enabledActions,
     };
@@ -72,6 +76,7 @@ const writeStoredPermissions = (
       authSignature,
       isSysAdmin: state.isSysAdmin,
       isOfficeAdmin: state.isOfficeAdmin,
+      userId: state.userId,
       enabledPages: state.enabledPages,
       enabledActions: state.enabledActions,
       ts: Date.now(),
@@ -132,6 +137,7 @@ export const usePermissionsStatus = (authSignature?: string | null) => {
       result: {
         isSysAdmin?: boolean;
         isOfficeAdmin?: boolean;
+        userId?: number;
         enabledPages?: string[];
         enabledActions?: string[];
       },
@@ -139,6 +145,7 @@ export const usePermissionsStatus = (authSignature?: string | null) => {
       const next: PermissionsState = {
         isSysAdmin: Boolean(result.isSysAdmin),
         isOfficeAdmin: Boolean(result.isOfficeAdmin),
+        userId: result.userId,
         enabledPages: Array.isArray(result.enabledPages)
           ? result.enabledPages
           : ALL_FEATURE_PATHS,
