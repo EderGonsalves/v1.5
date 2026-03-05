@@ -145,11 +145,12 @@ export default function ConexoesPage() {
             seenPhones.add(normalizedPhone);
             const deptId = record.phone_department_id;
             const deptName = record.phone_department_name;
+            const parsedDeptId = deptId != null ? Number(deptId) : null;
             numbers.push({
               id: config.id,
               phoneNumber: normalizedPhone,
-              departmentId: typeof deptId === "number" ? deptId : null,
-              departmentName: typeof deptName === "string" ? deptName : null,
+              departmentId: parsedDeptId && !Number.isNaN(parsedDeptId) ? parsedDeptId : null,
+              departmentName: deptName != null ? String(deptName) : null,
             });
           }
         }
