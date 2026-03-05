@@ -928,6 +928,9 @@ export const updateBaserowConfig = async (
   }
 };
 
+/**
+ * @deprecated Usar updateIaAtivadaByConfigId para atualizar por config row específica
+ */
 export const updateIaAtivada = async (
   institutionId: number,
   iaAtivada: "sim" | "não",
@@ -957,6 +960,16 @@ export const updateIaAtivada = async (
     }
     throw new Error("Erro desconhecido ao atualizar ia_ativada");
   }
+};
+
+export const updateIaAtivadaByConfigId = async (
+  configId: number,
+  iaAtivada: "sim" | "não",
+): Promise<BaserowConfigRow> => {
+  const updatedRow = await updateBaserowConfig(configId, {
+    ia_ativada: iaAtivada,
+  });
+  return updatedRow;
 };
 
 export const createBaserowConfig = async (

@@ -5,7 +5,7 @@
  * Fluxo: code → access_token → debug_token → phone_numbers → subscribe → update config
  */
 import axios from "axios";
-import { getBaserowConfigs, updateBaserowConfig } from "@/services/api";
+import { getBaserowConfigs, updateBaserowConfig, createBaserowConfig } from "@/services/api";
 
 const GRAPH_API_VERSION = process.env.WABA_GRAPH_API_VERSION ?? "v22.0";
 const GRAPH_BASE_URL = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
@@ -207,7 +207,7 @@ async function subscribeApp(businessId: string): Promise<void> {
 // Step 5: Find config row and update with WABA IDs
 // ---------------------------------------------------------------------------
 
-async function findAndUpdateConfig(
+async function findOrCreateConfig(
   institutionId: number,
   displayPhoneNumber: string,
   phoneNumberId: string,
@@ -217,7 +217,7 @@ async function findAndUpdateConfig(
 
   // Buscar config que contenha o phone number
   const normalizedDisplay = displayPhoneNumber.replace(/\D/g, "");
-  let targetConfig = configs.find((c) => {
+  const existingConfig = configs.find((c) => {
     const record = c as Record<string, unknown>;
     const phone = String(record["waba_phone_number"] ?? "")
       .replace(/\D/g, "")
@@ -225,24 +225,42 @@ async function findAndUpdateConfig(
     return phone && normalizedDisplay.includes(phone);
   });
 
-  // Fallback: usar a config mais recente da instituição
-  if (!targetConfig && configs.length > 0) {
-    targetConfig = configs.reduce(
+  if (existingConfig) {
+    // Número já existe → apenas atualizar IDs
+    await updateBaserowConfig(existingConfig.id, {
+      waba_phone_id: phoneNumberId,
+      waba_business_account_id: wabaBusinessAccountId,
+    } as Record<string, unknown>);
+    return;
+  }
+
+  // Número novo → criar nova config row
+  if (configs.length > 0) {
+    // Copiar dados institucionais da config base (mais recente)
+    const baseConfig = configs.reduce(
       (latest, c) => (c.id > latest.id ? c : latest),
       configs[0],
     );
-  }
+    const baseRecord = baseConfig as Record<string, unknown>;
 
-  if (!targetConfig) {
-    throw new Error(
-      `Nenhuma configuração encontrada para a instituição ${institutionId}`,
-    );
+    await createBaserowConfig({
+      "body.auth.institutionId": baseRecord["body.auth.institutionId"],
+      institution_name: baseRecord["institution_name"],
+      waba_phone_number: displayPhoneNumber,
+      waba_phone_id: phoneNumberId,
+      waba_business_account_id: wabaBusinessAccountId,
+      ia_ativada: "não",
+    } as Record<string, unknown>);
+  } else {
+    // Nenhuma config prévia → criar mínima
+    await createBaserowConfig({
+      "body.auth.institutionId": institutionId,
+      waba_phone_number: displayPhoneNumber,
+      waba_phone_id: phoneNumberId,
+      waba_business_account_id: wabaBusinessAccountId,
+      ia_ativada: "não",
+    } as Record<string, unknown>);
   }
-
-  await updateBaserowConfig(targetConfig.id, {
-    waba_phone_id: phoneNumberId,
-    waba_business_account_id: wabaBusinessAccountId,
-  } as Record<string, unknown>);
 }
 
 // ---------------------------------------------------------------------------
@@ -280,7 +298,7 @@ export async function processWhatsAppOnboarding(
 
     // Step 5: Update config
     console.log("[waba-onboarding] Step 5: Atualizando configuração...");
-    await findAndUpdateConfig(
+    await findOrCreateConfig(
       institutionId,
       displayPhoneNumber,
       phoneNumberId,

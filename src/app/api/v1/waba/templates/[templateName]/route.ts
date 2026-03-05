@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestAuth } from "@/lib/auth/session";
-import { getInstitutionWabaPhoneId } from "@/lib/waba";
+import { getInstitutionWabaPhoneId, getWabaIdByConfigId } from "@/lib/waba";
 import { getTemplate, deleteTemplate } from "@/services/waba-templates";
 
 const SYSADMIN_INSTITUTION_ID = 4;
@@ -39,6 +39,20 @@ const resolveTargetInstitutionId = (
   return auth.institutionId;
 };
 
+const resolveWabaId = async (
+  targetInstitutionId: number,
+  searchParams: URLSearchParams,
+): Promise<string | null> => {
+  const configIdParam = searchParams.get("configId");
+  if (configIdParam) {
+    const configId = Number(configIdParam);
+    if (Number.isFinite(configId) && configId > 0) {
+      return getWabaIdByConfigId(configId, targetInstitutionId);
+    }
+  }
+  return getInstitutionWabaPhoneId(targetInstitutionId);
+};
+
 // ---------------------------------------------------------------------------
 // GET /api/v1/waba/templates/[templateName] — Get template details
 // ---------------------------------------------------------------------------
@@ -56,7 +70,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       request.nextUrl.searchParams,
     );
 
-    const wabaId = await getInstitutionWabaPhoneId(targetInstitutionId);
+    const wabaId = await resolveWabaId(targetInstitutionId, request.nextUrl.searchParams);
     if (!wabaId) {
       return NextResponse.json(
         { error: "WABA ID não configurado para esta instituição" },
@@ -111,7 +125,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       "| templateName:", templateName,
       "| queryParam institutionId:", request.nextUrl.searchParams.get("institutionId"));
 
-    const wabaId = await getInstitutionWabaPhoneId(targetInstitutionId);
+    const wabaId = await resolveWabaId(targetInstitutionId, request.nextUrl.searchParams);
     console.log("[waba/templates/DELETE] wabaId resolvido:", wabaId);
 
     if (!wabaId) {

@@ -28,7 +28,9 @@ import {
   ChevronDown,
   ChevronUp,
   Building2,
+  Phone,
 } from "lucide-react";
+import type { WabaPhoneInfo } from "@/lib/waba";
 
 const SYSADMIN_INSTITUTION_ID = 4;
 
@@ -87,6 +89,11 @@ export const TemplateList = () => {
   const [confirmDeleteName, setConfirmDeleteName] = useState<string | null>(null);
   const [errorModal, setErrorModal] = useState<string | null>(null);
 
+  // Phone number selector (multi-phone institutions)
+  const [phoneNumbers, setPhoneNumbers] = useState<WabaPhoneInfo[]>([]);
+  const [selectedConfigId, setSelectedConfigId] = useState<number | undefined>(undefined);
+  const [loadingPhones, setLoadingPhones] = useState(false);
+
   // SysAdmin institution selector
   const [institutions, setInstitutions] = useState<
     Array<{ institutionId: number; companyName: string }>
@@ -95,6 +102,38 @@ export const TemplateList = () => {
     number | undefined
   >(undefined);
   const [loadingInstitutions, setLoadingInstitutions] = useState(false);
+
+  // Fetch phone numbers for the institution (or selected institution for SysAdmin)
+  const phoneInstitutionId = isSysAdmin ? selectedInstitutionId : data.auth?.institutionId;
+  useEffect(() => {
+    if (!phoneInstitutionId) {
+      setPhoneNumbers([]);
+      setSelectedConfigId(undefined);
+      return;
+    }
+    let active = true;
+    setLoadingPhones(true);
+    const qs = isSysAdmin && selectedInstitutionId
+      ? `?institutionId=${selectedInstitutionId}`
+      : "";
+    fetch(`/api/waba/numbers${qs}`)
+      .then((res) => res.json())
+      .then((resp: { numbers?: WabaPhoneInfo[] }) => {
+        if (!active) return;
+        const phones = resp.numbers ?? [];
+        setPhoneNumbers(phones);
+        if (phones.length === 1) {
+          setSelectedConfigId(phones[0].configId);
+        } else if (phones.length > 1 && !selectedConfigId) {
+          setSelectedConfigId(phones[0].configId);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setLoadingPhones(false);
+      });
+    return () => { active = false; };
+  }, [phoneInstitutionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch institutions for SysAdmin
   useEffect(() => {
@@ -120,7 +159,7 @@ export const TemplateList = () => {
     };
   }, [isSysAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Build query string with institutionId for SysAdmin
+  // Build query string with institutionId for SysAdmin + configId for phone filter
   const buildQs = useCallback(
     (extra?: Record<string, string>) => {
       const params = new URLSearchParams();
@@ -128,13 +167,16 @@ export const TemplateList = () => {
       if (isSysAdmin && selectedInstitutionId) {
         params.set("institutionId", String(selectedInstitutionId));
       }
+      if (selectedConfigId && phoneNumbers.length > 1) {
+        params.set("configId", String(selectedConfigId));
+      }
       if (extra) {
         for (const [k, v] of Object.entries(extra)) params.set(k, v);
       }
       const str = params.toString();
       return str ? `?${str}` : "";
     },
-    [filter, isSysAdmin, selectedInstitutionId],
+    [filter, isSysAdmin, selectedInstitutionId, selectedConfigId, phoneNumbers.length],
   );
 
   const fetchTemplates = useCallback(async () => {
@@ -158,7 +200,7 @@ export const TemplateList = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [buildQs, isSysAdmin, selectedInstitutionId]);
+  }, [buildQs, isSysAdmin, selectedInstitutionId, selectedConfigId]);
 
   useEffect(() => {
     fetchTemplates();
@@ -191,12 +233,16 @@ export const TemplateList = () => {
 
     setDeletingName(templateName);
     try {
-      const instParam =
-        isSysAdmin && selectedInstitutionId
-          ? `?institutionId=${selectedInstitutionId}`
-          : "";
+      const deleteParams = new URLSearchParams();
+      if (isSysAdmin && selectedInstitutionId) {
+        deleteParams.set("institutionId", String(selectedInstitutionId));
+      }
+      if (selectedConfigId && phoneNumbers.length > 1) {
+        deleteParams.set("configId", String(selectedConfigId));
+      }
+      const deleteQs = deleteParams.toString() ? `?${deleteParams.toString()}` : "";
       const res = await fetch(
-        `/api/v1/waba/templates/${encodeURIComponent(templateName)}${instParam}`,
+        `/api/v1/waba/templates/${encodeURIComponent(templateName)}${deleteQs}`,
         { method: "DELETE" },
       );
       if (!res.ok) {
@@ -264,6 +310,36 @@ export const TemplateList = () => {
               {institutions.map((inst) => (
                 <option key={inst.institutionId} value={inst.institutionId}>
                   {inst.companyName} (ID: {inst.institutionId})
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
+
+      {/* Phone number selector (when multiple phones) */}
+      {phoneNumbers.length > 1 && (
+        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2 px-3 sm:px-4 py-2 border-b border-[#7E99B5] dark:border-border/60 bg-muted/30">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
+            <span className="text-xs text-muted-foreground">
+              Número:
+            </span>
+          </div>
+          {loadingPhones ? (
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          ) : (
+            <select
+              value={selectedConfigId ?? ""}
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                setSelectedConfigId(val || undefined);
+              }}
+              className="h-8 w-full sm:flex-1 rounded-md border border-input bg-background px-2 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring min-w-0"
+            >
+              {phoneNumbers.map((p) => (
+                <option key={p.configId} value={p.configId}>
+                  {p.phoneNumber}{p.label ? ` — ${p.label}` : ""}
                 </option>
               ))}
             </select>

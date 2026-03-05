@@ -29,6 +29,7 @@ export type WabaPhoneInfo = {
   riasignWabaConfigId?: string | null;
   institutionId?: number | null;
   institutionName?: string | null;
+  iaAtivada?: boolean;
 };
 
 /**
@@ -65,6 +66,8 @@ export const getInstitutionWabaPhoneNumbers = async (
           const riasignWabaConfigId = record["riasign_waba_config_id"];
           const instId = record["body.auth.institutionId"];
           const instName = record["institution_name"] ?? record["waba_label"];
+          const iaRaw = String(record["ia_ativada"] ?? "").trim().toLowerCase();
+          const iaAtivada = iaRaw === "sim" || iaRaw === "yes" || iaRaw === "true";
           phoneNumbers.push({
             phoneNumber: normalized,
             configId: config.id,
@@ -75,6 +78,7 @@ export const getInstitutionWabaPhoneNumbers = async (
             riasignWabaConfigId: riasignWabaConfigId != null ? String(riasignWabaConfigId).trim() || null : null,
             institutionId: instId != null ? Number(instId) || null : null,
             institutionName: typeof instName === "string" ? instName : null,
+            iaAtivada,
           });
         }
       }
@@ -144,6 +148,31 @@ export const getInstitutionWabaPhoneId = async (
     return null;
   } catch (error) {
     console.error("[waba] Falha ao buscar WABA Business Account ID:", error);
+    return null;
+  }
+};
+
+/**
+ * Retorna o WABA Business Account ID de uma config row específica (por configId).
+ */
+export const getWabaIdByConfigId = async (
+  configId: number,
+  institutionId?: number,
+): Promise<string | null> => {
+  try {
+    const configs = await getBaserowConfigs(institutionId);
+    const config = configs.find((c) => c.id === configId);
+    if (!config) return null;
+
+    const record = config as Record<string, unknown>;
+    const businessAccountId = record["waba_business_account_id"];
+    if (businessAccountId !== undefined && businessAccountId !== null) {
+      const normalized = String(businessAccountId).trim();
+      if (normalized) return normalized;
+    }
+    return null;
+  } catch (error) {
+    console.error("[waba] Falha ao buscar WABA ID por configId:", error);
     return null;
   }
 };

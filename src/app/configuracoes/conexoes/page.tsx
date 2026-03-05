@@ -24,9 +24,11 @@ import {
   createWebhook,
   updateWebhook,
   deleteWebhook,
+  updateIaAtivadaByConfigId,
+  registerAgentState,
   type WebhookRow,
 } from "@/services/api";
-import { Bell, Pencil, Plus, Trash2, Webhook, Loader2, ChevronDown } from "lucide-react";
+import { Bell, Bot, Pencil, Plus, Trash2, Webhook, Loader2, ChevronDown } from "lucide-react";
 import { useDepartments } from "@/hooks/use-departments";
 import { useMyDepartments } from "@/hooks/use-my-departments";
 import { TemplateList } from "@/components/waba/TemplateList";
@@ -61,6 +63,7 @@ type ConnectedNumber = {
   phoneNumber: string;
   departmentId?: number | null;
   departmentName?: string | null;
+  iaAtivada: boolean;
 };
 
 type WebhookFormData = {
@@ -90,6 +93,7 @@ export default function ConexoesPage() {
   const [connectedNumbers, setConnectedNumbers] = useState<ConnectedNumber[]>([]);
   const [isLoadingWaba, setIsLoadingWaba] = useState(false);
   const [updatingPhoneDept, setUpdatingPhoneDept] = useState<number | null>(null);
+  const [togglingIaId, setTogglingIaId] = useState<number | null>(null);
   const { departments } = useDepartments(data.auth?.institutionId);
   const { isOfficeAdmin: isMyOfficeAdmin, isGlobalAdmin: isMyGlobalAdmin } = useMyDepartments();
   const canManagePhoneDepts = isMyGlobalAdmin || isMyOfficeAdmin;
@@ -146,11 +150,14 @@ export default function ConexoesPage() {
             const deptId = record.phone_department_id;
             const deptName = record.phone_department_name;
             const parsedDeptId = deptId != null ? Number(deptId) : null;
+            const iaRaw = String(record.ia_ativada ?? "").trim().toLowerCase();
+            const iaAtivada = iaRaw === "sim" || iaRaw === "yes" || iaRaw === "true";
             numbers.push({
               id: config.id,
               phoneNumber: normalizedPhone,
               departmentId: parsedDeptId && !Number.isNaN(parsedDeptId) ? parsedDeptId : null,
               departmentName: deptName != null ? String(deptName) : null,
+              iaAtivada,
             });
           }
         }
@@ -195,6 +202,33 @@ export default function ConexoesPage() {
       setUpdatingPhoneDept(null);
     }
   }, [departments]);
+
+  const handleIaToggle = useCallback(async (configId: number, checked: boolean, phoneNumber: string) => {
+    setTogglingIaId(configId);
+    const previous = connectedNumbers.find((n) => n.id === configId)?.iaAtivada ?? false;
+    setConnectedNumbers((prev) =>
+      prev.map((n) => (n.id === configId ? { ...n, iaAtivada: checked } : n)),
+    );
+    try {
+      await updateIaAtivadaByConfigId(configId, checked ? "sim" : "não");
+      // Side-effect legado: registrar estado do agente
+      try {
+        await registerAgentState({
+          numero: phoneNumber,
+          estado: checked ? "ativo" : "inativo",
+        });
+      } catch {
+        // Não bloquear se falhar
+      }
+    } catch (err) {
+      console.error("Erro ao alterar IA:", err);
+      setConnectedNumbers((prev) =>
+        prev.map((n) => (n.id === configId ? { ...n, iaAtivada: previous } : n)),
+      );
+    } finally {
+      setTogglingIaId(null);
+    }
+  }, [connectedNumbers]);
 
   const handleOpenWebhookDialog = (webhook?: WebhookRow) => {
     if (webhook) {
@@ -478,6 +512,38 @@ export default function ConexoesPage() {
                       Dept: {connection.departmentName}
                     </span>
                   )}
+                  {/* Toggle IA */}
+                  <div className="flex items-center gap-1.5">
+                    <Switch
+                      checked={connection.iaAtivada}
+                      onCheckedChange={(checked) =>
+                        handleIaToggle(connection.id, checked, connection.phoneNumber)
+                      }
+                      disabled={togglingIaId === connection.id}
+                      aria-label="Ativar/desativar IA"
+                    />
+                    <span
+                      className={`text-xs font-medium ${
+                        connection.iaAtivada
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      {connection.iaAtivada ? "IA Ativa" : "IA Inativa"}
+                    </span>
+                  </div>
+                  {/* Botão configurar agente */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() =>
+                      router.push(`/configuracoes/agente?configId=${connection.id}`)
+                    }
+                  >
+                    <Bot className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Configurar agente</span>
+                  </Button>
                   <div className="flex items-center gap-2 rounded-full bg-green-500/10 px-2.5 py-0.5 text-xs font-medium text-green-700 dark:text-green-400">
                     <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />

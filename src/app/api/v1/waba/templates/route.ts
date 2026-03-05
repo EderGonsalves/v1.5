@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestAuth } from "@/lib/auth/session";
-import { getInstitutionWabaPhoneId } from "@/lib/waba";
+import { getInstitutionWabaPhoneId, getWabaIdByConfigId } from "@/lib/waba";
 import { createTemplateSchema } from "@/lib/waba/schemas";
 import {
   listTemplates,
@@ -48,9 +48,27 @@ const resolveTargetInstitutionId = (
   return auth.institutionId;
 };
 
+/**
+ * Resolve o WABA Business Account ID.
+ * Prioriza configId (número específico) se presente na query string.
+ */
+const resolveWabaId = async (
+  targetInstitutionId: number,
+  searchParams: URLSearchParams,
+): Promise<string | null> => {
+  const configIdParam = searchParams.get("configId");
+  if (configIdParam) {
+    const configId = Number(configIdParam);
+    if (Number.isFinite(configId) && configId > 0) {
+      return getWabaIdByConfigId(configId, targetInstitutionId);
+    }
+  }
+  return getInstitutionWabaPhoneId(targetInstitutionId);
+};
+
 // ---------------------------------------------------------------------------
 // GET /api/v1/waba/templates — List templates
-// Query: ?status=APPROVED&limit=50&institutionId=X (SysAdmin)
+// Query: ?status=APPROVED&limit=50&institutionId=X (SysAdmin)&configId=Y
 // ---------------------------------------------------------------------------
 
 export async function GET(request: NextRequest) {
@@ -65,7 +83,7 @@ export async function GET(request: NextRequest) {
       request.nextUrl.searchParams,
     );
 
-    const wabaId = await getInstitutionWabaPhoneId(targetInstitutionId);
+    const wabaId = await resolveWabaId(targetInstitutionId, request.nextUrl.searchParams);
     if (!wabaId) {
       return NextResponse.json(
         { error: "WABA ID não configurado para esta instituição" },
@@ -113,7 +131,7 @@ export async function POST(request: NextRequest) {
       request.nextUrl.searchParams,
     );
 
-    const wabaId = await getInstitutionWabaPhoneId(targetInstitutionId);
+    const wabaId = await resolveWabaId(targetInstitutionId, request.nextUrl.searchParams);
     if (!wabaId) {
       return NextResponse.json(
         { error: "WABA ID não configurado para esta instituição" },
