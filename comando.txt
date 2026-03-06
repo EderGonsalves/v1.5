@@ -1,0 +1,1 @@
+docker cp debug-schema.js b25b0fca3b1c:/tmp/debug-schema.js && docker exec b25b0fca3b1c node /tmp/debug-schema.js

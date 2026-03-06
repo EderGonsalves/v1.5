@@ -72,7 +72,8 @@
       "Bash(PGPASSWORD=RLaNTHerwalc psql:*)",
       "Bash(docker cp:*)",
       "Bash(npx next:*)",
-      "Bash(source .env:*)"
+      "Bash(source .env:*)",
+      "Bash(npx vitest:*)"
     ]
   }
 }

@@ -21,6 +21,8 @@ import {
 } from "@/lib/case-stats";
 import { cn } from "@/lib/utils";
 import { useStatistics, type ActiveUsersData } from "@/hooks/use-statistics";
+import { useMyDepartments } from "@/hooks/use-my-departments";
+import { PendingCasesModal } from "@/components/statistics/PendingCasesModal";
 
 const stageStackColors: Record<CaseStage, string> = {
   DepoimentoInicial: "bg-blue-500/70",
@@ -256,7 +258,13 @@ const ActiveUsersTable = ({ data }: { data: NonNullable<ActiveUsersData["byInsti
   );
 };
 
-const ResponsavelRanking = ({ data }: { data: ResponsavelStats[] }) => {
+const ResponsavelRanking = ({
+  data,
+  onPendingClick,
+}: {
+  data: ResponsavelStats[];
+  onPendingClick?: (responsavelName: string) => void;
+}) => {
   if (!data.length) {
     return <p className="py-4 text-center text-sm text-muted-foreground">Nenhum dado de responsável disponível.</p>;
   }
@@ -280,7 +288,19 @@ const ResponsavelRanking = ({ data }: { data: ResponsavelStats[] }) => {
               <td className="px-3 py-2 text-right">{r.total}</td>
               <td className="px-3 py-2 text-right text-emerald-600 dark:text-emerald-400">{r.won}</td>
               <td className="px-3 py-2 text-right text-red-600 dark:text-red-400">{r.lost}</td>
-              <td className="px-3 py-2 text-right text-muted-foreground">{r.pending}</td>
+              <td className="px-3 py-2 text-right">
+                {r.pending > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => onPendingClick?.(r.name)}
+                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-sm font-medium text-amber-700 underline decoration-amber-400/50 underline-offset-2 hover:bg-amber-50 hover:text-amber-800 dark:text-amber-400 dark:hover:bg-amber-950/30 dark:hover:text-amber-300 transition-colors"
+                  >
+                    {r.pending}
+                  </button>
+                ) : (
+                  <span className="text-muted-foreground">0</span>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -292,8 +312,14 @@ const ResponsavelRanking = ({ data }: { data: ResponsavelStats[] }) => {
 export default function EstatisticasPage() {
   const { data } = useOnboarding();
   const isSysAdmin = data.auth?.institutionId === 4;
+  const { isOfficeAdmin } = useMyDepartments();
+  const canTransfer = isSysAdmin || isOfficeAdmin;
+  const currentUserName = (data.auth?.payload as Record<string, unknown> | undefined)?.name as string | undefined;
+
   const [selectedInstitution, setSelectedInstitution] = useState("all");
   const [selectedResponsavel, setSelectedResponsavel] = useState("all");
+  const [pendingModalOpen, setPendingModalOpen] = useState(false);
+  const [pendingModalResponsavel, setPendingModalResponsavel] = useState("");
 
   const {
     stats: aggregatedStats,
@@ -580,9 +606,25 @@ export default function EstatisticasPage() {
           </span>
         </div>
         <div className="px-3 sm:px-4">
-          <ResponsavelRanking data={filteredResponsavel} />
+          <ResponsavelRanking
+            data={filteredResponsavel}
+            onPendingClick={(name) => {
+              setPendingModalResponsavel(name);
+              setPendingModalOpen(true);
+            }}
+          />
         </div>
       </div>
+
+      <PendingCasesModal
+        open={pendingModalOpen}
+        onOpenChange={setPendingModalOpen}
+        responsavelName={pendingModalResponsavel}
+        institutionId={data.auth?.institutionId ?? 0}
+        canTransfer={canTransfer}
+        currentUserName={currentUserName}
+        onTransferred={() => refresh()}
+      />
     </main>
   );
 }
