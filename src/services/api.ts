@@ -784,7 +784,6 @@ const CONFIG_FIELD_MAP: Record<string, keyof typeof cfgTable.$inferInsert> = {
   "phone_department_id": "phoneDepartmentId",
   "phone_department_name": "phoneDepartmentName",
   "waba_business_account_id": "wabaBusinessAccountId",
-  "queue_mode": "queueMode",
   "riasign_waba_config_id": "riasignWabaConfigId",
 };
 
@@ -810,12 +809,7 @@ function buildConfigSetObj(data: Record<string, unknown>): Record<string, unknow
     if (key === "id") continue;
     const drizzleKey = CONFIG_FIELD_MAP[key];
     if (drizzleKey) {
-      // queueMode is jsonb — pass as-is; all others become strings
-      if (drizzleKey === "queueMode") {
-        setObj[drizzleKey] = value ?? null;
-      } else {
-        setObj[drizzleKey] = value != null ? String(value) : null;
-      }
+      setObj[drizzleKey] = value != null ? String(value) : null;
     }
   }
   return setObj;

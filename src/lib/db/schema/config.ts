@@ -1,4 +1,4 @@
-import { jsonb, numeric, pgTable, serial, text } from "drizzle-orm/pg-core";
+import { numeric, pgTable, serial, text } from "drizzle-orm/pg-core";
 
 /**
  * config — Baserow table 224
@@ -59,6 +59,5 @@ export const config = pgTable("database_table_224", {
   phoneDepartmentId: numeric("field_1907"), // phone_department_id (number)
   phoneDepartmentName: text("field_1908"), // phone_department_name (text)
   wabaBusinessAccountId: text("field_1927"), // waba_business_account_id (text)
-  queueMode: jsonb("field_1975"), // queue_mode (multiple_select)
   riasignWabaConfigId: text("field_2005"), // riasign_waba_config_id (text)
 });
