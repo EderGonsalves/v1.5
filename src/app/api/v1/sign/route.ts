@@ -15,8 +15,35 @@ import {
 import { getTemplateById, readTemplateFile } from "@/services/doc-templates";
 import { convertDocxToHtml } from "@/services/docx-converter";
 import { updateBaserowCase } from "@/services/api";
+import { db } from "@/lib/db";
+import { caseMessages } from "@/lib/db/schema/caseMessages";
+import { eq, desc, and, isNotNull } from "drizzle-orm";
 
 const APP_URL = process.env.APP_URL ?? "";
+
+/** Check if the 24h WhatsApp window has expired for a case */
+async function isOutsideWhatsAppWindow(caseId: string): Promise<boolean> {
+  try {
+    const [lastMsg] = await db
+      .select({ createdOn: caseMessages.createdOn })
+      .from(caseMessages)
+      .where(
+        and(
+          eq(caseMessages.caseId, caseId),
+          isNotNull(caseMessages.from),
+        ),
+      )
+      .orderBy(desc(caseMessages.createdOn))
+      .limit(1);
+
+    if (!lastMsg) return true; // no messages → outside window
+    const diffMs = Date.now() - lastMsg.createdOn.getTime();
+    return diffMs > 24 * 60 * 60 * 1000;
+  } catch (err) {
+    console.error("[sign] Failed to check 24h window:", err);
+    return true; // on error, safer to use template
+  }
+}
 
 // GET /api/v1/sign?caseId=123 — list envelopes for a case
 export async function GET(request: NextRequest) {
@@ -117,10 +144,13 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Create envelope on RIA Sign (múltiplos signatários)
+    // Check 24h WhatsApp window to decide use_template
+    const useTemplate = await isOutsideWhatsAppWindow(String(caseId));
     console.log("[sign] waba_config_id resolução:", {
       clientWabaConfigId,
       fallbackWabaConfigId: wabaConfigId,
       final: wabaConfigId || "(vazio — não será enviado)",
+      use_template: useTemplate,
     });
     const webhookUrl = `${APP_URL}/api/v1/sign/webhook`;
     const envelope = await createEnvelope({
@@ -132,7 +162,7 @@ export async function POST(request: NextRequest) {
         email: s.email || undefined,
       })),
       waba_config_id: wabaConfigId,
-      use_template: false,
+      use_template: useTemplate,
       require_otp: require_otp ?? false,
       require_selfie: require_selfie ?? false,
     });
