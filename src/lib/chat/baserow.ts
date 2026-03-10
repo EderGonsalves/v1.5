@@ -604,24 +604,26 @@ const buildFetchResult = (
 const phoneEq = (column: typeof caseMessages.from | typeof caseMessages.to, digits: string) =>
   sql`regexp_replace(${column}, '\\D', '', 'g') = ${digits}`;
 
-const buildOrphanPhoneCondition = (
+/**
+ * Condição de busca por par de telefones (cliente ↔ WABA).
+ * Encontra TODAS as mensagens da conversa independente do CaseId —
+ * mensagens podem ter CaseId diferente, vazio ou null dependendo de
+ * como o N8N as criou (BJCaseId, rowId, ou nenhum).
+ * SEGURANÇA: a dupla (cliente ↔ WABA) isola por escritório.
+ */
+const buildPhoneMatchCondition = (
   customerPhone: string,
   wabaPhone: string | undefined,
 ) => {
-  // SEGURANÇA: sem WABA, NÃO buscar mensagens órfãs (evita vazamento cross-WABA)
+  // SEGURANÇA: sem WABA, NÃO buscar por telefone (evita vazamento cross-WABA)
   if (!wabaPhone) {
     return null;
   }
 
-  const caseIdMissing = or(isNull(caseMessages.caseId), eq(caseMessages.caseId, ""));
-
-  // Preciso: bate a conversa exata (cliente ↔ WABA), normalizando telefones do DB
-  return and(
-    caseIdMissing,
-    or(
-      and(phoneEq(caseMessages.from, customerPhone), phoneEq(caseMessages.to, wabaPhone)),
-      and(phoneEq(caseMessages.from, wabaPhone), phoneEq(caseMessages.to, customerPhone)),
-    ),
+  // Bate a conversa exata (cliente ↔ WABA), normalizando telefones do DB
+  return or(
+    and(phoneEq(caseMessages.from, customerPhone), phoneEq(caseMessages.to, wabaPhone)),
+    and(phoneEq(caseMessages.from, wabaPhone), phoneEq(caseMessages.to, customerPhone)),
   );
 };
 
@@ -656,13 +658,13 @@ const fetchIncrementalMessages = async (
         ? eq(caseMessages.caseId, normalizedIdentifiers[0])
         : inArray(caseMessages.caseId, normalizedIdentifiers);
 
-      // Condição extra: mensagens órfãs — APENAS se WABA é conhecido (segurança)
-      const orphanCondition = normalizedPhone && normalizedWabaPhone
-        ? buildOrphanPhoneCondition(normalizedPhone, normalizedWabaPhone)
+      // Condição extra: mensagens por telefone — captura msgs com CaseId diferente/null
+      const phoneCondition = normalizedPhone && normalizedWabaPhone
+        ? buildPhoneMatchCondition(normalizedPhone, normalizedWabaPhone)
         : null;
 
-      const matchCondition = orphanCondition
-        ? or(caseIdCondition, orphanCondition)
+      const matchCondition = phoneCondition
+        ? or(caseIdCondition, phoneCondition)
         : caseIdCondition;
 
       const rows = await db
@@ -781,19 +783,20 @@ export const fetchCaseMessagesFromBaserow = async (
         || determineWabaNumberFromMessages(collected, normalizedPhone)
         || "";
 
-      // 3) Mensagens órfãs (CaseId null/vazio) — APENAS se WABA é conhecido
+      // 3) Mensagens por par de telefones (cliente ↔ WABA) — captura msgs com
+      //    CaseId diferente, null ou vazio que pertencem à mesma conversa WhatsApp
       if (normalizedPhone && effectiveWabaPhone) {
-        const orphanCondition = buildOrphanPhoneCondition(
+        const phoneCondition = buildPhoneMatchCondition(
           normalizedPhone,
           effectiveWabaPhone,
         );
-        if (orphanCondition) {
-          const orphanRows = await db
+        if (phoneCondition) {
+          const phoneRows = await db
             .select()
             .from(caseMessages)
-            .where(orphanCondition)
+            .where(phoneCondition)
             .orderBy(asc(caseMessages.createdOn), asc(caseMessages.id));
-          collected.push(...orphanRows.map(mapDrizzleToBaserowRow));
+          collected.push(...phoneRows.map(mapDrizzleToBaserowRow));
         }
       }
 
