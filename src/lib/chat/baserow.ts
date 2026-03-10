@@ -608,7 +608,7 @@ const phoneMatch = (column: typeof caseMessages.from | typeof caseMessages.to, d
   // Usar os últimos 10 dígitos como sufixo (DDD parcial + 9 dígitos do celular BR)
   // Combinado com a exigência da dupla (cliente ↔ WABA), falso positivo é praticamente impossível
   const suffix = digits.length > 10 ? digits.slice(-10) : digits;
-  return sql`regexp_replace(${column}, '\\D', '', 'g') LIKE ${"%" + suffix}`;
+  return sql`regexp_replace(${column}, '[^0-9]', '', 'g') LIKE ${"%" + suffix}`;
 };
 
 /**
@@ -803,8 +803,12 @@ export const fetchCaseMessagesFromBaserow = async (
             .from(caseMessages)
             .where(phoneCondition)
             .orderBy(asc(caseMessages.createdOn), asc(caseMessages.id));
+          // DEBUG: log para diagnóstico — remover depois de resolver
+          console.log(`[chat] phone-match: phone=${normalizedPhone} waba=${effectiveWabaPhone} → ${phoneRows.length} rows (byCaseId: ${collected.length})`);
           collected.push(...phoneRows.map(mapDrizzleToBaserowRow));
         }
+      } else {
+        console.log(`[chat] phone-match SKIPPED: phone="${normalizedPhone}" waba="${effectiveWabaPhone}"`);
       }
 
       // 4) Fallback LIKE: APENAS se nada encontrado E WABA é conhecido

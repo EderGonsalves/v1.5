@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
     // Helper: compara telefone por sufixo (tolera código de país 55)
     const phoneSuffix = (col: Parameters<typeof eq>[0], digits: string) => {
       const suffix = digits.length > 10 ? digits.slice(-10) : digits;
-      return sql`regexp_replace(${col}, '\\D', '', 'g') LIKE ${"%" + suffix}`;
+      return sql`regexp_replace(${col}, '[^0-9]', '', 'g') LIKE ${"%" + suffix}`;
     };
 
     // 2) Busca por telefone (from/to) — ignora CaseId, normaliza formato
