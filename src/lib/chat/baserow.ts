@@ -784,10 +784,14 @@ export const fetchCaseMessagesFromBaserow = async (
         }
       }
 
-      // 2) Derivar WABA a partir das mensagens já encontradas (se não veio como parâmetro)
-      //    SEGURANÇA: sem WABA confirmado, NÃO buscar órfãs para evitar vazamento cross-WABA
-      const effectiveWabaPhone = normalizedWabaPhone
-        || determineWabaNumberFromMessages(collected, normalizedPhone)
+      // 2) Derivar WABA a partir das mensagens já encontradas por CaseId (fonte confiável),
+      //    caindo no WABA configurado apenas se não houver mensagens para derivar.
+      //    SEGURANÇA: sem WABA confirmado, NÃO buscar por telefone para evitar vazamento cross-WABA
+      const messageDerivedWaba = collected.length > 0
+        ? determineWabaNumberFromMessages(collected, normalizedPhone)
+        : null;
+      const effectiveWabaPhone = messageDerivedWaba
+        || normalizedWabaPhone
         || "";
 
       // 3) Mensagens por par de telefones (cliente ↔ WABA) — captura msgs com
@@ -887,9 +891,12 @@ export const fetchCaseMessagesFromBaserow = async (
     }
   }
 
-  // 2) Derivar WABA das mensagens encontradas por CaseId
-  const effectiveWabaPhoneApi = normalizedWabaPhone
-    || determineWabaNumberFromMessages(collected, normalizedPhone)
+  // 2) Derivar WABA das mensagens encontradas por CaseId (prioridade sobre config)
+  const messageDerivedWabaApi = collected.length > 0
+    ? determineWabaNumberFromMessages(collected, normalizedPhone)
+    : null;
+  const effectiveWabaPhoneApi = messageDerivedWabaApi
+    || normalizedWabaPhone
     || "";
 
   // 3) Buscar por telefone APENAS se CaseId não retornou resultados E WABA é conhecido
@@ -1106,6 +1113,14 @@ export const normalizeCaseMessageRow = (
  * Analisa os campos `from` e `to` para identificar qual é o número WABA
  * (o que não é o telefone do cliente).
  */
+/** Compara dois telefones pelo sufixo (últimos 10 dígitos), tolerando código de país */
+const phoneSuffixMatch = (a: string, b: string): boolean => {
+  if (!a || !b) return false;
+  const sa = a.length > 10 ? a.slice(-10) : a;
+  const sb = b.length > 10 ? b.slice(-10) : b;
+  return sa === sb;
+};
+
 export const determineWabaNumberFromMessages = (
   messages: BaserowCaseMessageRow[],
   customerPhone?: string,
@@ -1122,21 +1137,54 @@ export const determineWabaNumberFromMessages = (
 
     // Se temos o telefone do cliente, podemos identificar o WABA
     if (normalizedCustomerPhone) {
-      // Se from é o cliente, to é o WABA
-      if (from === normalizedCustomerPhone && to) {
+      // Se from é o cliente, to é o WABA (comparação por sufixo)
+      if (phoneSuffixMatch(from, normalizedCustomerPhone) && to) {
         return to;
       }
-      // Se to é o cliente, from é o WABA
-      if (to === normalizedCustomerPhone && from) {
+      // Se to é o cliente, from é o WABA (comparação por sufixo)
+      if (phoneSuffixMatch(to, normalizedCustomerPhone) && from) {
         return from;
       }
     }
 
     // Sem customerPhone não é possível determinar WABA com segurança.
-    // O campo Sender (multiple_select) não existe como coluna PG via Drizzle
-    // (sempre null), então a heurística baseada em Sender seria falha.
-    // Retorna null e o chamador deve usar o WABA da instituição como fallback.
   }
 
   return null;
+};
+
+/**
+ * Consulta rápida ao banco para derivar o WABA real a partir das mensagens existentes de um caso.
+ * Retorna o número WABA (digits-only) ou null se não encontrar.
+ */
+export const deriveWabaFromCaseMessages = async (
+  caseIdentifiers: string[],
+  customerPhone: string,
+): Promise<string | null> => {
+  if (!caseIdentifiers.length || !customerPhone) return null;
+  if (!useDirectDb("chat")) return null;
+
+  try {
+    const condition = caseIdentifiers.length === 1
+      ? eq(caseMessages.caseId, caseIdentifiers[0])
+      : inArray(caseMessages.caseId, caseIdentifiers);
+
+    const sample = await db
+      .select({ from: caseMessages.from, to: caseMessages.to })
+      .from(caseMessages)
+      .where(condition)
+      .limit(5);
+
+    if (!sample.length) return null;
+
+    const mapped = sample.map((r) => ({
+      id: 0,
+      from: r.from,
+      to: r.to,
+    })) as BaserowCaseMessageRow[];
+
+    return determineWabaNumberFromMessages(mapped, customerPhone);
+  } catch {
+    return null;
+  }
 };

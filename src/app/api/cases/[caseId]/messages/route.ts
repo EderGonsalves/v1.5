@@ -5,6 +5,7 @@ import { convertAudioToOggOpus } from "@/lib/audio-converter";
 import { isCasePaused } from "@/lib/case-stats";
 import {
   createCaseMessageRow,
+  deriveWabaFromCaseMessages,
   fetchCaseMessagesFromBaserow,
   invalidateMessageCaches,
   normalizeCaseMessageRow,
@@ -465,6 +466,16 @@ export async function GET(
         if (instWaba) {
           wabaPhone = instWaba.replace(/\D/g, "").trim() || undefined;
         }
+      }
+    }
+
+    // ── Derivar WABA real das mensagens existentes (multi-WABA) ────────
+    // Para escritórios com múltiplos WABAs, o WABA configurado pode não ser
+    // o correto para esta conversa. Consulta rápida ao banco para descobrir.
+    if (customerPhone && identifiers.length > 0) {
+      const realWaba = await deriveWabaFromCaseMessages(identifiers.map(String), customerPhone);
+      if (realWaba) {
+        wabaPhone = realWaba;
       }
     }
 
