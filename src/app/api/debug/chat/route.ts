@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { caseMessages } from "@/lib/db/schema/caseMessages";
-import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, like, or, sql } from "drizzle-orm";
 import { getRequestAuth } from "@/lib/auth/session";
 import { useDirectDb } from "@/lib/db/repository";
 
@@ -50,15 +50,19 @@ export async function GET(request: NextRequest) {
         .limit(20);
     }
 
-    // 2) Busca por telefone (from/to) — ignora CaseId
+    // Helper: compara telefone normalizando (remove não-dígitos) no SQL
+    const phoneEq = (col: Parameters<typeof eq>[0], digits: string) =>
+      sql`regexp_replace(${col}, '\\D', '', 'g') = ${digits}`;
+
+    // 2) Busca por telefone (from/to) — ignora CaseId, normaliza formato
     let byPhone = null;
     if (phone) {
       byPhone = await db
         .select(selectFields)
         .from(caseMessages)
         .where(or(
-          eq(caseMessages.from, phone),
-          eq(caseMessages.to, phone),
+          phoneEq(caseMessages.from, phone),
+          phoneEq(caseMessages.to, phone),
         ))
         .orderBy(desc(caseMessages.id))
         .limit(20);
@@ -73,8 +77,8 @@ export async function GET(request: NextRequest) {
         .where(and(
           or(isNull(caseMessages.caseId), eq(caseMessages.caseId, "")),
           or(
-            eq(caseMessages.from, phone),
-            eq(caseMessages.to, phone),
+            phoneEq(caseMessages.from, phone),
+            phoneEq(caseMessages.to, phone),
           ),
         ))
         .orderBy(desc(caseMessages.id))

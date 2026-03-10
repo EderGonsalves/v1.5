@@ -1,5 +1,5 @@
 import axios from "axios";
-import { or, like, inArray, asc, gt, and, eq, isNull } from "drizzle-orm";
+import { or, like, inArray, asc, gt, and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { prepared } from "@/lib/db/prepared";
 import { useDirectDb, tryDrizzle } from "@/lib/db/repository";
@@ -597,6 +597,13 @@ const buildFetchResult = (
 // Retorna null se wabaPhone não for fornecido — chamador deve pular órfãs.
 // ---------------------------------------------------------------------------
 
+/**
+ * Compara telefone no SQL removendo caracteres não-numéricos (espaços, traços, +).
+ * Usa regexp_replace(field, '\D', '', 'g') no PostgreSQL para normalizar antes de comparar.
+ */
+const phoneEq = (column: typeof caseMessages.from | typeof caseMessages.to, digits: string) =>
+  sql`regexp_replace(${column}, '\\D', '', 'g') = ${digits}`;
+
 const buildOrphanPhoneCondition = (
   customerPhone: string,
   wabaPhone: string | undefined,
@@ -608,12 +615,12 @@ const buildOrphanPhoneCondition = (
 
   const caseIdMissing = or(isNull(caseMessages.caseId), eq(caseMessages.caseId, ""));
 
-  // Preciso: bate a conversa exata (cliente ↔ WABA)
+  // Preciso: bate a conversa exata (cliente ↔ WABA), normalizando telefones do DB
   return and(
     caseIdMissing,
     or(
-      and(eq(caseMessages.from, customerPhone), eq(caseMessages.to, wabaPhone)),
-      and(eq(caseMessages.from, wabaPhone), eq(caseMessages.to, customerPhone)),
+      and(phoneEq(caseMessages.from, customerPhone), phoneEq(caseMessages.to, wabaPhone)),
+      and(phoneEq(caseMessages.from, wabaPhone), phoneEq(caseMessages.to, customerPhone)),
     ),
   );
 };
