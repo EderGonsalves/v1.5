@@ -50,9 +50,11 @@ export async function GET(request: NextRequest) {
         .limit(20);
     }
 
-    // Helper: compara telefone normalizando (remove não-dígitos) no SQL
-    const phoneEq = (col: Parameters<typeof eq>[0], digits: string) =>
-      sql`regexp_replace(${col}, '\\D', '', 'g') = ${digits}`;
+    // Helper: compara telefone por sufixo (tolera código de país 55)
+    const phoneSuffix = (col: Parameters<typeof eq>[0], digits: string) => {
+      const suffix = digits.length > 10 ? digits.slice(-10) : digits;
+      return sql`regexp_replace(${col}, '\\D', '', 'g') LIKE ${"%" + suffix}`;
+    };
 
     // 2) Busca por telefone (from/to) — ignora CaseId, normaliza formato
     let byPhone = null;
@@ -61,8 +63,8 @@ export async function GET(request: NextRequest) {
         .select(selectFields)
         .from(caseMessages)
         .where(or(
-          phoneEq(caseMessages.from, phone),
-          phoneEq(caseMessages.to, phone),
+          phoneSuffix(caseMessages.from, phone),
+          phoneSuffix(caseMessages.to, phone),
         ))
         .orderBy(desc(caseMessages.id))
         .limit(20);
@@ -77,8 +79,8 @@ export async function GET(request: NextRequest) {
         .where(and(
           or(isNull(caseMessages.caseId), eq(caseMessages.caseId, "")),
           or(
-            phoneEq(caseMessages.from, phone),
-            phoneEq(caseMessages.to, phone),
+            phoneSuffix(caseMessages.from, phone),
+            phoneSuffix(caseMessages.to, phone),
           ),
         ))
         .orderBy(desc(caseMessages.id))

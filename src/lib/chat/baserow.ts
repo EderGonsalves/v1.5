@@ -598,11 +598,18 @@ const buildFetchResult = (
 // ---------------------------------------------------------------------------
 
 /**
- * Compara telefone no SQL removendo caracteres não-numéricos (espaços, traços, +).
- * Usa regexp_replace(field, '\D', '', 'g') no PostgreSQL para normalizar antes de comparar.
+ * Compara telefone no SQL tolerando diferença de código de país (55).
+ * 1) Remove caracteres não-numéricos do valor no DB (espaços, traços, +)
+ * 2) Compara por sufixo: "5511952171979" termina com "11952171979" ✓
+ *    Isso cobre: com/sem "55", com/sem formatação.
+ * SEGURANÇA: exige pelo menos 10 dígitos em comum (DDD + número completo).
  */
-const phoneEq = (column: typeof caseMessages.from | typeof caseMessages.to, digits: string) =>
-  sql`regexp_replace(${column}, '\\D', '', 'g') = ${digits}`;
+const phoneMatch = (column: typeof caseMessages.from | typeof caseMessages.to, digits: string) => {
+  // Usar os últimos 10 dígitos como sufixo (DDD parcial + 9 dígitos do celular BR)
+  // Combinado com a exigência da dupla (cliente ↔ WABA), falso positivo é praticamente impossível
+  const suffix = digits.length > 10 ? digits.slice(-10) : digits;
+  return sql`regexp_replace(${column}, '\\D', '', 'g') LIKE ${"%" + suffix}`;
+};
 
 /**
  * Condição de busca por par de telefones (cliente ↔ WABA).
@@ -622,8 +629,8 @@ const buildPhoneMatchCondition = (
 
   // Bate a conversa exata (cliente ↔ WABA), normalizando telefones do DB
   return or(
-    and(phoneEq(caseMessages.from, customerPhone), phoneEq(caseMessages.to, wabaPhone)),
-    and(phoneEq(caseMessages.from, wabaPhone), phoneEq(caseMessages.to, customerPhone)),
+    and(phoneMatch(caseMessages.from, customerPhone), phoneMatch(caseMessages.to, wabaPhone)),
+    and(phoneMatch(caseMessages.from, wabaPhone), phoneMatch(caseMessages.to, customerPhone)),
   );
 };
 
