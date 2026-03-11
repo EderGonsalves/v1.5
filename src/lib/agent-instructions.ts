@@ -14,6 +14,7 @@ export const INSTRUCTION_TYPES = [
   "institutionalAdditionalInfo",
   "qualificationRules",
   "disqualificationMessage",
+  "closingMessage",
   "agendamento",
   "assinatura_documentos",
   "acompanhamento_processual",
@@ -129,6 +130,16 @@ export const INSTRUCTION_DEFINITIONS: Record<
     baserowKey: "body.agentSettings.flow.qualificationFallback",
     placeholder:
       "Agradecemos seu contato, mas infelizmente não conseguimos atender este tipo de demanda.",
+  },
+  closingMessage: {
+    type: "closingMessage",
+    label: "Mensagem de fechamento",
+    description:
+      "Mensagem enviada pelo agente ao encerrar o atendimento.",
+    fieldType: "textarea",
+    baserowKey: "body.agentSettings.flow.closingMessage",
+    placeholder:
+      "Agradeço por compartilhar seu relato. Em breve um especialista entrará em contato.",
   },
   agendamento: {
     type: "agendamento",
