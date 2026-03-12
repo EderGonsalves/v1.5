@@ -131,9 +131,11 @@ export async function GET(request: NextRequest) {
       })),
     });
   } catch (err) {
-    console.error("[calendar/next-assignee] GET error:", err);
+    const message = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack : undefined;
+    console.error("[calendar/next-assignee] GET error:", message, stack);
     return NextResponse.json(
-      { error: "Erro ao determinar próximo responsável" },
+      { error: "Erro ao determinar próximo responsável", detail: message },
       { status: 500 },
     );
   }
