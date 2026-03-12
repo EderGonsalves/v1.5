@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCalendarAuth } from "@/lib/calendar/request";
 import { fetchInstitutionUsers } from "@/services/permissions";
 import { listCalendarEvents } from "@/services/api";
+import { fetchCalendarSettings } from "@/services/calendar-settings";
 
 const SYSADMIN_INSTITUTION_ID = 4;
 
@@ -56,10 +57,16 @@ export async function GET(request: NextRequest) {
     );
 
     if (agendaUsers.length === 0) {
+      // Fallback: verificar se existe config institucional com scheduling habilitado
+      // (escritórios que usam agenda a nível de escritório, sem usuários individuais)
+      const instSettings = await fetchCalendarSettings(institutionId);
+      const instEnabled = instSettings?.scheduling_enabled === true ||
+        String(instSettings?.scheduling_enabled) === "true";
+
       return NextResponse.json({
         user_id: null,
         user_name: null,
-        scheduling_enabled: false,
+        scheduling_enabled: instEnabled,
         count: 0,
         results: [],
       });
