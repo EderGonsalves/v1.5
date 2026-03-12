@@ -368,6 +368,14 @@ const extractRawSender = (row: BaserowCaseMessageRow): unknown => {
   return null;
 };
 
+/** Compara dois telefones pelo sufixo (últimos 10 dígitos), tolerando código de país */
+const phoneSuffixMatch = (a: string, b: string): boolean => {
+  if (!a || !b) return false;
+  const sa = a.length > 10 ? a.slice(-10) : a;
+  const sb = b.length > 10 ? b.slice(-10) : b;
+  return sa === sb;
+};
+
 // Determina o sender baseado nos campos from/to
 // - Se "from" = telefone do cliente → mensagem enviada pelo cliente
 // - Se "to" = telefone do cliente → mensagem enviada para o cliente (pelo bot)
@@ -385,12 +393,13 @@ export const inferSenderFromPhoneFields = (
   const rowTo = row.to ? String(row.to).replace(/\D/g, "").trim() : "";
 
   // Se "from" é o cliente, então a mensagem é do cliente
-  if (rowFrom && rowFrom === normalizedCustomerPhone) {
+  // Usa comparação por sufixo para tolerar diferença de código de país (55)
+  if (rowFrom && phoneSuffixMatch(rowFrom, normalizedCustomerPhone)) {
     return "cliente";
   }
 
   // Se "to" é o cliente, então a mensagem é do bot/empresa
-  if (rowTo && rowTo === normalizedCustomerPhone) {
+  if (rowTo && phoneSuffixMatch(rowTo, normalizedCustomerPhone)) {
     return "bot";
   }
 
@@ -1107,19 +1116,6 @@ export const normalizeCaseMessageRow = (
   fallbackCaseId: number,
   customerPhone?: string,
 ): CaseMessage => toCaseMessage(row, fallbackCaseId, { customerPhone });
-
-/**
- * Determina o número WABA usado em uma conversa a partir das mensagens.
- * Analisa os campos `from` e `to` para identificar qual é o número WABA
- * (o que não é o telefone do cliente).
- */
-/** Compara dois telefones pelo sufixo (últimos 10 dígitos), tolerando código de país */
-const phoneSuffixMatch = (a: string, b: string): boolean => {
-  if (!a || !b) return false;
-  const sa = a.length > 10 ? a.slice(-10) : a;
-  const sb = b.length > 10 ? b.slice(-10) : b;
-  return sa === sb;
-};
 
 export const determineWabaNumberFromMessages = (
   messages: BaserowCaseMessageRow[],
