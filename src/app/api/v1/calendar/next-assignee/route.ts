@@ -51,15 +51,35 @@ export async function GET(request: NextRequest) {
 
   try {
     // 1. Buscar usuários com agenda habilitada
-    const allUsers = await fetchInstitutionUsers(institutionId);
+    let allUsers;
+    try {
+      allUsers = await fetchInstitutionUsers(institutionId);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[next-assignee] fetchInstitutionUsers failed:", msg);
+      return NextResponse.json(
+        { error: "Erro ao buscar usuários", detail: msg },
+        { status: 500 },
+      );
+    }
+
     const agendaUsers = allUsers.filter(
       (u) => u.agendaEnabled && u.isActive,
     );
 
     if (agendaUsers.length === 0) {
       // Fallback: verificar se existe config institucional com scheduling habilitado
-      // (escritórios que usam agenda a nível de escritório, sem usuários individuais)
-      const instSettings = await fetchCalendarSettings(institutionId);
+      let instSettings;
+      try {
+        instSettings = await fetchCalendarSettings(institutionId);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error("[next-assignee] fetchCalendarSettings failed:", msg);
+        return NextResponse.json(
+          { error: "Erro ao buscar config de agenda", detail: msg },
+          { status: 500 },
+        );
+      }
       const instEnabled = instSettings?.scheduling_enabled === true ||
         String(instSettings?.scheduling_enabled) === "true";
 
@@ -90,11 +110,21 @@ export async function GET(request: NextRequest) {
 
     // 2. Buscar eventos futuros para round-robin
     const now = new Date();
-    const futureEvents = await listCalendarEvents({
-      institutionId,
-      start: now.toISOString(),
-      pageSize: 500,
-    });
+    let futureEvents;
+    try {
+      futureEvents = await listCalendarEvents({
+        institutionId,
+        start: now.toISOString(),
+        pageSize: 500,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[next-assignee] listCalendarEvents failed:", msg);
+      return NextResponse.json(
+        { error: "Erro ao buscar eventos", detail: msg },
+        { status: 500 },
+      );
+    }
 
     // 3. Contar eventos por user_id
     const eventCountMap = new Map<number, number>();
