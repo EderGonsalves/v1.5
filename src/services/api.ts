@@ -3797,7 +3797,7 @@ export const listCalendarEvents = async (
       `${BASEROW_API_URL}/database/rows/table/${BASEROW_EVENTS_TABLE_ID}/`,
     );
     baseUrl.searchParams.set("user_field_names", "true");
-    baseUrl.searchParams.set("size", String(params.pageSize ?? 200));
+    baseUrl.searchParams.set("size", String(Math.min(params.pageSize ?? 200, 200)));
 
     if (params.institutionId) {
       baseUrl.searchParams.set(

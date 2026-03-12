@@ -115,7 +115,6 @@ export async function GET(request: NextRequest) {
       futureEvents = await listCalendarEvents({
         institutionId,
         start: now.toISOString(),
-        pageSize: 500,
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
