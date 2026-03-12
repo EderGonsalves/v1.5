@@ -9,6 +9,7 @@ export type CalendarGuestInput = {
 
 export type CalendarEvent = {
   id: number;
+  user_id?: number | null;
   title: string;
   description?: string | null;
   start_datetime: string;

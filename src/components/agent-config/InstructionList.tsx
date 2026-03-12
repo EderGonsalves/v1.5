@@ -44,7 +44,7 @@ export function InstructionList({
     ([type]) => !TOGGLE_TYPES.includes(type),
   );
   const toggleEntries = TOGGLE_TYPES.map(
-    (type) => [type, instructions.get(type) ?? false] as [InstructionType, unknown],
+    (type) => [type, instructions.get(type) ?? { enabled: false, instructions: "" }] as [InstructionType, unknown],
   );
 
   const activeTypes = Array.from(instructions.keys());

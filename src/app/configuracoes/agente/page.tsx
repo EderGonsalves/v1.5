@@ -134,7 +134,7 @@ function AgentConfigContent() {
       let defaultValue: unknown = "";
       if (def.fieldType === "number") defaultValue = 5;
       if (def.fieldType === "list") defaultValue = [""];
-      if (def.fieldType === "toggle") defaultValue = false;
+      if (def.fieldType === "toggle") defaultValue = { enabled: false, instructions: "" };
       next.set(type, defaultValue);
       return next;
     });

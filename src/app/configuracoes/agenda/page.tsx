@@ -947,8 +947,20 @@ const AgendaPage = () => {
     [users],
   );
 
-  // Lock selectedUserId for regular users
+  // Mapa userId → nome para exibir responsável nos eventos
+  const userNameMap = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const u of users) {
+      map.set(u.id, u.name || u.email);
+    }
+    return map;
+  }, [users]);
+
+  // Lock selectedUserId for regular users; undefined = "Todos" (only admin)
   const effectiveUserId = isAdmin ? selectedUserId : permUserId;
+
+  // Block fetch for regular users until their userId is resolved
+  const canFetchEvents = isAdmin || effectiveUserId != null;
 
   const resolvedTimezone = useMemo(() => {
     try {
@@ -960,7 +972,7 @@ const AgendaPage = () => {
 
   const fetchEvents = useCallback(
     async (fullScreen = false) => {
-      if (!institutionId) {
+      if (!institutionId || !canFetchEvents) {
         setEvents([]);
         return;
       }
@@ -990,7 +1002,7 @@ const AgendaPage = () => {
         }
       }
     },
-    [institutionId, filters.startDate, filters.endDate, effectiveUserId],
+    [institutionId, filters.startDate, filters.endDate, effectiveUserId, canFetchEvents],
   );
 
   useEffect(() => {
@@ -1293,7 +1305,14 @@ const AgendaPage = () => {
                 <div className="flex items-center gap-3 flex-wrap">
                   {/* Event info */}
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-semibold truncate">{event.title}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-semibold truncate">{event.title}</h3>
+                      {isAdmin && !selectedUserId && event.user_id != null && (
+                        <span className="shrink-0 rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 dark:bg-indigo-900 dark:text-indigo-200">
+                          {userNameMap.get(Number(event.user_id)) ?? `#${event.user_id}`}
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-2 mt-0.5">
                       <Clock className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                       <span className="text-xs text-muted-foreground">

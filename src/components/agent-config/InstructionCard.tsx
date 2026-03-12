@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type {
   InstructionType,
   InstructionDefinition,
+  ToggleValue,
 } from "@/lib/agent-instructions";
 
 type InstructionCardProps = {
@@ -65,13 +66,19 @@ export function InstructionCard({
           />
         );
 
-      case "toggle":
+      case "toggle": {
+        const tv = (value && typeof value === "object" && "enabled" in (value as object))
+          ? (value as ToggleValue)
+          : { enabled: value === true, instructions: "" };
         return (
           <Switch
-            checked={value === true}
-            onCheckedChange={(checked) => onChange(type, checked)}
+            checked={tv.enabled}
+            onCheckedChange={(checked) =>
+              onChange(type, { ...tv, enabled: checked } as ToggleValue)
+            }
           />
         );
+      }
 
       case "list":
         return <QuestionList value={value} type={type} onChange={onChange} placeholder={placeholder} />;
@@ -82,13 +89,34 @@ export function InstructionCard({
   };
 
   if (fieldType === "toggle") {
+    const tv = (value && typeof value === "object" && "enabled" in (value as object))
+      ? (value as ToggleValue)
+      : { enabled: value === true, instructions: "" };
     return (
-      <div className="flex items-center justify-between rounded-md border border-border/50 bg-muted/30 p-3">
-        <div className="flex-1 min-w-0 mr-3">
-          <p className="text-sm font-medium text-foreground">{label}</p>
-          <p className="text-xs text-muted-foreground">{description}</p>
+      <div className="rounded-md border border-border/50 bg-muted/30 p-3 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex-1 min-w-0 mr-3">
+            <p className="text-sm font-medium text-foreground">{label}</p>
+            <p className="text-xs text-muted-foreground">{description}</p>
+          </div>
+          {renderField()}
         </div>
-        {renderField()}
+        {tv.enabled && (
+          <div className="space-y-1">
+            <Label className="text-xs font-medium text-muted-foreground">
+              Instruções para o agente
+            </Label>
+            <Textarea
+              value={tv.instructions}
+              onChange={(e) =>
+                onChange(type, { ...tv, instructions: e.target.value } as ToggleValue)
+              }
+              placeholder={placeholder}
+              className="text-sm min-h-[60px]"
+              rows={2}
+            />
+          </div>
+        )}
       </div>
     );
   }

@@ -29,6 +29,12 @@ export type InstructionFieldType =
   | "list"
   | "toggle";
 
+/** Valor de um toggle de funcionalidade (toggle + instruções opcionais) */
+export type ToggleValue = {
+  enabled: boolean;
+  instructions: string;
+};
+
 export type InstructionDefinition = {
   type: InstructionType;
   label: string;
@@ -148,6 +154,8 @@ export const INSTRUCTION_DEFINITIONS: Record<
       "O agente oferece horários disponíveis para agendar reunião com especialista.",
     fieldType: "toggle",
     baserowKey: "body.agentSettings.flow.commitmentScript",
+    placeholder:
+      "Ex: Agendar apenas em horário comercial. Preferir reuniões online via Google Meet.",
   },
   assinatura_documentos: {
     type: "assinatura_documentos",
@@ -156,6 +164,8 @@ export const INSTRUCTION_DEFINITIONS: Record<
       "O agente envia documento para assinatura eletrônica via RIA Sign.",
     fieldType: "toggle",
     baserowKey: "body.agentSettings.flow.commitmentScript",
+    placeholder:
+      "Ex: Enviar contrato de honorários após qualificação. Solicitar confirmação antes do envio.",
   },
   acompanhamento_processual: {
     type: "acompanhamento_processual",
@@ -163,6 +173,8 @@ export const INSTRUCTION_DEFINITIONS: Record<
     description: "Monitoramento automático de processos judiciais.",
     fieldType: "toggle",
     baserowKey: "body.agentSettings.flow.commitmentScript",
+    placeholder:
+      "Ex: Solicitar número do CNJ ao cliente. Informar que será notificado sobre movimentações.",
   },
 };
 
@@ -182,7 +194,7 @@ export function readActiveInstructions(
   const active = new Map<InstructionType, unknown>();
 
   // Ler toggles do commitmentScript
-  let commitmentFeatures: Record<string, boolean> = {};
+  let commitmentFeatures: Record<string, unknown> = {};
   try {
     const raw = row["body.agentSettings.flow.commitmentScript"];
     if (typeof raw === "string" && raw.trim().startsWith("{")) {
@@ -196,8 +208,15 @@ export function readActiveInstructions(
     const def = INSTRUCTION_DEFINITIONS[type];
 
     if (TOGGLE_TYPES.includes(type)) {
-      // Toggles sempre ativos — mostrar com valor do JSON
-      active.set(type, commitmentFeatures[type] ?? false);
+      // Toggles sempre ativos — mostrar com valor do JSON + instruções
+      const toggleValue: ToggleValue = {
+        enabled: commitmentFeatures[type] === true,
+        instructions:
+          typeof commitmentFeatures[`instrucoes_${type}`] === "string"
+            ? (commitmentFeatures[`instrucoes_${type}`] as string)
+            : "",
+      };
+      active.set(type, toggleValue);
       continue;
     }
 
@@ -236,10 +255,17 @@ export function buildInstructionFields(
 ): Record<string, unknown> {
   const fields: Record<string, unknown> = {};
 
-  // Montar commitmentScript a partir dos toggles
-  const commitment: Record<string, boolean> = {};
+  // Montar commitmentScript a partir dos toggles + instruções
+  const commitment: Record<string, unknown> = {};
   for (const toggleType of TOGGLE_TYPES) {
-    commitment[toggleType] = instructions.get(toggleType) === true;
+    const val = instructions.get(toggleType);
+    if (val && typeof val === "object" && "enabled" in (val as object)) {
+      const tv = val as ToggleValue;
+      commitment[toggleType] = tv.enabled;
+      commitment[`instrucoes_${toggleType}`] = tv.instructions || "";
+    } else {
+      commitment[toggleType] = val === true;
+    }
   }
   fields["body.agentSettings.flow.commitmentScript"] =
     JSON.stringify(commitment);

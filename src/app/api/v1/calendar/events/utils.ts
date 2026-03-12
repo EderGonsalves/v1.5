@@ -123,6 +123,7 @@ export const serializeEvent = (
   guests?: CalendarEventGuestRow[],
 ) => ({
   id: event.id,
+  user_id: event.user_id != null ? Number(event.user_id) : null,
   title: event.title,
   description: event.description,
   start_datetime: event.start_datetime,
