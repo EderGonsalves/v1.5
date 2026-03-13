@@ -84,6 +84,9 @@ export const ChatComposer = ({
     cancelRecording,
   } = useAudioRecorder();
 
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounterRef = useRef(0);
+
   useEffect(() => {
     attachmentsRef.current = attachments;
   }, [attachments]);
@@ -186,8 +189,59 @@ export const ChatComposer = ({
     }
   };
 
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current += 1;
+    if (e.dataTransfer.types.includes("Files")) {
+      setIsDragging(true);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current === 0) {
+      setIsDragging(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = 0;
+    setIsDragging(false);
+    if (disabled || isSending) return;
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      addFiles(files);
+    }
+  }, [addFiles, disabled, isSending]);
+
   return (
-    <div className="space-y-2">
+    <div
+      className="space-y-2 relative"
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      {/* Drop overlay */}
+      {isDragging && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-primary/5 pointer-events-none">
+          <div className="flex items-center gap-2 text-sm font-medium text-primary">
+            <Paperclip className="h-5 w-5" />
+            Solte para anexar
+          </div>
+        </div>
+      )}
+
       {/* Attachments Preview */}
       {attachments.length > 0 && (
         <div className="rounded-lg border bg-card p-2 space-y-2">

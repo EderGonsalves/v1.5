@@ -41,6 +41,9 @@ const signerSchema = z.object({
   name: z.string().min(1, "Nome do signatário obrigatório"),
   phone: z.string().min(10, "Telefone obrigatório"),
   email: z.string().email("Email inválido").optional().default(""),
+  cpf: z.string().optional(),
+  role: z.string().optional(),
+  order: z.number().int().optional(),
 });
 
 export const createEnvelopeSchema = z.object({
@@ -50,9 +53,11 @@ export const createEnvelopeSchema = z.object({
   htmlContent: z.string().min(10).optional(), // optional for direct uploads
   signers: z.array(signerSchema).min(1, "Pelo menos um signatário"),
   templateType: z.string().optional(), // "html" | "direct_pdf" | "direct_docx"
-  waba_config_id: z.string().optional(), // WABA Phone ID selecionado pelo SysAdmin
+  waba_config_id: z.string().optional(), // WABA Phone ID selecionado pelo SysAdmin (legacy)
   require_otp: z.boolean().optional(),
   require_selfie: z.boolean().optional(),
+  require_id_photo: z.boolean().optional(),
+  reminders: z.boolean().optional(),
 });
 
 export type CreateEnvelopeInput = z.infer<typeof createEnvelopeSchema>;

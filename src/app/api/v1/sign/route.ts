@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestAuth } from "@/lib/auth/session";
 import { createEnvelopeSchema } from "@/lib/documents/schemas";
-import { generatePdf, generatePdfWithPreviews } from "@/services/pdf-generator";
-import {
-  createEnvelope,
-  uploadDocument,
-  sendEnvelope,
-  getEnvelope,
-} from "@/services/riasign";
+import { generatePdfWithPreviews } from "@/services/pdf-generator";
+import { sendV2 } from "@/services/riasign";
 import {
   getEnvelopesByCaseId,
   createEnvelopeRecord,
@@ -15,35 +10,8 @@ import {
 import { getTemplateById, readTemplateFile } from "@/services/doc-templates";
 import { convertDocxToHtml } from "@/services/docx-converter";
 import { updateBaserowCase } from "@/services/api";
-import { db } from "@/lib/db";
-import { caseMessages } from "@/lib/db/schema/caseMessages";
-import { eq, desc, and, isNotNull } from "drizzle-orm";
 
 const APP_URL = process.env.APP_URL ?? "";
-
-/** Check if the 24h WhatsApp window has expired for a case */
-async function isOutsideWhatsAppWindow(caseId: string): Promise<boolean> {
-  try {
-    const [lastMsg] = await db
-      .select({ createdOn: caseMessages.createdOn })
-      .from(caseMessages)
-      .where(
-        and(
-          eq(caseMessages.caseId, caseId),
-          isNotNull(caseMessages.from),
-        ),
-      )
-      .orderBy(desc(caseMessages.createdOn))
-      .limit(1);
-
-    if (!lastMsg) return true; // no messages → outside window
-    const diffMs = Date.now() - lastMsg.createdOn.getTime();
-    return diffMs > 24 * 60 * 60 * 1000;
-  } catch (err) {
-    console.error("[sign] Failed to check 24h window:", err);
-    return true; // on error, safer to use template
-  }
-}
 
 // GET /api/v1/sign?caseId=123 — list envelopes for a case
 export async function GET(request: NextRequest) {
@@ -73,7 +41,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/v1/sign — orchestrate: generate PDF → create envelope → upload → send
+// POST /api/v1/sign — v2: generate PDF → send in 1 call via /api/v2/send
 export async function POST(request: NextRequest) {
   const auth = getRequestAuth(request);
   if (!auth)
@@ -96,15 +64,13 @@ export async function POST(request: NextRequest) {
       htmlContent,
       signers,
       templateType,
-      waba_config_id: clientWabaConfigId,
       require_otp,
       require_selfie,
+      require_id_photo,
+      reminders,
     } = parsed.data;
 
     const tType = templateType || "html";
-
-    // Usar waba_config_id apenas se enviado explicitamente pelo cliente
-    const wabaConfigId: string | undefined = clientWabaConfigId || undefined;
 
     // 1. Prepare PDF (+ previews PNG) based on template type
     let pdfBuffer: Buffer;
@@ -112,14 +78,12 @@ export async function POST(request: NextRequest) {
     let filename: string;
 
     if (tType === "direct_pdf") {
-      // Direct PDF: read stored file (no previews — already a PDF)
       const template = await getTemplateById(templateId);
       if (!template)
         return NextResponse.json({ error: "Template não encontrado" }, { status: 404 });
       pdfBuffer = await readTemplateFile(template.file_path);
       filename = template.original_filename || `${subject.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`;
     } else if (tType === "direct_docx") {
-      // Direct DOCX: convert to HTML then to PDF + previews
       const template = await getTemplateById(templateId);
       if (!template)
         return NextResponse.json({ error: "Template não encontrado" }, { status: 404 });
@@ -130,7 +94,6 @@ export async function POST(request: NextRequest) {
       previewBuffers = result.previews;
       filename = `${subject.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`;
     } else {
-      // HTML template: generate PDF + previews from htmlContent
       if (!htmlContent) {
         return NextResponse.json(
           { error: "htmlContent obrigatório para templates HTML" },
@@ -143,75 +106,49 @@ export async function POST(request: NextRequest) {
       filename = `${subject.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`;
     }
 
-    // 2. Create envelope on RIA Sign (múltiplos signatários)
-    // Check 24h WhatsApp window to decide use_template
-    const useTemplate = await isOutsideWhatsAppWindow(String(caseId));
-    console.log("[sign] waba_config_id resolução:", {
-      clientWabaConfigId,
-      fallbackWabaConfigId: wabaConfigId,
-      final: wabaConfigId || "(vazio — não será enviado)",
-      use_template: useTemplate,
-    });
+    // 2. Send via RIA Sign v2 (1 call: PDF + signers + send)
     const webhookUrl = `${APP_URL}/api/v1/sign/webhook`;
-    const envelope = await createEnvelope({
+    const v2Result = await sendV2({
+      pdfBuffer,
+      filename,
       subject,
-      webhookUrl,
       signers: signers.map((s) => ({
         name: s.name,
         phone: s.phone,
         email: s.email || undefined,
+        cpf: s.cpf || undefined,
+        role: s.role || undefined,
+        order: s.order,
       })),
-      waba_config_id: wabaConfigId,
-      use_template: useTemplate,
-      require_otp: require_otp ?? false,
-      require_selfie: require_selfie ?? false,
+      webhookUrl,
+      selfie: require_selfie ?? false,
+      idPhoto: require_id_photo ?? false,
+      otp: require_otp ?? false,
+      reminders: reminders ?? false,
+      metadata: { caseId, institutionId: auth.institutionId },
+      previewBuffers,
     });
 
-    // 3. Upload PDF + previews to RIA Sign
-    const doc = await uploadDocument(envelope.id, pdfBuffer, filename, "application/pdf", previewBuffers);
-
-    // 4. Send envelope (RIA Sign dispatches via WhatsApp/email)
-    const sendResult = await sendEnvelope(envelope.id);
-
     console.log(
-      "[sign] sendEnvelope result:",
-      JSON.stringify({ signers: sendResult.signers?.map((s) => ({ name: s.name, sign_url: s.sign_url, status: s.status })) }),
+      "[sign] v2/send result:",
+      JSON.stringify({
+        id: v2Result.id,
+        status: v2Result.status,
+        signers: v2Result.signers?.map((s) => ({ name: s.name, sign_url: s.sign_url, status: s.status })),
+        document: v2Result.document,
+      }),
     );
 
-    // 5. Build signers JSON with sign_url from send result
-    // Fallback: se sendResult não tiver sign_url, buscar via getEnvelope
-    let riaSigners = sendResult.signers ?? [];
-    const hasSignUrls = riaSigners.some((s) => s.sign_url);
-
-    if (!hasSignUrls && riaSigners.length === 0) {
-      // sendResult pode não trazer signers — buscar envelope completo
-      try {
-        const fullEnvelope = await getEnvelope(envelope.id);
-        riaSigners = (fullEnvelope.signers ?? []).map((s) => ({
-          id: s.id,
-          name: s.name,
-          phone: s.phone,
-          sign_url: s.sign_url ?? "",
-          status: s.status ?? "sent",
-        }));
-        console.log(
-          "[sign] getEnvelope fallback signers:",
-          JSON.stringify(riaSigners.map((s) => ({ name: s.name, sign_url: s.sign_url }))),
-        );
-      } catch (fallbackErr) {
-        console.error("[sign] Fallback getEnvelope failed:", fallbackErr);
-      }
-    }
-
-    const signersJson = riaSigners.map((rs, i) => ({
+    // 3. Build signers JSON from v2 response
+    const signersJson = (v2Result.signers ?? []).map((rs, i) => ({
       name: signers[i]?.name ?? rs.name,
-      phone: signers[i]?.phone ?? "",
+      phone: signers[i]?.phone ?? rs.phone ?? "",
       email: signers[i]?.email ?? "",
       sign_url: rs.sign_url ?? "",
       status: rs.status ?? "sent",
     }));
 
-    // Se não conseguiu sign_url dos signers da API, tentar manter pelo menos o array
+    // Fallback if v2 didn't return signers
     if (signersJson.length === 0) {
       for (const s of signers) {
         signersJson.push({
@@ -224,16 +161,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Legacy fields: primeiro signatário
     const firstSigner = signers[0];
     const firstSignUrl = signersJson[0]?.sign_url ?? "";
 
-    // 6. Save record in Baserow (table 256)
+    // 4. Save record in DB (table 256)
     const now = new Date().toISOString();
     const record = await createEnvelopeRecord({
       case_id: caseId,
-      envelope_id: envelope.id,
-      document_id: doc.id,
+      envelope_id: v2Result.id,
+      document_id: v2Result.document?.id ?? "",
       template_id: templateId,
       subject,
       status: "sent",
@@ -249,15 +185,14 @@ export async function POST(request: NextRequest) {
       updated_at: now,
     } as Omit<import("@/lib/documents/types").SignEnvelopeRow, "id">);
 
-    // 7. Update case with sign info
+    // 5. Update case with sign info
     try {
       await updateBaserowCase(caseId, {
-        sign_envelope_id: envelope.id,
+        sign_envelope_id: v2Result.id,
         sign_status: "sent",
       });
     } catch (caseErr) {
       console.error("[sign] Failed to update case:", caseErr);
-      // Non-critical — envelope was already sent
     }
 
     return NextResponse.json(record, { status: 201 });

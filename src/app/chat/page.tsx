@@ -50,6 +50,7 @@ function ChatContent() {
 
   const selectedCaseId = searchParams.get("case");
   const selectedId = selectedCaseId ? Number(selectedCaseId) : null;
+  const initialSearch = searchParams.get("search") ?? undefined;
 
   // Enriquecer conversas com o número WABA do mapa
   const enrichedConversations = useMemo(() => {
@@ -183,6 +184,7 @@ function ChatContent() {
           onRefresh={refresh}
           onNewConversation={() => setShowNewConversation(true)}
           className="h-full"
+          initialSearch={initialSearch}
         />
       </aside>
 

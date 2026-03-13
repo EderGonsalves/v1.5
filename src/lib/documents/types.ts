@@ -68,8 +68,9 @@ export type RiaSignEnvelope = {
   id: string;
   status: string;
   subject: string;
-  require_otp: boolean;
-  use_template: boolean;
+  require_otp?: boolean;
+  require_selfie?: boolean;
+  use_template?: boolean;
   signers: RiaSignSigner[];
   created_at: string;
   expires_at?: string;
@@ -84,19 +85,23 @@ export type RiaSignSigner = {
   status: string;
   sign_url?: string;
   signed_at?: string;
+  order?: number;
+  role?: string;
 };
 
 export type RiaSignDocument = {
   id: string;
   filename: string;
-  original_hash: string;
-  page_count: number;
-  file_size: number;
-  preview_pages: number;
+  original_hash?: string;
+  hash?: string;
+  page_count?: number;
+  pages?: number;
+  file_size?: number;
+  preview_pages?: number;
 };
 
 export type RiaSignSendResponse = {
-  success: boolean;
+  success?: boolean;
   status: string;
   signers: Array<{
     id: string;
@@ -105,6 +110,26 @@ export type RiaSignSendResponse = {
     sign_url: string;
     status: string;
   }>;
+};
+
+/** v2 POST /api/v2/send response */
+export type RiaSignV2SendResponse = {
+  id: string;
+  status: string;
+  signers: Array<{
+    id: string;
+    name: string;
+    phone?: string;
+    sign_url: string;
+    status: string;
+    order?: number;
+  }>;
+  document: {
+    id: string;
+    filename: string;
+    hash: string;
+    pages: number;
+  };
 };
 
 // ---------------------------------------------------------------------------
@@ -118,11 +143,22 @@ export type RiaSignWebhookEvent = {
     | "signer.signed"
     | "signer.declined"
     | "signer.otp_requested"
+    | "signer.reminder"
     | "envelope.completed"
     | "envelope.expired";
   envelope_id: string;
   timestamp: string;
-  data: {
+  /** v2: campos no root (sem wrapper "data") */
+  signer?: {
+    name: string;
+    email?: string;
+    phone?: string;
+    signed_at?: string;
+  };
+  channel?: string;
+  document_hash?: string;
+  /** v1 compat: "data" wrapper (mantido para retrocompatibilidade) */
+  data?: {
     signer?: {
       name: string;
       email?: string;

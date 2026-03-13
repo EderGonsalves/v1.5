@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { z } from "zod";
 import { Controller, useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -911,6 +912,7 @@ function CalendarSettingsDialog({
 // ---------------------------------------------------------------------------
 
 const AgendaPage = () => {
+  const router = useRouter();
   const { data, isHydrated } = useOnboarding();
   const institutionId = data.auth?.institutionId;
   const authSignature = data.auth
@@ -1376,6 +1378,31 @@ const AgendaPage = () => {
                     </Button>
                   </div>
                 </div>
+
+                {/* Guests with phone */}
+                {event.guests && event.guests.length > 0 && (
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5 text-xs text-muted-foreground">
+                    {event.guests.map((guest, gi) => (
+                      <span key={gi} className="flex items-center gap-1">
+                        {guest.name && <span className="font-medium text-foreground/80">{guest.name}</span>}
+                        {guest.phone && (
+                          <button
+                            type="button"
+                            className="flex items-center gap-0.5 text-primary hover:underline cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const phone = guest.phone!.replace(/\D/g, "");
+                              router.push(`/chat?search=${encodeURIComponent(phone)}`);
+                            }}
+                          >
+                            <Phone className="h-3 w-3" />
+                            {guest.phone}
+                          </button>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                )}
 
                 {/* Extra info row */}
                 {(event.location || event.meeting_link) && (

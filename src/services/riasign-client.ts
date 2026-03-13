@@ -22,11 +22,13 @@ export async function createSignEnvelope(body: {
   templateId: number;
   subject: string;
   htmlContent?: string;
-  signers: Array<{ name: string; phone: string; email?: string }>;
+  signers: Array<{ name: string; phone: string; email?: string; cpf?: string; role?: string; order?: number }>;
   templateType?: string;
   waba_config_id?: string;
   require_otp?: boolean;
   require_selfie?: boolean;
+  require_id_photo?: boolean;
+  reminders?: boolean;
 }): Promise<SignEnvelopeRow> {
   const res = await fetch("/api/v1/sign", {
     method: "POST",

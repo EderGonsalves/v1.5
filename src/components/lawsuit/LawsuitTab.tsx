@@ -530,7 +530,7 @@ export function LawsuitTab({
           <div className="flex items-center gap-2 mb-2">
             <StickyNote className="h-4 w-4 text-muted-foreground" />
             <Label className="text-xs text-muted-foreground uppercase tracking-wide">
-              Notas do Caso
+              Instruções Adicionais
             </Label>
           </div>
           <Textarea

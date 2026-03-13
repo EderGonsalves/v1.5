@@ -11,7 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ConversationView } from "@/components/casos/ConversationView";
+import { ChatMessageList } from "@/components/chat/ChatMessageList";
+import { useCaseChat } from "@/hooks/use-case-chat";
 import {
   ExternalLink,
   MessageSquareText,
@@ -113,7 +114,12 @@ export function KanbanCardDetail({
   const [deptUsers, setDeptUsers] = useState<UserPublicRow[] | null>(null);
   const [valorInput, setValorInput] = useState("");
   const [updatingResultado, setUpdatingResultado] = useState(false);
+  const [showGanhoDialog, setShowGanhoDialog] = useState(false);
+  const [ganhoValorInput, setGanhoValorInput] = useState("");
   const [formData, setFormData] = useState<Partial<ClientRow>>({});
+
+  // Chat messages (full conversation like the chat page)
+  const { messages: chatMessages, isLoading: isLoadingChat } = useCaseChat(caseData?.id ?? 0);
 
   // Lazy-load heavy fields (Conversa, Resumo, notas_caso) when dialog opens
   const [fullCaseData, setFullCaseData] = useState<BaserowCaseRow | null>(null);
@@ -400,9 +406,10 @@ export function KanbanCardDetail({
         </DialogHeader>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-3 sm:py-4">
-          <Tabs defaultValue="caso" className="h-full">
-            <TabsList className="flex w-full overflow-x-auto scrollbar-hide mb-4 sm:mb-6 sm:grid sm:grid-cols-6">
+        <div className="flex-1 overflow-y-auto">
+          <Tabs defaultValue="caso" className="h-full flex flex-col">
+            <div className="sticky top-0 z-10 bg-background px-3 sm:px-6 pt-3 sm:pt-4 pb-2">
+              <TabsList className="flex w-full overflow-x-auto scrollbar-hide sm:grid sm:grid-cols-6">
               <TabsTrigger value="caso" className="gap-1.5 sm:gap-2 shrink-0 text-xs sm:text-sm px-2.5 sm:px-3">
                 <Briefcase className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 Caso
@@ -428,7 +435,9 @@ export function KanbanCardDetail({
                 Docs
               </TabsTrigger>
             </TabsList>
+            </div>
 
+            <div className="flex-1 px-3 sm:px-6 pb-3 sm:pb-4">
             {/* Aba Caso */}
             <TabsContent value="caso" className="mt-0">
               <div className="rounded-lg border bg-card p-3 sm:p-5">
@@ -544,35 +553,33 @@ export function KanbanCardDetail({
                     <div className="h-9 flex items-center gap-2">
                       {(() => {
                         const resultado = (caseData.resultado || "").toLowerCase();
-                        if (resultado === "ganho") {
-                          return (
-                            <span className="rounded-full px-3 py-1 text-xs font-semibold bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200">
-                              Ganho
-                            </span>
-                          );
-                        }
-                        if (resultado === "perdido") {
-                          return (
-                            <span className="rounded-full px-3 py-1 text-xs font-semibold bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200">
-                              Perdido
-                            </span>
-                          );
-                        }
+                        const isGanho = resultado === "ganho";
+                        const isPerdido = resultado === "perdido";
+                        const toggleResultado = async (value: "ganho" | "perdido", extra?: Record<string, unknown>) => {
+                          const current = (caseData.resultado || "").toLowerCase();
+                          const next = current === value ? "" : value;
+                          setUpdatingResultado(true);
+                          try {
+                            await updateBaserowCase(caseData.id, { resultado: next, ...extra });
+                            onCaseUpdate?.(caseData.id, { resultado: next, ...extra });
+                          } catch (err) {
+                            console.error("Erro ao atualizar resultado:", err);
+                          } finally {
+                            setUpdatingResultado(false);
+                          }
+                        };
                         return (
                           <>
                             <Button
                               size="sm"
                               variant="outline"
-                              className="h-8 px-3 text-xs gap-1.5 text-green-600 hover:text-green-700 hover:bg-green-50 border-green-200"
-                              onClick={async () => {
-                                setUpdatingResultado(true);
-                                try {
-                                  await updateBaserowCase(caseData.id, { resultado: "ganho" });
-                                  onCaseUpdate?.(caseData.id, { resultado: "ganho" });
-                                } catch (err) {
-                                  console.error("Erro ao atualizar resultado:", err);
-                                } finally {
-                                  setUpdatingResultado(false);
+                              className={`h-8 px-3 text-xs gap-1.5 border-green-200 ${isGanho ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200" : "text-green-600 hover:text-green-700 hover:bg-green-50"}`}
+                              onClick={() => {
+                                if (isGanho) {
+                                  toggleResultado("ganho");
+                                } else {
+                                  setGanhoValorInput(valorInput || "");
+                                  setShowGanhoDialog(true);
                                 }
                               }}
                               disabled={updatingResultado}
@@ -583,23 +590,54 @@ export function KanbanCardDetail({
                             <Button
                               size="sm"
                               variant="outline"
-                              className="h-8 px-3 text-xs gap-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
-                              onClick={async () => {
-                                setUpdatingResultado(true);
-                                try {
-                                  await updateBaserowCase(caseData.id, { resultado: "perdido" });
-                                  onCaseUpdate?.(caseData.id, { resultado: "perdido" });
-                                } catch (err) {
-                                  console.error("Erro ao atualizar resultado:", err);
-                                } finally {
-                                  setUpdatingResultado(false);
-                                }
-                              }}
+                              className={`h-8 px-3 text-xs gap-1.5 border-red-200 ${isPerdido ? "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200" : "text-red-600 hover:text-red-700 hover:bg-red-50"}`}
+                              onClick={() => toggleResultado("perdido")}
                               disabled={updatingResultado}
                             >
                               <X className="h-3.5 w-3.5" />
                               Perdido
                             </Button>
+
+                            {/* Dialog para informar valor ao marcar Ganho */}
+                            <Dialog open={showGanhoDialog} onOpenChange={setShowGanhoDialog}>
+                              <DialogContent className="sm:max-w-sm">
+                                <DialogHeader>
+                                  <DialogTitle>Marcar como Ganho</DialogTitle>
+                                </DialogHeader>
+                                <div className="space-y-3 py-2">
+                                  <div className="space-y-1.5">
+                                    <Label className="text-sm">Valor da Causa (opcional)</Label>
+                                    <Input
+                                      value={ganhoValorInput}
+                                      onChange={(e) => setGanhoValorInput(e.target.value)}
+                                      placeholder="0,00"
+                                    />
+                                    <span className="text-xs text-muted-foreground">
+                                      {formatCurrency(parseCurrencyInput(ganhoValorInput))}
+                                    </span>
+                                  </div>
+                                  <div className="flex gap-2 justify-end">
+                                    <Button variant="outline" size="sm" onClick={() => setShowGanhoDialog(false)}>
+                                      Cancelar
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      className="bg-green-600 hover:bg-green-700 text-white"
+                                      disabled={updatingResultado}
+                                      onClick={async () => {
+                                        const valor = parseCurrencyInput(ganhoValorInput);
+                                        const extra = valor > 0 ? { valor } : {};
+                                        await toggleResultado("ganho", extra);
+                                        if (valor > 0) setValorInput(ganhoValorInput);
+                                        setShowGanhoDialog(false);
+                                      }}
+                                    >
+                                      {updatingResultado ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirmar"}
+                                    </Button>
+                                  </div>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
                           </>
                         );
                       })()}
@@ -864,16 +902,11 @@ export function KanbanCardDetail({
 
             {/* Aba Conversa */}
             <TabsContent value="conversa" className="mt-0">
-              <div className="rounded-lg border p-3 sm:p-4 min-h-[250px] sm:min-h-[400px] max-h-[60dvh] sm:max-h-[500px] overflow-y-auto bg-zinc-50 dark:bg-zinc-950">
-                {isLoadingDetail && !mergedConversation ? (
-                  <div className="flex items-center justify-center h-[200px] sm:h-[300px] text-muted-foreground">
-                    <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                    Carregando conversa...
-                  </div>
-                ) : (
-                  <ConversationView conversation={mergedConversation} />
-                )}
-              </div>
+              <ChatMessageList
+                messages={chatMessages}
+                isLoading={isLoadingChat}
+                className="rounded-lg border min-h-[250px] sm:min-h-[400px] max-h-[60dvh] sm:max-h-[500px] bg-zinc-50 dark:bg-zinc-950"
+              />
             </TabsContent>
 
             {/* Aba Resumo */}
@@ -910,6 +943,7 @@ export function KanbanCardDetail({
                 clientData={clientData}
               />
             </TabsContent>
+            </div>
           </Tabs>
         </div>
       </DialogContent>

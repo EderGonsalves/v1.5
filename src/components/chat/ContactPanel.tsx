@@ -14,6 +14,13 @@ import {
   CheckCircle2,
 } from "lucide-react";
 
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -56,8 +63,10 @@ export function ContactPanel({
   const [isSavingName, setIsSavingName] = useState(false);
   const [nameSaved, setNameSaved] = useState(false);
 
-  // Finish case
+  // Resultado toggle
   const [isFinishing, setIsFinishing] = useState(false);
+  const [showGanhoDialog, setShowGanhoDialog] = useState(false);
+  const [ganhoValorInput, setGanhoValorInput] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -119,34 +128,30 @@ export function ContactPanel({
     }
   }, [nameValue, caseData, caseRowId, clientData?.id]);
 
-  const handleFinishCase = useCallback(async () => {
+  const handleToggleResultado = useCallback(async (value: "ganho" | "perdido", extra?: Record<string, unknown>) => {
     if (!caseData) return;
+
+    const current = (caseData.resultado || "").toLowerCase();
+    const next = current === value ? "" : value;
 
     setIsFinishing(true);
     try {
-      await updateBaserowCase(caseData.id, { resultado: "ganho" });
+      await updateBaserowCase(caseData.id, { resultado: next, ...extra });
 
-      const columns = await getKanbanColumns(institutionId);
-      const ganhoColumn = columns.find(
-        (c) => c.name === "Concluidos Ganhos",
-      );
-
-      if (ganhoColumn) {
-        await upsertCaseKanbanStatus(
-          caseData.id,
-          institutionId,
-          ganhoColumn.id,
-          "chat",
-          "Caso finalizado pelo chat",
-        );
+      if (next === "ganho") {
+        const columns = await getKanbanColumns(institutionId);
+        const ganhoColumn = columns.find((c) => c.name === "Concluidos Ganhos");
+        if (ganhoColumn) {
+          await upsertCaseKanbanStatus(caseData.id, institutionId, ganhoColumn.id, "chat", "Caso finalizado pelo chat");
+        }
       }
 
       setCaseData((prev) =>
-        prev ? { ...prev, resultado: "ganho" } : prev,
+        prev ? { ...prev, resultado: next, ...extra } as BaserowCaseRow : prev,
       );
     } catch (err) {
-      console.error("Erro ao finalizar caso:", err);
-      alert("Erro ao finalizar o caso. Tente novamente.");
+      console.error("Erro ao atualizar resultado:", err);
+      alert("Erro ao atualizar o resultado. Tente novamente.");
     } finally {
       setIsFinishing(false);
     }
@@ -353,35 +358,88 @@ export function ContactPanel({
 
           {/* Action Buttons */}
           <div className="space-y-2 px-4 py-4">
-            {caseData?.resultado === "ganho" ? (
-              <div className="flex items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 dark:border-emerald-800 dark:bg-emerald-900/30">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
-                  Caso finalizado (Ganho)
-                </span>
-              </div>
-            ) : caseData?.resultado === "perdido" ? (
-              <div className="flex items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 dark:border-red-800 dark:bg-red-900/30">
-                <CheckCircle2 className="h-4 w-4 text-red-600 dark:text-red-400" />
-                <span className="text-sm font-medium text-red-700 dark:text-red-300">
-                  Caso finalizado (Perdido)
-                </span>
-              </div>
-            ) : (
-              <Button
-                variant="outline"
-                className="w-full gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
-                onClick={handleFinishCase}
-                disabled={isFinishing || !caseData}
-              >
-                {isFinishing ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <CheckCircle2 className="h-4 w-4" />
-                )}
-                Finalizar caso
-              </Button>
-            )}
+            {(() => {
+              const resultado = (caseData?.resultado || "").toLowerCase();
+              const isGanho = resultado === "ganho";
+              const isPerdido = resultado === "perdido";
+              return (
+                <>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className={`flex-1 gap-2 ${isGanho ? "bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/50 dark:text-emerald-300 dark:border-emerald-700" : "border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-900/30"}`}
+                      onClick={() => {
+                        if (isGanho) {
+                          handleToggleResultado("ganho");
+                        } else {
+                          setGanhoValorInput("");
+                          setShowGanhoDialog(true);
+                        }
+                      }}
+                      disabled={isFinishing || !caseData}
+                    >
+                      {isFinishing ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Check className="h-4 w-4" />
+                      )}
+                      Ganho
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className={`flex-1 gap-2 ${isPerdido ? "bg-red-100 text-red-700 border-red-300 dark:bg-red-900/50 dark:text-red-300 dark:border-red-700" : "border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/30"}`}
+                      onClick={() => handleToggleResultado("perdido")}
+                      disabled={isFinishing || !caseData}
+                    >
+                      <X className="h-4 w-4" />
+                      Perdido
+                    </Button>
+                  </div>
+
+                  <Dialog open={showGanhoDialog} onOpenChange={setShowGanhoDialog}>
+                    <DialogContent className="sm:max-w-sm">
+                      <DialogHeader>
+                        <DialogTitle>Marcar como Ganho</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-3 py-2">
+                        <div className="space-y-1.5">
+                          <Label className="text-sm">Valor da Causa (opcional)</Label>
+                          <Input
+                            value={ganhoValorInput}
+                            onChange={(e) => setGanhoValorInput(e.target.value)}
+                            placeholder="0,00"
+                          />
+                          {ganhoValorInput && (
+                            <span className="text-xs text-muted-foreground">
+                              {parseFloat(ganhoValorInput.replace(/[^\d.,]/g, "").replace(",", ".")).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) || "R$ 0,00"}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex gap-2 justify-end">
+                          <Button variant="outline" size="sm" onClick={() => setShowGanhoDialog(false)}>
+                            Cancelar
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="bg-green-600 hover:bg-green-700 text-white"
+                            disabled={isFinishing}
+                            onClick={async () => {
+                              const cleaned = ganhoValorInput.replace(/[^\d.,]/g, "").replace(",", ".");
+                              const valor = parseFloat(cleaned);
+                              const extra = !isNaN(valor) && valor > 0 ? { valor } : {};
+                              await handleToggleResultado("ganho", extra);
+                              setShowGanhoDialog(false);
+                            }}
+                          >
+                            {isFinishing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirmar"}
+                          </Button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </>
+              );
+            })()}
 
             <Button
               variant="outline"

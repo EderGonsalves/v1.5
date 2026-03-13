@@ -13,11 +13,14 @@ const STATUS_MAP: Record<string, string> = {
   "signer.viewed": "viewed",
   "signer.signed": "signed",
   "signer.declined": "declined",
+  "signer.otp_requested": "sent", // OTP requested, status stays as sent
+  "signer.reminder": "sent", // Reminder sent, status stays as sent
   "envelope.completed": "completed",
   "envelope.expired": "expired",
 };
 
 // POST /api/v1/sign/webhook — receive RIA Sign events (no auth cookie)
+// Supports both v1 (data wrapper) and v2 (fields in root) payload formats
 export async function POST(request: NextRequest) {
   try {
     // 1. Read raw body for HMAC validation
@@ -30,15 +33,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // 2. Parse event
+    // 2. Parse event — support both v1 (data wrapper) and v2 (root fields)
     const event = JSON.parse(rawBody) as RiaSignWebhookEvent;
-    const { event: eventType, envelope_id, timestamp, data } = event;
+    const { event: eventType, envelope_id, timestamp } = event;
+
+    // v2: fields in root; v1 compat: fields in data wrapper
+    const signerData = event.signer ?? event.data?.signer;
+    const channel = event.channel ?? event.data?.channel;
 
     console.log(
-      `[sign/webhook] Evento recebido: ${eventType} | envelope=${envelope_id} | timestamp=${timestamp} | signer=${data?.signer?.name ?? "n/a"}`,
+      `[sign/webhook] Evento recebido: ${eventType} | envelope=${envelope_id} | timestamp=${timestamp} | signer=${signerData?.name ?? "n/a"} | channel=${channel ?? "n/a"}`,
     );
 
-    // 3. Find our record in Baserow
+    // 3. Find our record in DB
     const record = await getEnvelopeByRiaId(envelope_id);
     if (!record) {
       console.warn("[sign/webhook] Unknown envelope_id:", envelope_id);
@@ -50,19 +57,16 @@ export async function POST(request: NextRequest) {
     if (newStatus) {
       const updates: Record<string, unknown> = { status: newStatus };
 
-      if (
-        newStatus === "signed" ||
-        newStatus === "completed"
-      ) {
-        updates.signed_at = data.signer?.signed_at || timestamp;
+      if (newStatus === "signed" || newStatus === "completed") {
+        updates.signed_at = signerData?.signed_at || timestamp;
       }
 
-      // 4b. Atualizar status do signatário individual no signers_json
-      if (data.signer && record.signers_json) {
+      // 4b. Update individual signer status in signers_json
+      if (signerData && record.signers_json) {
         try {
           const signers = JSON.parse(record.signers_json) as SignerInfo[];
-          const signerName = data.signer.name?.toLowerCase();
-          const signerPhone = data.signer.phone;
+          const signerName = signerData.name?.toLowerCase();
+          const signerPhone = signerData.phone;
           const idx = signers.findIndex(
             (s) =>
               s.name.toLowerCase() === signerName ||

@@ -9,6 +9,7 @@ import type {
   RiaSignDocument,
   RiaSignSendResponse,
   RiaSignAuditTrail,
+  RiaSignV2SendResponse,
 } from "@/lib/documents/types";
 
 // ---------------------------------------------------------------------------
@@ -227,6 +228,99 @@ export async function sendEnvelope(
     throw new Error(`RIA Sign sendEnvelope falhou (${res.status}): ${text}`);
   }
   return (await res.json()) as RiaSignSendResponse;
+}
+
+// ---------------------------------------------------------------------------
+// v2 — Send in 1 call (POST /api/v2/send)
+// ---------------------------------------------------------------------------
+
+export async function sendV2(params: {
+  pdfBuffer: Buffer;
+  filename: string;
+  subject: string;
+  signers: Array<{
+    name: string;
+    phone: string;
+    email?: string;
+    cpf?: string;
+    role?: string;
+    order?: number;
+  }>;
+  message?: string;
+  webhookUrl?: string;
+  callbackUrl?: string;
+  selfie?: boolean;
+  idPhoto?: boolean;
+  otp?: boolean;
+  reminders?: boolean;
+  expires?: string;
+  metadata?: Record<string, unknown>;
+  previewBuffers?: Buffer[];
+}): Promise<RiaSignV2SendResponse> {
+  ensureApiKey();
+
+  const toBlob = (buf: Buffer, type: string) => {
+    const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
+    return new Blob([ab], { type });
+  };
+
+  const formData = new FormData();
+  formData.append("file", toBlob(params.pdfBuffer, "application/pdf"), params.filename);
+
+  // Append PNG previews (preview_0, preview_1, preview_2)
+  if (params.previewBuffers?.length) {
+    for (let i = 0; i < Math.min(params.previewBuffers.length, 3); i++) {
+      formData.append(`preview_${i}`, toBlob(params.previewBuffers[i], "image/png"), `preview_${i}.png`);
+    }
+  }
+
+  const data: Record<string, unknown> = {
+    subject: params.subject,
+    signers: params.signers,
+  };
+  if (params.message) data.message = params.message;
+  if (params.webhookUrl) data.webhookUrl = params.webhookUrl;
+  if (params.callbackUrl) data.callbackUrl = params.callbackUrl;
+  if (params.selfie) data.selfie = true;
+  if (params.idPhoto) data.idPhoto = true;
+  if (params.otp) data.otp = true;
+  if (params.reminders) data.reminders = true;
+  if (params.expires) data.expires = params.expires;
+  if (params.metadata) data.metadata = params.metadata;
+
+  formData.append("data", JSON.stringify(data));
+
+  console.log("[riasign] sendV2 data:", JSON.stringify(data, null, 2));
+
+  const res = await fetch(`${RIASIGN_BASE_URL}/api/v2/send`, {
+    method: "POST",
+    headers: authHeader(),
+    body: formData,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`RIA Sign v2/send falhou (${res.status}): ${text}`);
+  }
+  return (await res.json()) as RiaSignV2SendResponse;
+}
+
+// ---------------------------------------------------------------------------
+// v2 — Remind (POST /api/v2/envelopes/:id/remind)
+// ---------------------------------------------------------------------------
+
+export async function remindEnvelope(
+  envelopeId: string,
+): Promise<{ reminded: Array<{ name: string; status: string; channel: string }> }> {
+  ensureApiKey();
+  const res = await fetch(
+    `${RIASIGN_BASE_URL}/api/v2/envelopes/${envelopeId}/remind`,
+    { method: "POST", headers: jsonHeaders() },
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`RIA Sign remind falhou (${res.status}): ${text}`);
+  }
+  return res.json();
 }
 
 // ---------------------------------------------------------------------------

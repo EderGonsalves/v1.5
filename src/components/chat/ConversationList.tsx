@@ -19,6 +19,7 @@ type ConversationListProps = {
   onRefresh: () => void;
   onNewConversation?: () => void;
   className?: string;
+  initialSearch?: string;
 };
 
 const INITIAL_VISIBLE = 30;
@@ -36,8 +37,9 @@ export const ConversationList = ({
   onRefresh,
   onNewConversation,
   className,
+  initialSearch,
 }: ConversationListProps) => {
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch ?? "");
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE);
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
