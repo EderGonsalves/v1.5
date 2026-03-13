@@ -7,6 +7,7 @@ import {
   createCalendarEvent,
   createCalendarEventGuest,
   listCalendarEvents,
+  listCalendarEventGuests,
   type CreateCalendarEventPayload,
 } from "@/services/api";
 import { serializeEvent, toTextFlag } from "./utils";
@@ -84,7 +85,19 @@ export async function GET(request: NextRequest) {
       userId: userId && Number.isFinite(userId) ? userId : undefined,
     });
 
-    return NextResponse.json(events.map((event) => serializeEvent(event)));
+    // Fetch guests for all events in parallel
+    const eventsWithGuests = await Promise.all(
+      events.map(async (event) => {
+        try {
+          const guests = await listCalendarEventGuests(event.id);
+          return serializeEvent(event, guests);
+        } catch {
+          return serializeEvent(event);
+        }
+      }),
+    );
+
+    return NextResponse.json(eventsWithGuests);
   } catch (error) {
     console.error("[calendar/events] GET error:", error);
     return NextResponse.json(
