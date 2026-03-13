@@ -14,7 +14,8 @@ import {
 } from "@/components/ui/dialog";
 import { TemplatePreview } from "./TemplatePreview";
 import type { Template } from "@/lib/waba/schemas";
-import { Loader2, Search, Send } from "lucide-react";
+import type { WabaPhoneInfo } from "@/lib/waba";
+import { Loader2, Phone, Search, Send } from "lucide-react";
 
 type TemplateSendDialogProps = {
   open: boolean;
@@ -55,10 +56,42 @@ export const TemplateSendDialog = ({
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const fetchApproved = useCallback(async () => {
+  // Multi-WABA phone selector
+  const [wabaPhones, setWabaPhones] = useState<WabaPhoneInfo[]>([]);
+  const [selectedPhone, setSelectedPhone] = useState<WabaPhoneInfo | null>(null);
+  const [loadingPhones, setLoadingPhones] = useState(false);
+
+  // Effective WABA number: selected phone or fallback prop
+  const effectiveWabaNumber = selectedPhone?.phoneNumber ?? wabaPhoneNumber;
+
+  const fetchPhoneNumbers = useCallback(async () => {
+    setLoadingPhones(true);
+    try {
+      const res = await fetch("/api/waba/numbers");
+      if (!res.ok) return;
+      const data = await res.json();
+      const numbers: WabaPhoneInfo[] = data.numbers ?? [];
+      setWabaPhones(numbers);
+      // Auto-select the phone matching the current wabaPhoneNumber prop
+      if (numbers.length > 0) {
+        const match = numbers.find(
+          (n) => n.phoneNumber.replace(/\D/g, "") === wabaPhoneNumber.replace(/\D/g, ""),
+        );
+        setSelectedPhone(match ?? numbers[0]);
+      }
+    } catch {
+      setWabaPhones([]);
+    } finally {
+      setLoadingPhones(false);
+    }
+  }, [wabaPhoneNumber]);
+
+  const fetchApproved = useCallback(async (configId?: number) => {
     setIsLoading(true);
     try {
-      const res = await fetch("/api/v1/waba/templates?status=APPROVED");
+      const params = new URLSearchParams({ status: "APPROVED" });
+      if (configId) params.set("configId", String(configId));
+      const res = await fetch(`/api/v1/waba/templates?${params}`);
       if (!res.ok) throw new Error("Erro ao buscar templates");
       const data = await res.json();
       setTemplates(data.data ?? []);
@@ -71,13 +104,30 @@ export const TemplateSendDialog = ({
 
   useEffect(() => {
     if (open) {
-      fetchApproved();
+      fetchPhoneNumbers();
       setSelectedTemplate(null);
       setVariableValues({});
       setError(null);
       setSearchQuery("");
     }
-  }, [open, fetchApproved]);
+  }, [open, fetchPhoneNumbers]);
+
+  // Fetch templates when selected phone changes
+  useEffect(() => {
+    if (open && selectedPhone) {
+      fetchApproved(selectedPhone.configId);
+    } else if (open && !loadingPhones && wabaPhones.length === 0) {
+      // No phones found, fetch without configId (fallback)
+      fetchApproved();
+    }
+  }, [open, selectedPhone, loadingPhones, wabaPhones.length, fetchApproved]);
+
+  const handlePhoneSelect = (phone: WabaPhoneInfo) => {
+    setSelectedPhone(phone);
+    setSelectedTemplate(null);
+    setVariableValues({});
+    setSearchQuery("");
+  };
 
   const variables = useMemo(
     () => (selectedTemplate ? extractVariables(selectedTemplate) : []),
@@ -174,7 +224,7 @@ export const TemplateSendDialog = ({
           templateName: selectedTemplate.name,
           templateLanguage: selectedTemplate.language,
           components: templateComponents.length > 0 ? templateComponents : undefined,
-          wabaPhoneNumber,
+          wabaPhoneNumber: effectiveWabaNumber,
           resolvedText: resolvedText || selectedTemplate.name,
         }),
       });
@@ -200,12 +250,49 @@ export const TemplateSendDialog = ({
           <DialogTitle>Enviar Template</DialogTitle>
           <DialogDescription>
             Selecione um template aprovado para enviar para {to}
+            {wabaPhones.length > 1 && selectedPhone && (
+              <span className="block text-xs mt-0.5">
+                De: {selectedPhone.phoneNumber}
+                {selectedPhone.departmentName ? ` (${selectedPhone.departmentName})` : ""}
+              </span>
+            )}
           </DialogDescription>
         </DialogHeader>
 
         {!selectedTemplate ? (
           /* Template selection step */
           <div className="space-y-3 py-2">
+            {/* Phone number selector (multi-WABA) */}
+            {wabaPhones.length > 1 && (
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Phone className="h-3 w-3" />
+                  Enviar de
+                </Label>
+                <div className="flex gap-1.5 flex-wrap">
+                  {wabaPhones.map((phone) => {
+                    const isActive = selectedPhone?.configId === phone.configId;
+                    return (
+                      <button
+                        key={phone.configId}
+                        onClick={() => handlePhoneSelect(phone)}
+                        className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                          isActive
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border hover:bg-accent/50 text-muted-foreground"
+                        }`}
+                      >
+                        <span className="font-mono">{phone.phoneNumber}</span>
+                        {phone.departmentName && (
+                          <span className="ml-1 opacity-70">({phone.departmentName})</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
