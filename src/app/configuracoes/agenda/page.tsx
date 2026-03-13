@@ -108,6 +108,16 @@ const formatEventInterval = (event: CalendarEvent): string => {
   }
 };
 
+/** Extract phone from event description (N8N format: "Telefone: XX XXXXXXXXX,") */
+const extractPhoneFromDescription = (description?: string | null): string | null => {
+  if (!description) return null;
+  const match = description.match(/Telefone:\s*([^,]+)/i);
+  if (!match) return null;
+  const phone = match[1].trim();
+  // Return only if it looks like a phone (has digits)
+  return /\d{4,}/.test(phone.replace(/\D/g, "")) ? phone : null;
+};
+
 const guestSchema = z.object({
   id: z.number().optional(),
   name: z.string().min(1, "Informe o nome do convidado"),
@@ -167,10 +177,13 @@ const mapGuestsFromEvent = (event?: CalendarEvent | null): EventFormValues["gues
     return [];
   }
 
+  const descPhone = extractPhoneFromDescription(event.description);
+  const anyGuestHasPhone = event.guests.some((g) => g.phone);
+
   return event.guests.map((guest) => ({
     name: guest.name ?? "",
     email: guest.email ?? "",
-    phone: guest.phone ?? "",
+    phone: guest.phone || (!anyGuestHasPhone && descPhone ? descPhone : ""),
   }));
 };
 
@@ -1379,30 +1392,55 @@ const AgendaPage = () => {
                   </div>
                 </div>
 
-                {/* Guests with phone */}
-                {event.guests && event.guests.length > 0 && (
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5 text-xs text-muted-foreground">
-                    {event.guests.map((guest, gi) => (
-                      <span key={gi} className="flex items-center gap-1">
-                        {guest.name && <span className="font-medium text-foreground/80">{guest.name}</span>}
-                        {guest.phone && (
+                {/* Guests with phone + fallback from description */}
+                {(() => {
+                  const descPhone = extractPhoneFromDescription(event.description);
+                  const hasGuests = event.guests && event.guests.length > 0;
+                  const hasGuestPhone = hasGuests && event.guests!.some((g) => g.phone);
+                  if (!hasGuests && !descPhone) return null;
+                  return (
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5 text-xs text-muted-foreground">
+                      {hasGuests && event.guests!.map((guest, gi) => {
+                        const phone = guest.phone || (!hasGuestPhone ? descPhone : null);
+                        return (
+                          <span key={gi} className="flex items-center gap-1">
+                            {guest.name && <span className="font-medium text-foreground/80">{guest.name}</span>}
+                            {phone && (
+                              <button
+                                type="button"
+                                className="flex items-center gap-0.5 text-primary hover:underline cursor-pointer"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const cleaned = phone.replace(/\D/g, "");
+                                  router.push(`/chat?search=${encodeURIComponent(cleaned)}`);
+                                }}
+                              >
+                                <Phone className="h-3 w-3" />
+                                {phone}
+                              </button>
+                            )}
+                          </span>
+                        );
+                      })}
+                      {!hasGuests && descPhone && (
+                        <span className="flex items-center gap-1">
                           <button
                             type="button"
                             className="flex items-center gap-0.5 text-primary hover:underline cursor-pointer"
                             onClick={(e) => {
                               e.stopPropagation();
-                              const phone = guest.phone!.replace(/\D/g, "");
-                              router.push(`/chat?search=${encodeURIComponent(phone)}`);
+                              const cleaned = descPhone.replace(/\D/g, "");
+                              router.push(`/chat?search=${encodeURIComponent(cleaned)}`);
                             }}
                           >
                             <Phone className="h-3 w-3" />
-                            {guest.phone}
+                            {descPhone}
                           </button>
-                        )}
-                      </span>
-                    ))}
-                  </div>
-                )}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Extra info row */}
                 {(event.location || event.meeting_link) && (
