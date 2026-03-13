@@ -1,5 +1,5 @@
 import axios from "axios";
-import { eq, and, or, asc, desc, like, sql, isNull } from "drizzle-orm";
+import { eq, and, asc, desc, like, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { prepared } from "@/lib/db/prepared";
 import { kanbanColumns as kcTable } from "@/lib/db/schema/kanbanColumns";
@@ -3775,13 +3775,7 @@ export const listCalendarEvents = async (
         conditions.push(eq(eventsTable.institutionID, String(params.institutionId)));
       }
       if (params.userId) {
-        // Include user's events AND unassigned events (institutional agenda)
-        conditions.push(
-          or(
-            eq(eventsTable.userId, String(params.userId)),
-            isNull(eventsTable.userId),
-          )!,
-        );
+        conditions.push(eq(eventsTable.userId, String(params.userId)));
       }
       const rows = await db
         .select()
@@ -3812,8 +3806,12 @@ export const listCalendarEvents = async (
       );
     }
 
-    // Note: userId filter is applied client-side to include unassigned events
-    // (Baserow API doesn't support OR filters in URL params)
+    if (params.userId) {
+      baseUrl.searchParams.set(
+        "filter__user_id__equal",
+        String(params.userId),
+      );
+    }
 
     let nextUrl: string | null = baseUrl.toString();
     const results: CalendarEventRow[] = [];
@@ -3830,19 +3828,12 @@ export const listCalendarEvents = async (
       nextUrl = data?.next ?? null;
     }
 
-    let filtered = params.includeDeleted
-      ? results
-      : results.filter((row) => !row.deleted_at);
-
-    // Filter by userId: include user's events + unassigned events (institutional)
-    if (params.userId) {
-      const uid = params.userId;
-      filtered = filtered.filter(
-        (row) => row.user_id == null || Number(row.user_id) === uid,
-      );
+    if (params.includeDeleted) {
+      return sortEvents(results, params.start, params.end);
     }
 
-    return sortEvents(filtered, params.start, params.end);
+    const activeEvents = results.filter((row) => !row.deleted_at);
+    return sortEvents(activeEvents, params.start, params.end);
   } catch (error) {
     console.error("Erro ao listar eventos:", error);
     throw error;
