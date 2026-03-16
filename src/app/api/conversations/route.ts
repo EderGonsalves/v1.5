@@ -147,10 +147,15 @@ export async function GET(request: NextRequest) {
       includeFields,
     });
 
-    // Normalizar e ordenar por ID desc (mais recentes primeiro)
+    // Normalizar e ordenar por última mensagem (mais recentes primeiro)
     const conversations = response.results
-      .sort((a, b) => (b.id ?? 0) - (a.id ?? 0))
-      .map(normalizeRow);
+      .map(normalizeRow)
+      .sort((a, b) => {
+        const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+        const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+        if (ta !== tb) return tb - ta;
+        return (b.id ?? 0) - (a.id ?? 0); // fallback: ID desc
+      });
 
     // Salvar no cache
     conversationsCache.set(cacheKey, {

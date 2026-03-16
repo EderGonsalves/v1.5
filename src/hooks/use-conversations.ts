@@ -137,8 +137,13 @@ const dedup = (arr: Conversation[]): Conversation[] => {
   });
 };
 
-const sortDesc = (arr: Conversation[]) =>
-  dedup([...arr]).sort((a, b) => (b.id || 0) - (a.id || 0));
+const sortByLastMessage = (arr: Conversation[]) =>
+  dedup([...arr]).sort((a, b) => {
+    const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+    const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+    if (ta !== tb) return tb - ta;
+    return (b.id || 0) - (a.id || 0); // fallback: ID desc
+  });
 
 export const useConversations = (institutionId: number | undefined) => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -179,13 +184,13 @@ export const useConversations = (institutionId: number | undefined) => {
           maxPages: INITIAL_MAX_PAGES,
           includeFields: CONVERSATION_FIELDS,
           onPageLoaded: (partial) => {
-            const normalized = sortDesc(partial.map(normalizeRow));
+            const normalized = sortByLastMessage(partial.map(normalizeRow));
             setConversations(normalized);
             if (!silent) setIsLoading(false);
           },
         });
 
-        const normalized = sortDesc(response.results.map(normalizeRow));
+        const normalized = sortByLastMessage(response.results.map(normalizeRow));
         setConversations(normalized);
 
         // Calcular próxima página a buscar
@@ -246,7 +251,12 @@ export const useConversations = (institutionId: number | undefined) => {
       setConversations((prev) => {
         const existingIds = new Set(prev.map((c) => c.id));
         const unique = newConversations.filter((c) => !existingIds.has(c.id));
-        return [...prev, ...unique].sort((a, b) => (b.id || 0) - (a.id || 0));
+        return [...prev, ...unique].sort((a, b) => {
+          const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+          const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+          if (ta !== tb) return tb - ta;
+          return (b.id || 0) - (a.id || 0);
+        });
       });
 
       nextPageRef.current = endPage > 1 ? endPage - 1 : null;
