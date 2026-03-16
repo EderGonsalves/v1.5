@@ -1,5 +1,5 @@
 import axios from "axios";
-import { eq, and, asc, desc, like, sql } from "drizzle-orm";
+import { eq, and, asc, desc, like, sql, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { prepared } from "@/lib/db/prepared";
 import { kanbanColumns as kcTable } from "@/lib/db/schema/kanbanColumns";
@@ -1644,7 +1644,7 @@ export const getBaserowCases = async ({
             lastMessageAt: sql<string>`max(${messagesTable.createdOn})`,
           })
           .from(messagesTable)
-          .where(sql`${messagesTable.caseId} = ANY(${idArray})`)
+          .where(inArray(messagesTable.caseId, idArray))
           .groupBy(messagesTable.caseId);
 
         // Build map: identifier → timestamp
@@ -1734,7 +1734,7 @@ export const getBaserowCases = async ({
           lastMessageAt: sql<string>`max(${messagesTable.createdOn})`,
         })
         .from(messagesTable)
-        .where(sql`${messagesTable.caseId} = ANY(${idArray})`)
+        .where(inArray(messagesTable.caseId, idArray))
         .groupBy(messagesTable.caseId);
 
       const lastMsgMap = new Map<string, string>();
