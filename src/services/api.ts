@@ -8,6 +8,7 @@ import { webhooks as whTable } from "@/lib/db/schema/webhooks";
 import { followUpConfig as fucTable } from "@/lib/db/schema/followUpConfig";
 import { followUpHistory as fuhTable } from "@/lib/db/schema/followUpHistory";
 import { cases as casesTable } from "@/lib/db/schema/cases";
+import { caseMessages as messagesTable } from "@/lib/db/schema/caseMessages";
 import { config as cfgTable } from "@/lib/db/schema/config";
 import { events as eventsTable } from "@/lib/db/schema/events";
 import { eventGuests as eventGuestsTable } from "@/lib/db/schema/eventGuests";
@@ -1149,6 +1150,8 @@ export type BaserowCaseRow = {
   // Electronic signature fields
   sign_envelope_id?: string | null;
   sign_status?: string | null;
+  /** ISO timestamp of the most recent message (from messages table) */
+  last_message_at?: string | null;
   [key: string]: unknown;
 };
 
@@ -1620,32 +1623,78 @@ export const getBaserowCases = async ({
         conditions.push(eq(casesTable.institutionID, String(institutionId)));
       }
       const whereClause = conditions.length ? and(...conditions) : undefined;
-  
+
+      // Helper: enrich case rows with last_message_at from messages table.
+      // Messages table stores CaseId (autonumber), row id, or BJCaseId in field_1701,
+      // so we must match against all possible identifiers.
+      const enrichWithLastMessage = async (results: BaserowCaseRow[]): Promise<BaserowCaseRow[]> => {
+        if (results.length === 0) return results;
+        // Collect all possible identifiers that could appear in messages.caseId
+        const allIds = new Set<string>();
+        for (const r of results) {
+          allIds.add(String(r.id));
+          if (r.CaseId != null) allIds.add(String(r.CaseId));
+          if (r.BJCaseId) allIds.add(String(r.BJCaseId));
+        }
+        const idArray = [...allIds];
+
+        const lastMsgRows = await db
+          .select({
+            caseId: messagesTable.caseId,
+            lastMessageAt: sql<string>`max(${messagesTable.createdOn})`,
+          })
+          .from(messagesTable)
+          .where(sql`${messagesTable.caseId} = ANY(${idArray})`)
+          .groupBy(messagesTable.caseId);
+
+        // Build map: identifier → timestamp
+        const lastMsgMap = new Map<string, string>();
+        for (const row of lastMsgRows) {
+          if (row.caseId && row.lastMessageAt) {
+            lastMsgMap.set(row.caseId, row.lastMessageAt);
+          }
+        }
+
+        // For each case, pick the most recent timestamp from any matching identifier
+        for (const r of results) {
+          const candidates = [String(r.id)];
+          if (r.CaseId != null) candidates.push(String(r.CaseId));
+          if (r.BJCaseId) candidates.push(String(r.BJCaseId));
+
+          let best: string | null = null;
+          for (const c of candidates) {
+            const ts = lastMsgMap.get(c);
+            if (ts && (!best || ts > best)) best = ts;
+          }
+          r.last_message_at = best;
+        }
+        return results;
+      };
+
       if (fetchAll) {
-        // Fetch everything in one query (no pagination needed with direct DB)
         const rows = await db
           .select()
           .from(casesTable)
           .where(whereClause)
           .orderBy(newestFirst ? desc(casesTable.id) : asc(casesTable.id));
-  
-        const results = rows.map(mapCaseRow);
+
+        const results = await enrichWithLastMessage(rows.map(mapCaseRow));
         const totalCount = results.length;
-  
+
         if (onPageLoaded) {
           onPageLoaded([...results], totalCount);
         }
-  
+
         return { results, totalCount, hasNextPage: false };
       }
-  
+
       // Paginated query
       const [countResult] = await db
         .select({ total: sql<number>`cast(count(*) as integer)` })
         .from(casesTable)
         .where(whereClause);
       const totalCount = countResult?.total ?? 0;
-  
+
       const offset = (page - 1) * pageSize;
       const rows = await db
         .select()
@@ -1654,14 +1703,14 @@ export const getBaserowCases = async ({
         .orderBy(newestFirst ? desc(casesTable.id) : asc(casesTable.id))
         .limit(pageSize)
         .offset(offset);
-  
-      const results = rows.map(mapCaseRow);
+
+      const results = await enrichWithLastMessage(rows.map(mapCaseRow));
       const hasNextPage = offset + results.length < totalCount;
-  
+
       if (onPageLoaded) {
         onPageLoaded([...results], totalCount);
       }
-  
+
       return { results, totalCount, hasNextPage };
     });
     if (_dr !== undefined) return _dr;

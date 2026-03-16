@@ -28,10 +28,10 @@ type CacheEntry = {
 const conversationsCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutos
 
-/** ETag leve: count + primeiro ID (mais recente) */
+/** ETag leve: count + primeiro item (id + lastMessageAt) */
 const computeConversationsETag = (conversations: ConversationItem[]): string => {
   const first = conversations[0];
-  return `"conv-${conversations.length}-${first?.id ?? 0}"`;
+  return `"conv-${conversations.length}-${first?.id ?? 0}-${first?.lastMessageAt ?? ""}"`;
 };
 
 const verifyAuth = (
@@ -52,7 +52,7 @@ const verifyAuth = (
 };
 
 const normalizeRow = (row: BaserowCaseRow): ConversationItem => {
-  const rawDate = row.Data ?? row.data ?? null;
+  const rawDate = row.last_message_at ?? row.Data ?? row.data ?? null;
   let lastMessageAt: string | null = null;
   if (rawDate) {
     const parsed = new Date(String(rawDate));

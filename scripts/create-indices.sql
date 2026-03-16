@@ -54,6 +54,12 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_227_case_id_incremental
   ON database_table_227 (field_1701, id DESC)
   WHERE field_1701 IS NOT NULL;
 
+-- CaseId + created_on: MAX(created_on) GROUP BY caseId para ordenação
+-- de conversas por última mensagem recebida
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_227_case_id_created_on
+  ON database_table_227 (field_1701, created_on DESC)
+  WHERE field_1701 IS NOT NULL;
+
 -- ===================== TABLE 236: users =====================
 -- Autenticação e RBAC — consultas frequentes
 

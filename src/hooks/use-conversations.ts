@@ -96,7 +96,8 @@ const setSessionCache = (institutionId: number, conversations: Conversation[]): 
 };
 
 const normalizeRow = (row: BaserowCaseRow): Conversation => {
-  const rawDate = row.Data ?? row.data ?? null;
+  // Prefer last_message_at (from messages table JOIN) over Data (case creation date)
+  const rawDate = row.last_message_at ?? row.Data ?? row.data ?? null;
   let lastMessageAt: Date | null = null;
   if (rawDate) {
     const parsed = new Date(String(rawDate));
