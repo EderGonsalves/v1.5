@@ -1717,6 +1717,49 @@ export const getBaserowCases = async ({
   }
 
   // --- Baserow fallback ---
+  // Helper: enrich rows with last_message_at via direct DB (server-side only)
+  const enrichViaDb = async (rows: BaserowCaseRow[]): Promise<BaserowCaseRow[]> => {
+    if (typeof window !== "undefined" || rows.length === 0) return rows;
+    try {
+      const allIds = new Set<string>();
+      for (const r of rows) {
+        allIds.add(String(r.id));
+        if (r.CaseId != null) allIds.add(String(r.CaseId));
+        if (r.BJCaseId) allIds.add(String(r.BJCaseId));
+      }
+      const idArray = [...allIds];
+      const lastMsgRows = await db
+        .select({
+          caseId: messagesTable.caseId,
+          lastMessageAt: sql<string>`max(${messagesTable.createdOn})`,
+        })
+        .from(messagesTable)
+        .where(sql`${messagesTable.caseId} = ANY(${idArray})`)
+        .groupBy(messagesTable.caseId);
+
+      const lastMsgMap = new Map<string, string>();
+      for (const row of lastMsgRows) {
+        if (row.caseId && row.lastMessageAt) {
+          lastMsgMap.set(row.caseId, row.lastMessageAt);
+        }
+      }
+      for (const r of rows) {
+        const candidates = [String(r.id)];
+        if (r.CaseId != null) candidates.push(String(r.CaseId));
+        if (r.BJCaseId) candidates.push(String(r.BJCaseId));
+        let best: string | null = null;
+        for (const c of candidates) {
+          const ts = lastMsgMap.get(c);
+          if (ts && (!best || ts > best)) best = ts;
+        }
+        r.last_message_at = best;
+      }
+    } catch {
+      // DB enrichment is best-effort; fallback to Data field
+    }
+    return rows;
+  };
+
   try {
     // Usar filtro server-side do Baserow para instituições não-admin
     const useServerFilter =
@@ -1754,10 +1797,11 @@ export const getBaserowCases = async ({
 
       // Single page — return immediately
       if (totalPages <= 1) {
+        const enriched = await enrichViaDb(firstPageResults);
         if (onPageLoaded) {
-          onPageLoaded([...firstPageResults], totalCount);
+          onPageLoaded([...enriched], totalCount);
         }
-        return { results: firstPageResults, totalCount, hasNextPage: false };
+        return { results: enriched, totalCount, hasNextPage: false };
       }
 
       // Step 2: Fetch from last page backwards (newest cases first)
@@ -1805,14 +1849,16 @@ export const getBaserowCases = async ({
         pushUnique(firstPageResults);
       }
 
+      const enrichedAll = await enrichViaDb(allResults);
+
       if (onPageLoaded && pagesLoaded > 0) {
-        onPageLoaded([...allResults], totalCount);
+        onPageLoaded([...enrichedAll], totalCount);
       }
 
       return {
-        results: allResults,
+        results: enrichedAll,
         totalCount,
-        hasNextPage: allResults.length < totalCount,
+        hasNextPage: enrichedAll.length < totalCount,
       };
     }
 
@@ -1848,9 +1894,10 @@ export const getBaserowCases = async ({
       }
     }
 
+    const enrichedStd = await enrichViaDb(allResults);
     return {
-      results: allResults,
-      totalCount: typeof totalCount === "number" ? totalCount : allResults.length,
+      results: enrichedStd,
+      totalCount: typeof totalCount === "number" ? totalCount : enrichedStd.length,
       hasNextPage,
     };
   } catch (error) {

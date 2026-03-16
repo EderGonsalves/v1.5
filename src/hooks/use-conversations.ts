@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getBaserowCases, type BaserowCaseRow } from "@/services/api";
 
 export type Conversation = {
   id: number;
@@ -30,28 +29,6 @@ type CachedConversations = {
 const CACHE_KEY = "onboarding_conversations_cache";
 const CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutos
 const MEMORY_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
-const PAGE_SIZE = 200;
-const INITIAL_MAX_PAGES = 3;
-
-// Campos mínimos necessários para a lista de conversas (reduz payload ~80%)
-const CONVERSATION_FIELDS = [
-  "CaseId",
-  "CustumerName",
-  "CustumerPhone",
-  "Data",
-  "Resumo",
-  "DepoimentoInicial",
-  "IApause",
-  "BJCaseId",
-  "EtapaPerguntas",
-  "EtapaFinal",
-  "display_phone_number",
-  "department_id",
-  "department_name",
-  "assigned_to_user_id",
-  "responsavel",
-  "InstitutionID",
-];
 
 // Adaptive polling para lista de conversas (mais lento que chat)
 const CONV_POLL_ACTIVE = 30_000;  // 30 s quando aba ativa
@@ -61,7 +38,6 @@ const CONV_POLL_BG     = 120_000; // 2 min quando aba background
 type ConversationsMemoryCache = {
   institutionId: number;
   conversations: Conversation[];
-  nextPage: number | null;
   timestamp: number;
 };
 
@@ -95,65 +71,56 @@ const setSessionCache = (institutionId: number, conversations: Conversation[]): 
   }
 };
 
-const normalizeRow = (row: BaserowCaseRow): Conversation => {
-  // Prefer last_message_at (from messages table JOIN) over Data (case creation date)
-  const rawDate = row.last_message_at ?? row.Data ?? row.data ?? null;
+/** Normalize a server ConversationItem into the client Conversation type */
+type ServerConversationItem = {
+  id: number;
+  caseId: number | string;
+  customerName: string;
+  customerPhone: string;
+  lastMessage?: string;
+  lastMessageAt: string | null;
+  paused: boolean;
+  bjCaseId?: string | number | null;
+  etapa?: string;
+  wabaPhoneNumber: string | null;
+  department_id?: number | null;
+  department_name?: string | null;
+  assigned_to_user_id?: number | null;
+  responsavel?: string | null;
+};
+
+const normalizeServerItem = (item: ServerConversationItem): Conversation => {
   let lastMessageAt: Date | null = null;
-  if (rawDate) {
-    const parsed = new Date(String(rawDate));
+  if (item.lastMessageAt) {
+    const parsed = new Date(item.lastMessageAt);
     if (!Number.isNaN(parsed.getTime())) {
       lastMessageAt = parsed;
     }
   }
-
-  const rawWabaPhone = row.display_phone_number;
-  const wabaPhoneNumber = rawWabaPhone
-    ? String(rawWabaPhone).replace(/\D/g, "").trim() || null
-    : null;
-
   return {
-    id: row.id,
-    caseId: row.CaseId ?? row.id,
-    customerName: row.CustumerName ?? "Cliente",
-    customerPhone: row.CustumerPhone ?? "",
-    lastMessage: row.Resumo ?? row.DepoimentoInicial ?? undefined,
+    id: item.id,
+    caseId: item.caseId,
+    customerName: item.customerName,
+    customerPhone: item.customerPhone,
+    lastMessage: item.lastMessage,
     lastMessageAt,
-    paused: row.IApause === "SIM",
-    bjCaseId: row.BJCaseId ?? null,
-    etapa: row.EtapaPerguntas ?? row.EtapaFinal ?? undefined,
-    wabaPhoneNumber,
-    department_id: Number(row.department_id) || null,
-    department_name: row.department_name ? String(row.department_name) : null,
-    assigned_to_user_id: Number(row.assigned_to_user_id) || null,
-    responsavel: (row.responsavel as string) ?? null,
+    paused: item.paused,
+    bjCaseId: item.bjCaseId ?? null,
+    etapa: item.etapa,
+    wabaPhoneNumber: item.wabaPhoneNumber,
+    department_id: item.department_id ?? null,
+    department_name: item.department_name ?? null,
+    assigned_to_user_id: item.assigned_to_user_id ?? null,
+    responsavel: item.responsavel ?? null,
   };
 };
-
-const dedup = (arr: Conversation[]): Conversation[] => {
-  const seen = new Set<number>();
-  return arr.filter((c) => {
-    if (seen.has(c.id)) return false;
-    seen.add(c.id);
-    return true;
-  });
-};
-
-const sortByLastMessage = (arr: Conversation[]) =>
-  dedup([...arr]).sort((a, b) => {
-    const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
-    const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
-    if (ta !== tb) return tb - ta;
-    return (b.id || 0) - (a.id || 0); // fallback: ID desc
-  });
 
 export const useConversations = (institutionId: number | undefined) => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isFetchingRef = useRef(false);
-  const nextPageRef = useRef<number | null>(null);
 
   const fetchConversations = useCallback(
     async (options: { silent?: boolean } = {}) => {
@@ -172,37 +139,27 @@ export const useConversations = (institutionId: number | undefined) => {
         setIsRefreshing(true);
       } else {
         setIsLoading(true);
-        nextPageRef.current = null;
       }
       setError(null);
 
       try {
-        const response = await getBaserowCases({
-          institutionId,
-          pageSize: PAGE_SIZE,
-          fetchAll: true,
-          newestFirst: true,
-          maxPages: INITIAL_MAX_PAGES,
-          includeFields: CONVERSATION_FIELDS,
-          onPageLoaded: (partial) => {
-            const normalized = sortByLastMessage(partial.map(normalizeRow));
-            setConversations(normalized);
-            if (!silent) setIsLoading(false);
-          },
-        });
+        const url = `/api/conversations?institutionId=${institutionId}${silent ? "" : "&refresh=true"}`;
+        const resp = await fetch(url);
 
-        const normalized = sortByLastMessage(response.results.map(normalizeRow));
-        setConversations(normalized);
-
-        // Calcular próxima página a buscar
-        if (response.hasNextPage) {
-          const totalPages = Math.ceil(response.totalCount / PAGE_SIZE);
-          const pageBudget = INITIAL_MAX_PAGES - 1;
-          nextPageRef.current = totalPages - pageBudget;
-        } else {
-          nextPageRef.current = null;
-          setSessionCache(institutionId, normalized);
+        if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status}`);
         }
+
+        // 304 Not Modified — nothing changed
+        if (resp.status === 304) {
+          return true;
+        }
+
+        const data = await resp.json();
+        const items: ServerConversationItem[] = data.conversations ?? [];
+        const normalized = items.map(normalizeServerItem);
+        setConversations(normalized);
+        setSessionCache(institutionId, normalized);
 
         // Auto-assign unassigned cases (fire-and-forget)
         if (!silent) {
@@ -227,55 +184,6 @@ export const useConversations = (institutionId: number | undefined) => {
     [institutionId],
   );
 
-  const loadMore = useCallback(async () => {
-    if (isLoadingMore || !institutionId || nextPageRef.current === null || nextPageRef.current < 1) {
-      return;
-    }
-
-    setIsLoadingMore(true);
-
-    try {
-      const startPage = nextPageRef.current;
-      const endPage = Math.max(1, startPage - 2); // até 3 páginas por vez
-      const pagesToFetch: number[] = [];
-      for (let p = startPage; p >= endPage; p--) {
-        pagesToFetch.push(p);
-      }
-
-      const results = await Promise.all(
-        pagesToFetch.map((p) =>
-          getBaserowCases({ institutionId, page: p, pageSize: PAGE_SIZE, includeFields: CONVERSATION_FIELDS }),
-        ),
-      );
-
-      const newConversations = results.flatMap((r) => r.results.map(normalizeRow));
-      setConversations((prev) => {
-        const existingIds = new Set(prev.map((c) => c.id));
-        const unique = newConversations.filter((c) => !existingIds.has(c.id));
-        return [...prev, ...unique].sort((a, b) => {
-          const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
-          const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
-          if (ta !== tb) return tb - ta;
-          return (b.id || 0) - (a.id || 0);
-        });
-      });
-
-      nextPageRef.current = endPage > 1 ? endPage - 1 : null;
-
-      // Se carregou tudo, salvar no cache
-      if (nextPageRef.current === null) {
-        setConversations((prev) => {
-          setSessionCache(institutionId, prev);
-          return prev;
-        });
-      }
-    } catch (err) {
-      console.error("Erro ao carregar mais conversas:", err);
-    } finally {
-      setIsLoadingMore(false);
-    }
-  }, [isLoadingMore, institutionId]);
-
   useEffect(() => {
     if (!institutionId) {
       setIsLoading(false);
@@ -289,7 +197,6 @@ export const useConversations = (institutionId: number | undefined) => {
       Date.now() - conversationsMemoryCache.timestamp < MEMORY_CACHE_TTL_MS
     ) {
       setConversations(conversationsMemoryCache.conversations);
-      nextPageRef.current = conversationsMemoryCache.nextPage;
       setIsLoading(false);
       return;
     }
@@ -311,7 +218,6 @@ export const useConversations = (institutionId: number | undefined) => {
       conversationsMemoryCache = {
         institutionId,
         conversations,
-        nextPage: nextPageRef.current,
         timestamp: Date.now(),
       };
     }
@@ -327,8 +233,8 @@ export const useConversations = (institutionId: number | undefined) => {
     let consecutiveErrors = 0;
     let tickInFlight = false;
 
-    const ERROR_BACKOFF_BASE = 30_000;  // 30s base (conversations are less time-critical)
-    const ERROR_BACKOFF_MAX  = 120_000; // 2min cap
+    const ERROR_BACKOFF_BASE = 30_000;
+    const ERROR_BACKOFF_MAX  = 120_000;
 
     const getInterval = (): number => {
       if (consecutiveErrors > 0) {
@@ -381,22 +287,19 @@ export const useConversations = (institutionId: number | undefined) => {
   }, [institutionId, fetchConversations]);
 
   const refresh = useCallback(() => {
-    // Refresh manual limpa cache de memória para forçar reload
     if (institutionId) {
       conversationsMemoryCache = null;
     }
     return fetchConversations({ silent: true });
   }, [fetchConversations, institutionId]);
 
-  const hasMoreFromServer = nextPageRef.current !== null;
-
   return {
     conversations,
     isLoading,
     isRefreshing,
-    isLoadingMore,
-    hasMoreFromServer,
-    loadMore,
+    isLoadingMore: false,
+    hasMoreFromServer: false,
+    loadMore: async () => {},
     error,
     refresh,
   };
