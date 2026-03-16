@@ -147,6 +147,15 @@ export async function GET(request: NextRequest) {
       includeFields,
     });
 
+    // Debug: verificar se last_message_at está sendo populado
+    const sample = response.results.slice(0, 3).map((r) => ({
+      id: r.id,
+      CaseId: r.CaseId,
+      last_message_at: r.last_message_at,
+      Data: r.Data,
+    }));
+    console.log("[conversations] sample rows:", JSON.stringify(sample));
+
     // Normalizar e ordenar por última mensagem (mais recentes primeiro)
     const conversations = response.results
       .map(normalizeRow)
