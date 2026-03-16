@@ -298,6 +298,53 @@ export async function getSubscriptionsByInstitution(
   return results;
 }
 
+/**
+ * Get push subscriptions for a specific user (by legacyUserId OR email).
+ * Tries legacyUserId first, falls back to email.
+ */
+export async function getSubscriptionsByUser(
+  legacyUserId: string | null,
+  userEmail: string | null,
+  institutionId: number,
+): Promise<PushSubscriptionRecord[]> {
+  if (useDirectDb("push")) {
+    const _dr = await tryDrizzle("push", async () => {
+      // Try by legacyUserId first
+      if (legacyUserId) {
+        const rows = await prepared.getSubsByLegacyUser.execute({
+          legacyUserId,
+          institutionId: String(institutionId),
+        });
+        if (rows.length > 0) return rows.map(mapSubRow);
+      }
+      // Fallback to email
+      if (userEmail) {
+        const rows = await prepared.getSubsByUserEmail.execute({
+          userEmail,
+          institutionId: String(institutionId),
+        });
+        return rows.map(mapSubRow);
+      }
+      return [];
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // Baserow fallback
+  const results: PushSubscriptionRecord[] = [];
+  if (legacyUserId) {
+    const url = `${subscriptionsUrl}&filter__legacy_user_id__equal=${encodeURIComponent(legacyUserId)}&filter__institution_id__equal=${institutionId}&size=200`;
+    const { data } = await baserowGet<BaserowList<PushSubscriptionRecord>>(url);
+    if (data.results.length > 0) return data.results;
+  }
+  if (userEmail) {
+    const url = `${subscriptionsUrl}&filter__user_email__equal=${encodeURIComponent(userEmail)}&filter__institution_id__equal=${institutionId}&size=200`;
+    const { data } = await baserowGet<BaserowList<PushSubscriptionRecord>>(url);
+    return data.results;
+  }
+  return results;
+}
+
 export async function getAllSubscriptions(): Promise<PushSubscriptionRecord[]> {
   if (useDirectDb("push")) {
     const _dr = await tryDrizzle("push", async () => {

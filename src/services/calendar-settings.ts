@@ -116,11 +116,10 @@ export async function fetchCalendarSettings(
   const url = `/database/rows/table/${TABLE_ID}/?${params.toString()}`;
   const response = await client.get<{ results?: CalendarSettingsRow[] }>(url);
   const rows = response.data.results ?? [];
-  // Return the row without user_id (institutional default)
-  const institutional = rows.find(
+  // Return ONLY the row without user_id (institutional default) — never another user's row
+  return rows.find(
     (r) => r.user_id === null || r.user_id === undefined || r.user_id === 0,
-  );
-  return institutional ?? rows[0] ?? null;
+  ) ?? null;
 }
 
 export async function upsertCalendarSettings(
@@ -145,7 +144,7 @@ export async function upsertCalendarSettings(
     const userRows = userResponse.data.results ?? [];
     existing = userRows[0] ?? null;
   } else {
-    // Find institutional row (no user_id)
+    // Find institutional row (no user_id) — never match another user's row
     const params = new URLSearchParams({
       user_field_names: "true",
       size: "10",
@@ -157,6 +156,7 @@ export async function upsertCalendarSettings(
     existing = rows.find(
       (r) => r.user_id === null || r.user_id === undefined || r.user_id === 0,
     ) ?? null;
+    // IMPORTANT: if no institutional row found, do NOT fall back to another user's row
   }
 
   if (existing) {

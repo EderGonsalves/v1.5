@@ -20,6 +20,7 @@ import { useSidebar } from "@/components/sidebar/sidebar-context";
 import { cn } from "@/lib/utils";
 import { usePermissionsStatus } from "@/hooks/use-permissions-status";
 import { useMyDepartments } from "@/hooks/use-my-departments";
+import { useUnreadCount } from "@/hooks/use-unread-count";
 
 type NavItem = {
   href: string;
@@ -48,6 +49,7 @@ export function Sidebar() {
     : null;
   const { isSysAdmin, isOfficeAdmin: isPermOfficeAdmin, enabledPages, isLoading: permLoading } = usePermissionsStatus(authSignature);
   const { isOfficeAdmin } = useMyDepartments();
+  const { unreadCount } = useUnreadCount(data.auth?.institutionId ?? undefined);
   const isAdmin = isSysAdmin || isOfficeAdmin || isPermOfficeAdmin;
   // Pages always visible for any authenticated user (even during loading)
   const alwaysVisiblePaths = new Set(["/casos", "/chat", "/suporte"]);
@@ -132,7 +134,14 @@ export function Sidebar() {
                 isCollapsed && !mobile && "justify-center px-0"
               )}
             >
-              <item.icon className="h-5 w-5 shrink-0" />
+              <span className="relative">
+                <item.icon className="h-5 w-5 shrink-0" />
+                {item.href === "/chat" && unreadCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-none">
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </span>
+                )}
+              </span>
               {(!isCollapsed || mobile) && <span>{item.label}</span>}
             </Link>
           );

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "skills": {
+    "breadboarding": {
+      "source": "rjs/shaping-skills",
+      "sourceType": "github",
+      "computedHash": "56a35d17a9bc1278e21185bfab8afe27a395b62d792275d9b46454c0dd76a220"
+    },
+    "framing-doc": {
+      "source": "rjs/shaping-skills",
+      "sourceType": "github",
+      "computedHash": "5e8cd5071168cf2ed5a674378a4ef285516143a7c6e16744d7984f3215a0fb33"
+    },
+    "kickoff-doc": {
+      "source": "rjs/shaping-skills",
+      "sourceType": "github",
+      "computedHash": "08173b23d4428b17ca6844111d950f9cafdf6617891298f67358d2f04e8808fc"
+    },
+    "shape-up": {
+      "source": "petekp/claude-code-setup",
+      "sourceType": "github",
+      "computedHash": "78f9a31f602a8957d0663a3eb77cedf602f220da339cad7a929b5f4cd6cfb4dc"
+    },
+    "shaping": {
+      "source": "rjs/shaping-skills",
+      "sourceType": "github",
+      "computedHash": "57a68732d5c1d8eecd9d8c6339f259231c2f9e55b31f5ae350f1fbb4795f1422"
+    }
+  }
+}

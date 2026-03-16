@@ -55,6 +55,15 @@ self.addEventListener("push", (event) => {
       icon,
       tag,
       data: { url },
+    }).then(() => {
+      // Notify open clients so they can update badges immediately
+      const caseMatch = url.match(/[?&]case=(\d+)/);
+      const caseId = caseMatch ? Number(caseMatch[1]) : null;
+      return self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+        for (const client of clients) {
+          client.postMessage({ type: "NEW_MESSAGE", caseId });
+        }
+      });
     })
   );
 });

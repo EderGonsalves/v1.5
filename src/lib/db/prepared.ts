@@ -192,6 +192,30 @@ const getSubsByInstitution = db
   .where(eq(pushSubscriptions.institutionId, sql.placeholder("institutionId")))
   .prepare("get_subs_by_institution");
 
+/** getSubscriptionsByLegacyUser — push subs for a specific user (by legacyUserId + institution) */
+const getSubsByLegacyUser = db
+  .select()
+  .from(pushSubscriptions)
+  .where(
+    and(
+      eq(pushSubscriptions.legacyUserId, sql.placeholder("legacyUserId")),
+      eq(pushSubscriptions.institutionId, sql.placeholder("institutionId")),
+    ),
+  )
+  .prepare("get_subs_by_legacy_user");
+
+/** getSubscriptionsByUserEmail — push subs for a specific user (by email + institution) */
+const getSubsByUserEmail = db
+  .select()
+  .from(pushSubscriptions)
+  .where(
+    and(
+      eq(pushSubscriptions.userEmail, sql.placeholder("userEmail")),
+      eq(pushSubscriptions.institutionId, sql.placeholder("institutionId")),
+    ),
+  )
+  .prepare("get_subs_by_user_email");
+
 // ---------------------------------------------------------------------------
 // Config (table 224) — App configuration, loaded on every page
 // ---------------------------------------------------------------------------
@@ -274,6 +298,8 @@ export const prepared = {
   getQueueByInstitution,
   // Push
   getSubsByInstitution,
+  getSubsByLegacyUser,
+  getSubsByUserEmail,
   // Config
   getConfigsByInstitution,
   getAllConfigs,

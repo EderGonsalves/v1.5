@@ -10,6 +10,7 @@ import { useConversations, type Conversation } from "@/hooks/use-conversations";
 import { useWabaNumbers } from "@/hooks/use-waba-numbers";
 import { useCaseWabaMap } from "@/hooks/use-case-waba-map";
 import { useMyDepartments } from "@/hooks/use-my-departments";
+import { useUnreadCount } from "@/hooks/use-unread-count";
 import { ConversationList } from "@/components/chat/ConversationList";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 
@@ -45,6 +46,8 @@ function ChatContent() {
     isLoading: isDeptLoading,
   } = useMyDepartments();
   const isFullAccessAdmin = isMyGlobalAdmin || isMyOfficeAdmin;
+
+  const { markAsSeen } = useUnreadCount(institutionId);
 
   const [showNewConversation, setShowNewConversation] = useState(false);
 
@@ -144,6 +147,13 @@ function ChatContent() {
     },
     [refresh, router, searchParams],
   );
+
+  // Mark conversation as seen when selected
+  useEffect(() => {
+    if (selectedId) {
+      markAsSeen(selectedId);
+    }
+  }, [selectedId, markAsSeen]);
 
   // Redirect to login if not authenticated (only after hydration)
   useEffect(() => {
