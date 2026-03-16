@@ -1,5 +1,5 @@
 import axios from "axios";
-import { eq, and, asc, desc, like, sql, inArray } from "drizzle-orm";
+import { eq, and, asc, desc, like, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { prepared } from "@/lib/db/prepared";
 import { kanbanColumns as kcTable } from "@/lib/db/schema/kanbanColumns";
@@ -1624,49 +1624,40 @@ export const getBaserowCases = async ({
       }
       const whereClause = conditions.length ? and(...conditions) : undefined;
 
-      // Helper: enrich case rows with last_message_at from messages table.
-      // Messages table stores CaseId (autonumber), row id, or BJCaseId in field_1701,
-      // so we must match against all possible identifiers.
+      // Helper: enrich case rows with last_message_at via single raw SQL query.
+      // Uses a full GROUP BY on the messages table (no ID list needed) for scalability.
       const enrichWithLastMessage = async (results: BaserowCaseRow[]): Promise<BaserowCaseRow[]> => {
         if (results.length === 0) return results;
-        // Collect all possible identifiers that could appear in messages.caseId
-        const allIds = new Set<string>();
-        for (const r of results) {
-          allIds.add(String(r.id));
-          if (r.CaseId != null) allIds.add(String(r.CaseId));
-          if (r.BJCaseId) allIds.add(String(r.BJCaseId));
-        }
-        const idArray = [...allIds];
+        try {
+          // Single query: get MAX(created_on) per caseId for ALL messages
+          const lastMsgRows = await db.execute<{ case_id: string; last_msg: string }>(
+            sql`SELECT field_1701 as case_id, max(created_on) as last_msg
+                FROM database_table_227
+                WHERE field_1701 IS NOT NULL
+                GROUP BY field_1701`
+          );
 
-        const lastMsgRows = await db
-          .select({
-            caseId: messagesTable.caseId,
-            lastMessageAt: sql<string>`max(${messagesTable.createdOn})`,
-          })
-          .from(messagesTable)
-          .where(inArray(messagesTable.caseId, idArray))
-          .groupBy(messagesTable.caseId);
-
-        // Build map: identifier → timestamp
-        const lastMsgMap = new Map<string, string>();
-        for (const row of lastMsgRows) {
-          if (row.caseId && row.lastMessageAt) {
-            lastMsgMap.set(row.caseId, row.lastMessageAt);
+          const lastMsgMap = new Map<string, string>();
+          for (const row of lastMsgRows.rows) {
+            if (row.case_id && row.last_msg) {
+              lastMsgMap.set(row.case_id, String(row.last_msg));
+            }
           }
-        }
 
-        // For each case, pick the most recent timestamp from any matching identifier
-        for (const r of results) {
-          const candidates = [String(r.id)];
-          if (r.CaseId != null) candidates.push(String(r.CaseId));
-          if (r.BJCaseId) candidates.push(String(r.BJCaseId));
+          for (const r of results) {
+            const candidates = [String(r.id)];
+            if (r.CaseId != null) candidates.push(String(r.CaseId));
+            if (r.BJCaseId) candidates.push(String(r.BJCaseId));
 
-          let best: string | null = null;
-          for (const c of candidates) {
-            const ts = lastMsgMap.get(c);
-            if (ts && (!best || ts > best)) best = ts;
+            let best: string | null = null;
+            for (const c of candidates) {
+              const ts = lastMsgMap.get(c);
+              if (ts && (!best || ts > best)) best = ts;
+            }
+            r.last_message_at = best;
           }
-          r.last_message_at = best;
+        } catch (err) {
+          console.error("[enrichWithLastMessage] Error:", err);
         }
         return results;
       };
@@ -1721,26 +1712,17 @@ export const getBaserowCases = async ({
   const enrichViaDb = async (rows: BaserowCaseRow[]): Promise<BaserowCaseRow[]> => {
     if (typeof window !== "undefined" || rows.length === 0) return rows;
     try {
-      const allIds = new Set<string>();
-      for (const r of rows) {
-        allIds.add(String(r.id));
-        if (r.CaseId != null) allIds.add(String(r.CaseId));
-        if (r.BJCaseId) allIds.add(String(r.BJCaseId));
-      }
-      const idArray = [...allIds];
-      const lastMsgRows = await db
-        .select({
-          caseId: messagesTable.caseId,
-          lastMessageAt: sql<string>`max(${messagesTable.createdOn})`,
-        })
-        .from(messagesTable)
-        .where(inArray(messagesTable.caseId, idArray))
-        .groupBy(messagesTable.caseId);
+      const lastMsgRows = await db.execute<{ case_id: string; last_msg: string }>(
+        sql`SELECT field_1701 as case_id, max(created_on) as last_msg
+            FROM database_table_227
+            WHERE field_1701 IS NOT NULL
+            GROUP BY field_1701`
+      );
 
       const lastMsgMap = new Map<string, string>();
-      for (const row of lastMsgRows) {
-        if (row.caseId && row.lastMessageAt) {
-          lastMsgMap.set(row.caseId, row.lastMessageAt);
+      for (const row of lastMsgRows.rows) {
+        if (row.case_id && row.last_msg) {
+          lastMsgMap.set(row.case_id, String(row.last_msg));
         }
       }
       for (const r of rows) {
