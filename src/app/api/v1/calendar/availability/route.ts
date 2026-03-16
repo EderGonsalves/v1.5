@@ -11,10 +11,12 @@ type AvailableSlot = {
   date_formatted: string; // "quarta-feira, 11 de fevereiro de 2026"
   day_of_week: string;   // "mon" | "tue" | ... | "sun"
   day_label: string;     // "quarta-feira"
-  start: string;         // HH:mm
-  end: string;           // HH:mm
-  start_datetime: string; // ISO 8601 full
-  end_datetime: string;   // ISO 8601 full
+  start: string;         // HH:mm (local)
+  end: string;           // HH:mm (local)
+  start_datetime: string; // ISO 8601 local (sem Z)
+  end_datetime: string;   // ISO 8601 local (sem Z)
+  start_datetime_utc: string; // ISO 8601 UTC (com Z) — pronto para cadastrarevento
+  end_datetime_utc: string;   // ISO 8601 UTC (com Z) — pronto para cadastrarevento
 };
 
 type AvailabilityResponse = {
@@ -99,6 +101,31 @@ function minutesToTime(minutes: number): string {
 }
 
 /**
+ * Converts a local date + time (in the given IANA timezone) to a UTC ISO string.
+ * Uses Intl offset detection so it handles DST correctly.
+ */
+function localToUtcIso(
+  dateStr: string,
+  localMinutes: number,
+  timezone: string,
+): string {
+  // 1. Treat localMinutes as if they were UTC to get a rough Date
+  const hh = String(Math.floor(localMinutes / 60)).padStart(2, "0");
+  const mm = String(localMinutes % 60).padStart(2, "0");
+  const guess = new Date(`${dateStr}T${hh}:${mm}:00Z`);
+
+  // 2. Find what local time that UTC instant corresponds to in the target tz
+  const localOfGuess = toLocalComponents(guess, timezone);
+
+  // 3. The difference = timezone offset in minutes (local → UTC)
+  const offsetMinutes = localMinutes - localOfGuess.minutes;
+
+  // 4. Adjust: add the offset to get the real UTC instant
+  const utc = new Date(guess.getTime() + offsetMinutes * 60_000);
+  return utc.toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+/**
  * Generates available time slots for a given date considering
  * the institution's settings and existing events.
  */
@@ -109,6 +136,7 @@ function generateSlotsForDay(
   slotDuration: number,
   bufferMinutes: number,
   bookedRanges: { start: number; end: number }[],
+  timezone: string,
 ): AvailableSlot[] {
   if (!dayStart || !dayEnd) return [];
 
@@ -142,6 +170,8 @@ function generateSlotsForDay(
         end: endTime,
         start_datetime: `${date}T${startTime}:00`,
         end_datetime: `${date}T${endTime}:00`,
+        start_datetime_utc: localToUtcIso(date, cursor, timezone),
+        end_datetime_utc: localToUtcIso(date, slotEnd, timezone),
       });
     }
 
@@ -276,6 +306,7 @@ export async function GET(request: NextRequest) {
           slotDuration,
           bufferMinutes,
           booked,
+          timezoneParam,
         );
         allSlots.push(...daySlots);
       }
