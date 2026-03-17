@@ -8,6 +8,7 @@ import type { Conversation } from "@/hooks/use-conversations";
 type ConversationItemProps = {
   conversation: Conversation;
   isSelected: boolean;
+  isUnread?: boolean;
   onClick: () => void;
 };
 
@@ -36,6 +37,7 @@ const formatRelativeTime = (date: Date | string | null | undefined): string => {
 export const ConversationItem = ({
   conversation,
   isSelected,
+  isUnread = false,
   onClick,
 }: ConversationItemProps) => {
   const timeLabel = formatRelativeTime(conversation.lastMessageAt);
@@ -60,21 +62,33 @@ export const ConversationItem = ({
             <PauseCircle className="h-3.5 w-3.5 text-white" />
           </div>
         )}
+        {isUnread && !conversation.paused && (
+          <div className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full bg-blue-500 border-2 border-card" />
+        )}
       </div>
 
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
-          <span className="font-medium text-foreground truncate">
+          <span className={cn(
+            "truncate",
+            isUnread ? "font-bold text-foreground" : "font-medium text-foreground"
+          )}>
             {conversation.customerName}
           </span>
           {timeLabel && (
-            <span className="text-xs text-muted-foreground shrink-0">
+            <span className={cn(
+              "text-xs shrink-0",
+              isUnread ? "text-blue-500 font-semibold" : "text-muted-foreground"
+            )}>
               {timeLabel}
             </span>
           )}
         </div>
-        <p className="text-sm text-muted-foreground truncate mt-0.5">
+        <p className={cn(
+          "text-sm truncate mt-0.5",
+          isUnread ? "text-foreground font-medium" : "text-muted-foreground"
+        )}>
           {conversation.customerPhone}
         </p>
       </div>

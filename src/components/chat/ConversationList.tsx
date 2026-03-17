@@ -20,6 +20,7 @@ type ConversationListProps = {
   onNewConversation?: () => void;
   className?: string;
   initialSearch?: string;
+  unreadCaseIds?: Set<number>;
 };
 
 const INITIAL_VISIBLE = 30;
@@ -38,21 +39,32 @@ export const ConversationList = ({
   onNewConversation,
   className,
   initialSearch,
+  unreadCaseIds,
 }: ConversationListProps) => {
   const [search, setSearch] = useState(initialSearch ?? "");
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE);
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   const filteredConversations = useMemo(() => {
-    if (!search.trim()) return conversations;
-
-    const searchLower = search.toLowerCase().trim();
-    return conversations.filter((conv) => {
-      const nameMatch = conv.customerName.toLowerCase().includes(searchLower);
-      const phoneMatch = conv.customerPhone.toLowerCase().includes(searchLower);
-      return nameMatch || phoneMatch;
-    });
-  }, [conversations, search]);
+    let list = conversations;
+    if (search.trim()) {
+      const searchLower = search.toLowerCase().trim();
+      list = list.filter((conv) => {
+        const nameMatch = conv.customerName.toLowerCase().includes(searchLower);
+        const phoneMatch = conv.customerPhone.toLowerCase().includes(searchLower);
+        return nameMatch || phoneMatch;
+      });
+    }
+    // Sort unread conversations to the top
+    if (unreadCaseIds && unreadCaseIds.size > 0) {
+      list = [...list].sort((a, b) => {
+        const aUnread = unreadCaseIds.has(a.id) ? 1 : 0;
+        const bUnread = unreadCaseIds.has(b.id) ? 1 : 0;
+        return bUnread - aUnread;
+      });
+    }
+    return list;
+  }, [conversations, search, unreadCaseIds]);
 
   // Conversas visíveis na tela (paginação virtual)
   const visibleConversations = useMemo(() => {
@@ -164,6 +176,7 @@ export const ConversationList = ({
                 key={conversation.id}
                 conversation={conversation}
                 isSelected={selectedId === conversation.id}
+                isUnread={unreadCaseIds?.has(conversation.id) ?? false}
                 onClick={() => onSelect(conversation)}
               />
             ))}

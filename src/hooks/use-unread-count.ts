@@ -34,17 +34,22 @@ export function useUnreadCount(institutionId: number | undefined) {
   const summaryRef = useRef<UnreadSummaryItem[]>([]);
   const fetchingRef = useRef(false);
 
+  const [unreadCaseIds, setUnreadCaseIds] = useState<Set<number>>(new Set());
+
   const recalculate = useCallback(() => {
     const lastSeen = lastSeenRef.current;
     let count = 0;
+    const ids = new Set<number>();
     for (const item of summaryRef.current) {
       if (!item.lastMessageAt) continue;
       const seen = lastSeen[item.id];
       if (!seen || item.lastMessageAt > seen) {
         count++;
+        ids.add(item.id);
       }
     }
     setUnreadCount(count);
+    setUnreadCaseIds(ids);
   }, []);
 
   const fetchSummary = useCallback(async () => {
@@ -71,14 +76,17 @@ export function useUnreadCount(institutionId: number | undefined) {
     lastSeenRef.current = map;
     // Recalculate immediately
     let count = 0;
+    const ids = new Set<number>();
     for (const item of summaryRef.current) {
       if (!item.lastMessageAt) continue;
       const seen = map[item.id];
       if (!seen || item.lastMessageAt > seen) {
         count++;
+        ids.add(item.id);
       }
     }
     setUnreadCount(count);
+    setUnreadCaseIds(ids);
   }, []);
 
   // Initial fetch + polling
@@ -106,5 +114,5 @@ export function useUnreadCount(institutionId: number | undefined) {
     return () => navigator.serviceWorker.removeEventListener("message", handler);
   }, [fetchSummary]);
 
-  return { unreadCount, markAsSeen, refresh: fetchSummary };
+  return { unreadCount, unreadCaseIds, markAsSeen, refresh: fetchSummary };
 }

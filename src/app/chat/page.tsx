@@ -47,7 +47,7 @@ function ChatContent() {
   } = useMyDepartments();
   const isFullAccessAdmin = isMyGlobalAdmin || isMyOfficeAdmin;
 
-  const { markAsSeen } = useUnreadCount(institutionId);
+  const { markAsSeen, unreadCaseIds } = useUnreadCount(institutionId);
 
   const [showNewConversation, setShowNewConversation] = useState(false);
 
@@ -195,6 +195,7 @@ function ChatContent() {
           onNewConversation={() => setShowNewConversation(true)}
           className="h-full"
           initialSearch={initialSearch}
+          unreadCaseIds={unreadCaseIds}
         />
       </aside>
 
