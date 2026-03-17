@@ -1,22 +1,6 @@
-import axios from "axios";
-
-// ---------------------------------------------------------------------------
-// Baserow config
-// ---------------------------------------------------------------------------
-
-const BASEROW_API_URL =
-  process.env.BASEROW_API_URL ?? process.env.NEXT_PUBLIC_BASEROW_API_URL;
-const BASEROW_API_KEY =
-  process.env.BASEROW_API_KEY ?? process.env.NEXT_PUBLIC_BASEROW_API_KEY;
-
-const DEFAULT_TABLE_ID = 246;
-
-const TABLE_ID =
-  Number(
-    process.env.BASEROW_CALENDAR_SETTINGS_TABLE_ID ??
-      process.env.NEXT_PUBLIC_BASEROW_CALENDAR_SETTINGS_TABLE_ID ??
-      DEFAULT_TABLE_ID,
-  ) || DEFAULT_TABLE_ID;
+import { db } from "@/lib/db";
+import { calendarSettings } from "@/lib/db/schema/calendarSettings";
+import { eq, and, isNull } from "drizzle-orm";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -55,29 +39,40 @@ export type CalendarSettingsInput = Omit<
 >;
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Helpers — map Drizzle row to CalendarSettingsRow
 // ---------------------------------------------------------------------------
 
-const ensureEnv = () => {
-  if (!BASEROW_API_URL) throw new Error("BASEROW_API_URL não configurado");
-  if (!BASEROW_API_KEY) throw new Error("BASEROW_API_KEY não configurado");
-};
+type DrizzleRow = typeof calendarSettings.$inferSelect;
 
-const baserowClient = () => {
-  ensureEnv();
-  return axios.create({
-    baseURL: BASEROW_API_URL,
-    headers: {
-      Authorization: `Token ${BASEROW_API_KEY}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    timeout: 15000,
-  });
-};
+const toRow = (r: DrizzleRow): CalendarSettingsRow => ({
+  id: r.id,
+  institution_id: Number(r.institutionId) || 0,
+  scheduling_enabled: Boolean(r.schedulingEnabled),
+  slot_duration_minutes: Number(r.slotDurationMinutes) || 30,
+  buffer_minutes: Number(r.bufferMinutes) || 0,
+  advance_days: Number(r.advanceDays) || 30,
+  mon_start: r.monStart ?? "",
+  mon_end: r.monEnd ?? "",
+  tue_start: r.tueStart ?? "",
+  tue_end: r.tueEnd ?? "",
+  wed_start: r.wedStart ?? "",
+  wed_end: r.wedEnd ?? "",
+  thu_start: r.thuStart ?? "",
+  thu_end: r.thuEnd ?? "",
+  fri_start: r.friStart ?? "",
+  fri_end: r.friEnd ?? "",
+  sat_start: r.satStart ?? "",
+  sat_end: r.satEnd ?? "",
+  sun_start: r.sunStart ?? "",
+  sun_end: r.sunEnd ?? "",
+  meet_link: r.meetLink ?? "",
+  created_at: r.createdAt ?? "",
+  updated_at: r.updatedAt ?? "",
+  user_id: r.userId ? Number(r.userId) : null,
+});
 
 // ---------------------------------------------------------------------------
-// CRUD
+// CRUD — direct PostgreSQL via Drizzle ORM
 // ---------------------------------------------------------------------------
 
 /**
@@ -89,37 +84,35 @@ export async function fetchCalendarSettings(
   institutionId: number,
   userId?: number,
 ): Promise<CalendarSettingsRow | null> {
-  const client = baserowClient();
-
   if (userId) {
     // Try user-specific settings first
-    const userParams = new URLSearchParams({
-      user_field_names: "true",
-      size: "1",
-    });
-    userParams.append("filter__institution_id__equal", String(institutionId));
-    userParams.append("filter__user_id__equal", String(userId));
+    const userRows = await db
+      .select()
+      .from(calendarSettings)
+      .where(
+        and(
+          eq(calendarSettings.institutionId, String(institutionId)),
+          eq(calendarSettings.userId, String(userId)),
+        ),
+      )
+      .limit(1);
 
-    const userUrl = `/database/rows/table/${TABLE_ID}/?${userParams.toString()}`;
-    const userResponse = await client.get<{ results?: CalendarSettingsRow[] }>(userUrl);
-    const userRows = userResponse.data.results ?? [];
-    if (userRows[0]) return userRows[0];
+    if (userRows[0]) return toRow(userRows[0]);
   }
 
-  // Institutional settings (user_id is empty/null)
-  const params = new URLSearchParams({
-    user_field_names: "true",
-    size: "10",
-  });
-  params.append("filter__institution_id__equal", String(institutionId));
+  // Institutional settings (user_id IS NULL)
+  const rows = await db
+    .select()
+    .from(calendarSettings)
+    .where(
+      and(
+        eq(calendarSettings.institutionId, String(institutionId)),
+        isNull(calendarSettings.userId),
+      ),
+    )
+    .limit(1);
 
-  const url = `/database/rows/table/${TABLE_ID}/?${params.toString()}`;
-  const response = await client.get<{ results?: CalendarSettingsRow[] }>(url);
-  const rows = response.data.results ?? [];
-  // Return ONLY the row without user_id (institutional default) — never another user's row
-  return rows.find(
-    (r) => r.user_id === null || r.user_id === undefined || r.user_id === 0,
-  ) ?? null;
+  return rows[0] ? toRow(rows[0]) : null;
 }
 
 export async function upsertCalendarSettings(
@@ -127,78 +120,104 @@ export async function upsertCalendarSettings(
   data: Partial<CalendarSettingsInput>,
   userId?: number,
 ): Promise<CalendarSettingsRow> {
-  const client = baserowClient();
   const now = new Date().toISOString();
 
-  // Find existing row matching institution + user
-  let existing: CalendarSettingsRow | null = null;
+  // Build the set of columns to write
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cols: Record<string, any> = {};
+  if ("scheduling_enabled" in data) cols.schedulingEnabled = Boolean(data.scheduling_enabled);
+  if ("slot_duration_minutes" in data) cols.slotDurationMinutes = String(data.slot_duration_minutes);
+  if ("buffer_minutes" in data) cols.bufferMinutes = String(data.buffer_minutes);
+  if ("advance_days" in data) cols.advanceDays = String(data.advance_days);
+  if ("mon_start" in data) cols.monStart = data.mon_start ?? "";
+  if ("mon_end" in data) cols.monEnd = data.mon_end ?? "";
+  if ("tue_start" in data) cols.tueStart = data.tue_start ?? "";
+  if ("tue_end" in data) cols.tueEnd = data.tue_end ?? "";
+  if ("wed_start" in data) cols.wedStart = data.wed_start ?? "";
+  if ("wed_end" in data) cols.wedEnd = data.wed_end ?? "";
+  if ("thu_start" in data) cols.thuStart = data.thu_start ?? "";
+  if ("thu_end" in data) cols.thuEnd = data.thu_end ?? "";
+  if ("fri_start" in data) cols.friStart = data.fri_start ?? "";
+  if ("fri_end" in data) cols.friEnd = data.fri_end ?? "";
+  if ("sat_start" in data) cols.satStart = data.sat_start ?? "";
+  if ("sat_end" in data) cols.satEnd = data.sat_end ?? "";
+  if ("sun_start" in data) cols.sunStart = data.sun_start ?? "";
+  if ("sun_end" in data) cols.sunEnd = data.sun_end ?? "";
+  if ("meet_link" in data) cols.meetLink = data.meet_link ?? "";
+  cols.updatedAt = now;
+
+  // Find existing row
+  let existing: DrizzleRow | undefined;
+
   if (userId) {
-    const userParams = new URLSearchParams({
-      user_field_names: "true",
-      size: "1",
-    });
-    userParams.append("filter__institution_id__equal", String(institutionId));
-    userParams.append("filter__user_id__equal", String(userId));
-    const userUrl = `/database/rows/table/${TABLE_ID}/?${userParams.toString()}`;
-    const userResponse = await client.get<{ results?: CalendarSettingsRow[] }>(userUrl);
-    const userRows = userResponse.data.results ?? [];
-    existing = userRows[0] ?? null;
+    const rows = await db
+      .select()
+      .from(calendarSettings)
+      .where(
+        and(
+          eq(calendarSettings.institutionId, String(institutionId)),
+          eq(calendarSettings.userId, String(userId)),
+        ),
+      )
+      .limit(1);
+    existing = rows[0];
   } else {
-    // Find institutional row (no user_id) — never match another user's row
-    const params = new URLSearchParams({
-      user_field_names: "true",
-      size: "10",
-    });
-    params.append("filter__institution_id__equal", String(institutionId));
-    const url = `/database/rows/table/${TABLE_ID}/?${params.toString()}`;
-    const response = await client.get<{ results?: CalendarSettingsRow[] }>(url);
-    const rows = response.data.results ?? [];
-    existing = rows.find(
-      (r) => r.user_id === null || r.user_id === undefined || r.user_id === 0,
-    ) ?? null;
-    // IMPORTANT: if no institutional row found, do NOT fall back to another user's row
+    const rows = await db
+      .select()
+      .from(calendarSettings)
+      .where(
+        and(
+          eq(calendarSettings.institutionId, String(institutionId)),
+          isNull(calendarSettings.userId),
+        ),
+      )
+      .limit(1);
+    existing = rows[0];
   }
 
   if (existing) {
     // Update
-    const url = `/database/rows/table/${TABLE_ID}/${existing.id}/?user_field_names=true`;
-    const payload: Record<string, unknown> = { ...data, updated_at: now };
-    const response = await client.patch<CalendarSettingsRow>(url, payload);
-    return response.data;
-  } else {
-    // Create with defaults
-    const url = `/database/rows/table/${TABLE_ID}/?user_field_names=true`;
-    const defaults: Record<string, unknown> = {
-      institution_id: institutionId,
-      scheduling_enabled: false,
-      slot_duration_minutes: 30,
-      buffer_minutes: 0,
-      advance_days: 30,
-      mon_start: "09:00",
-      mon_end: "18:00",
-      tue_start: "09:00",
-      tue_end: "18:00",
-      wed_start: "09:00",
-      wed_end: "18:00",
-      thu_start: "09:00",
-      thu_end: "18:00",
-      fri_start: "09:00",
-      fri_end: "18:00",
-      sat_start: "",
-      sat_end: "",
-      sun_start: "",
-      sun_end: "",
-      meet_link: "",
-      created_at: now,
-      updated_at: now,
-      ...data,
-    };
-    if (userId) {
-      defaults.user_id = userId;
-    }
-    const response = await client.post<CalendarSettingsRow>(url, defaults);
-    return response.data;
+    const updated = await db
+      .update(calendarSettings)
+      .set(cols)
+      .where(eq(calendarSettings.id, existing.id))
+      .returning();
+    return toRow(updated[0]);
   }
+
+  // Create with defaults
+  const inserted = await db
+    .insert(calendarSettings)
+    .values({
+      institutionId: String(institutionId),
+      schedulingEnabled: false,
+      slotDurationMinutes: "30",
+      bufferMinutes: "0",
+      advanceDays: "30",
+      monStart: "09:00",
+      monEnd: "18:00",
+      tueStart: "09:00",
+      tueEnd: "18:00",
+      wedStart: "09:00",
+      wedEnd: "18:00",
+      thuStart: "09:00",
+      thuEnd: "18:00",
+      friStart: "09:00",
+      friEnd: "18:00",
+      satStart: "",
+      satEnd: "",
+      sunStart: "",
+      sunEnd: "",
+      meetLink: "",
+      createdAt: now,
+      updatedAt: now,
+      userId: userId ? String(userId) : null,
+      // Apply overrides from data
+      ...(cols as Record<string, unknown>),
+    })
+    .returning();
+
+  return toRow(inserted[0]);
 }
 
 /**
@@ -208,20 +227,15 @@ export async function deleteUserCalendarSettings(
   institutionId: number,
   userId: number,
 ): Promise<boolean> {
-  const client = baserowClient();
-  const params = new URLSearchParams({
-    user_field_names: "true",
-    size: "1",
-  });
-  params.append("filter__institution_id__equal", String(institutionId));
-  params.append("filter__user_id__equal", String(userId));
+  const result = await db
+    .delete(calendarSettings)
+    .where(
+      and(
+        eq(calendarSettings.institutionId, String(institutionId)),
+        eq(calendarSettings.userId, String(userId)),
+      ),
+    )
+    .returning();
 
-  const url = `/database/rows/table/${TABLE_ID}/?${params.toString()}`;
-  const response = await client.get<{ results?: CalendarSettingsRow[] }>(url);
-  const rows = response.data.results ?? [];
-  if (rows[0]) {
-    await client.delete(`/database/rows/table/${TABLE_ID}/${rows[0].id}/`);
-    return true;
-  }
-  return false;
+  return result.length > 0;
 }
