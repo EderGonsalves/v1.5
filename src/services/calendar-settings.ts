@@ -190,6 +190,8 @@ export async function upsertCalendarSettings(
     .insert(calendarSettings)
     .values({
       order: "99999.00000000000000000000",
+      createdOn: new Date(),
+      updatedOn: new Date(),
       institutionId: String(institutionId),
       schedulingEnabled: false,
       slotDurationMinutes: "30",

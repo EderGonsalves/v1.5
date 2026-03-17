@@ -1,4 +1,4 @@
-import { boolean, numeric, pgTable, serial, text } from "drizzle-orm/pg-core";
+import { boolean, numeric, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
 
 /**
  * calendarSettings — Baserow table 246
@@ -7,6 +7,8 @@ import { boolean, numeric, pgTable, serial, text } from "drizzle-orm/pg-core";
 export const calendarSettings = pgTable("database_table_246", {
   id: serial("id").primaryKey(),
   order: numeric("order", { precision: 40, scale: 20 }).notNull(),
+  createdOn: timestamp("created_on", { withTimezone: true }).notNull(),
+  updatedOn: timestamp("updated_on", { withTimezone: true }).notNull(),
   institutionId: numeric("field_1869"), // institution_id (number)
   slotDurationMinutes: numeric("field_1870"), // slot_duration_minutes (number)
   advanceDays: numeric("field_1871"), // advance_days (number)
