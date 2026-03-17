@@ -118,6 +118,7 @@ export const caseLightFields = {
   signStatus: cases.signStatus,
   createdByUserId: cases.createdByUserId,
   createdByUserName: cases.createdByUserName,
+  displayPhoneNumber: cases.displayPhoneNumber,
 };
 
 /** getCasesLightByInstitution — all light cases for an institution, newest first */

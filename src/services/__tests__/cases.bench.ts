@@ -69,6 +69,7 @@ const drizzleLightRow = {
   signStatus: "signed",
   createdByUserId: "3",
   createdByUserName: "Admin",
+  displayPhoneNumber: null,
 };
 
 // ---------------------------------------------------------------------------

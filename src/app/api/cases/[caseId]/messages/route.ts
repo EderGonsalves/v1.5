@@ -797,9 +797,14 @@ export async function POST(
       attachmentNames,
     });
 
-    await updateBaserowCase(caseRow.id, {
+    // Salvar display_phone_number no caso se ainda não preenchido
+    const caseUpdate: Record<string, unknown> = {
       Conversa: appendConversationEntry(caseRow.Conversa, conversationLine),
-    });
+    };
+    if (wabaPhoneNumber && !caseRow.display_phone_number) {
+      caseUpdate.display_phone_number = wabaPhoneNumber;
+    }
+    await updateBaserowCase(caseRow.id, caseUpdate as Partial<typeof caseRow>);
 
     const lastClientMessageAt = sender === "cliente" ? newMessage.createdAt : null;
     const sessionDeadline = computeSessionDeadline(lastClientMessageAt);

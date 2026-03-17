@@ -1230,6 +1230,7 @@ function mapCaseRow(row: typeof casesTable.$inferSelect): BaserowCaseRow {
     notas_caso: row.notasCaso ?? undefined,
     sign_envelope_id: row.signEnvelopeId ?? undefined,
     sign_status: row.signStatus ?? undefined,
+    display_phone_number: row.displayPhoneNumber ?? undefined,
   };
 }
 
@@ -1266,6 +1267,7 @@ export function mapCaseRowLight(row: {
   signStatus: string | null;
   createdByUserId: string | null;
   createdByUserName: string | null;
+  displayPhoneNumber: string | null;
 }): BaserowCaseRow {
   return {
     id: row.id,
@@ -1293,6 +1295,7 @@ export function mapCaseRowLight(row: {
     sign_status: row.signStatus ?? undefined,
     created_by_user_id: row.createdByUserId != null ? Number(row.createdByUserId) : undefined,
     created_by_user_name: row.createdByUserName ?? undefined,
+    display_phone_number: row.displayPhoneNumber ?? undefined,
   };
 }
 
@@ -1347,6 +1350,7 @@ export function buildCaseSetObj(data: Partial<BaserowCaseRow>): Record<string, u
   if (data.notas_caso !== undefined) set.notasCaso = data.notas_caso;
   if (data.sign_envelope_id !== undefined) set.signEnvelopeId = data.sign_envelope_id;
   if (data.sign_status !== undefined) set.signStatus = data.sign_status;
+  if (data.display_phone_number !== undefined) set.displayPhoneNumber = data.display_phone_number;
 
   return set;
 }

@@ -120,6 +120,7 @@ describe("mapCaseRowLight", () => {
     signStatus: null,
     createdByUserId: "3",
     createdByUserName: "Admin",
+    displayPhoneNumber: null,
   };
 
   it("mapeia campos Drizzle para formato Baserow", () => {

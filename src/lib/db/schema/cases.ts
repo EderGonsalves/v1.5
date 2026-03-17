@@ -41,8 +41,5 @@ export const cases = pgTable("database_table_225", {
   notasCaso: text("field_1953"), // notas_caso (long_text)
   signEnvelopeId: text("field_2000"), // sign_envelope_id (text)
   signStatus: text("field_2001"), // sign_status (text)
-  // display_phone_number — campo a ser criado no Baserow (field_id TBD)
-  // Quando o campo for criado, substituir "field_XXXX" pelo ID real.
-  // Enquanto isso, o campo retorna NULL e o WABA é derivado das mensagens.
-  // displayPhoneNumber: text("field_XXXX"), // display_phone_number (text)
+  displayPhoneNumber: text("field_2007"), // display_phone_number (text)
 });
