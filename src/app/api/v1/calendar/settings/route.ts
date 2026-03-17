@@ -64,8 +64,9 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     console.error("Erro ao buscar calendar settings:", err);
+    const detail = err instanceof Error ? err.message : String(err);
     return NextResponse.json(
-      { error: "Erro ao buscar configurações da agenda" },
+      { error: "Erro ao buscar configurações da agenda", detail },
       { status: 500 },
     );
   }
@@ -142,8 +143,9 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ settings: normalizeSettings(settings) });
   } catch (err) {
     console.error("Erro ao salvar calendar settings:", err);
+    const detail = err instanceof Error ? err.message : String(err);
     return NextResponse.json(
-      { error: "Erro ao salvar configurações da agenda" },
+      { error: "Erro ao salvar configurações da agenda", detail },
       { status: 500 },
     );
   }
