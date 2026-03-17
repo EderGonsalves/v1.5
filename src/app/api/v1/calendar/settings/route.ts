@@ -143,9 +143,12 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ settings: normalizeSettings(settings) });
   } catch (err) {
     console.error("Erro ao salvar calendar settings:", err);
-    const detail = err instanceof Error ? err.message : String(err);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const e = err as any;
+    const detail = e?.message ?? String(err);
+    const pgError = e?.cause?.message ?? e?.cause?.detail ?? e?.code ?? e?.constraint ?? null;
     return NextResponse.json(
-      { error: "Erro ao salvar configurações da agenda", detail },
+      { error: "Erro ao salvar configurações da agenda", detail, pgError },
       { status: 500 },
     );
   }
