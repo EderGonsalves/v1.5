@@ -1,4 +1,4 @@
-import { jsonb, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, jsonb, numeric, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
 
 /**
  * eventGuests — Baserow table 235
@@ -6,6 +6,10 @@ import { jsonb, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
  */
 export const eventGuests = pgTable("database_table_235", {
   id: serial("id").primaryKey(),
+  order: numeric("order", { precision: 40, scale: 20 }).notNull(),
+  createdOn: timestamp("created_on", { withTimezone: true }).notNull(),
+  updatedOn: timestamp("updated_on", { withTimezone: true }).notNull(),
+  trashed: boolean("trashed").notNull(),
   name: text("field_1789"), // name (text)
   eventId: jsonb("field_1790"), // event_id (link_row → table 234)
   email: text("field_1791"), // email (text)

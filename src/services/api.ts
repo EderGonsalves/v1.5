@@ -3959,6 +3959,8 @@ export const createCalendarEvent = async (
   if (useDirectDb("api")) {
     const _dr = await tryDrizzle("api", async () => {
       const insertObj = buildEventSetObj(payload as unknown as Record<string, unknown>);
+      const now = new Date();
+      Object.assign(insertObj, { order: "99999.00000000000000000000", createdOn: now, updatedOn: now, trashed: false });
       const [row] = await db.insert(eventsTable).values(insertObj as typeof eventsTable.$inferInsert).returning();
       return mapEventRow(row);
     });
@@ -4051,14 +4053,19 @@ export const createCalendarEventGuest = async (
 ): Promise<CalendarEventGuestRow> => {
   if (useDirectDb("api")) {
     const _dr = await tryDrizzle("api", async () => {
+      const now = new Date();
       const insertObj: typeof eventGuestsTable.$inferInsert = {
+        order: "99999.00000000000000000000",
+        createdOn: now,
+        updatedOn: now,
+        trashed: false,
         name: payload.name,
         eventId: [{ id: payload.event_id }],
         email: payload.email ?? null,
         phone: payload.phone ?? null,
         notificationStatus: payload.notification_status ?? "pending",
-        createdAt: payload.created_at ? new Date(payload.created_at) : new Date(),
-        updatedAt: payload.updated_at ? new Date(payload.updated_at) : new Date(),
+        createdAt: payload.created_at ? new Date(payload.created_at) : now,
+        updatedAt: payload.updated_at ? new Date(payload.updated_at) : now,
       };
       const [row] = await db.insert(eventGuestsTable).values(insertObj).returning();
       return mapGuestRow(row);
