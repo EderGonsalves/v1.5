@@ -601,10 +601,9 @@ export default function CasosPage() {
       setTotalCasesCount(resp.totalCount);
       setCasesCache(institutionId, sortedResults, resp.totalCount);
 
-      // Auto-assign unassigned cases (fire-and-forget) — skip in manual queue mode
-      if (queueMode !== "manual") {
-        fetch("/api/v1/cases/auto-assign", { method: "POST" }).catch(() => {});
-      }
+      // Auto-assign / department tagging (fire-and-forget)
+      // Even in manual mode, this tags cases with department_id based on phone number
+      fetch("/api/v1/cases/auto-assign", { method: "POST" }).catch(() => {});
     } catch (err) {
       if (!silent) {
         console.error("Erro ao carregar casos:", err);

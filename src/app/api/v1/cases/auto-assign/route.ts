@@ -79,9 +79,54 @@ export async function POST(request: NextRequest) {
 
   const institutionId = auth.institutionId;
 
-  // Check queue mode — skip auto-assign entirely for manual mode
+  // Check queue mode
   const queueMode = await getQueueMode(institutionId);
+
+  // --- Manual mode: tag departments by phone, then return (no user assignment) ---
+  // Cases arrive from N8N without department_id. In manual mode the auto-assign
+  // loop never runs, so we must tag cases with the correct department here,
+  // based on which WABA phone number received the message.
   if (queueMode === "manual") {
+    try {
+      const [phoneDeptMap, unassignedForTagging] = await Promise.all([
+        getPhoneDepartmentMap(institutionId),
+        fetchUnassignedCases(institutionId),
+      ]);
+
+      if (phoneDeptMap.size > 0 && unassignedForTagging.length > 0) {
+        const tagPromises: Promise<unknown>[] = [];
+
+        for (const caseRow of unassignedForTagging) {
+          // Skip cases that already have a department
+          const existingDeptId = Number(caseRow.department_id);
+          if (existingDeptId > 0) continue;
+
+          // Only use display_phone_number (WABA office phone), NOT CustumerPhone (client phone)
+          const wabaPhone = caseRow.display_phone_number ? String(caseRow.display_phone_number).trim() : "";
+          if (!wabaPhone) continue;
+
+          const phoneDigits = wabaPhone.replace(/\D/g, "");
+          const deptMatch = phoneDeptMap.get(wabaPhone) || phoneDeptMap.get(phoneDigits);
+
+          if (deptMatch) {
+            tagPromises.push(
+              updateBaserowCase(caseRow.id, {
+                department_id: deptMatch.deptId,
+                department_name: deptMatch.deptName,
+              }),
+            );
+          }
+        }
+
+        if (tagPromises.length > 0) {
+          await Promise.allSettled(tagPromises);
+          console.log(`[auto-assign] Tagged ${tagPromises.length} cases with department (inst ${institutionId})`);
+        }
+      }
+    } catch (err) {
+      console.error("[auto-assign] Erro ao taguear departamentos:", err);
+    }
+
     return NextResponse.json({ assigned: [], skipped: true, reason: "manual_queue_mode" });
   }
 
