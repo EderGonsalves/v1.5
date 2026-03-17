@@ -192,6 +192,7 @@ export async function upsertCalendarSettings(
       order: "99999.00000000000000000000",
       createdOn: new Date(),
       updatedOn: new Date(),
+      trashed: false,
       institutionId: String(institutionId),
       schedulingEnabled: false,
       slotDurationMinutes: "30",

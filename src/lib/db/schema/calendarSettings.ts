@@ -9,6 +9,7 @@ export const calendarSettings = pgTable("database_table_246", {
   order: numeric("order", { precision: 40, scale: 20 }).notNull(),
   createdOn: timestamp("created_on", { withTimezone: true }).notNull(),
   updatedOn: timestamp("updated_on", { withTimezone: true }).notNull(),
+  trashed: boolean("trashed").notNull(),
   institutionId: numeric("field_1869"), // institution_id (number)
   slotDurationMinutes: numeric("field_1870"), // slot_duration_minutes (number)
   advanceDays: numeric("field_1871"), // advance_days (number)
