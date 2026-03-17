@@ -6,6 +6,7 @@ import { boolean, numeric, pgTable, serial, text } from "drizzle-orm/pg-core";
  */
 export const calendarSettings = pgTable("database_table_246", {
   id: serial("id").primaryKey(),
+  order: numeric("order", { precision: 40, scale: 20 }).notNull(),
   institutionId: numeric("field_1869"), // institution_id (number)
   slotDurationMinutes: numeric("field_1870"), // slot_duration_minutes (number)
   advanceDays: numeric("field_1871"), // advance_days (number)

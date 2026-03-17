@@ -189,6 +189,7 @@ export async function upsertCalendarSettings(
   const inserted = await db
     .insert(calendarSettings)
     .values({
+      order: "99999.00000000000000000000",
       institutionId: String(institutionId),
       schedulingEnabled: false,
       slotDurationMinutes: "30",
