@@ -25,10 +25,11 @@ import {
   updateWebhook,
   deleteWebhook,
   updateIaAtivadaByConfigId,
+  updateRespostaVozByConfigId,
   registerAgentState,
   type WebhookRow,
 } from "@/services/api";
-import { Bell, Bot, Pencil, Plus, Trash2, Webhook, Loader2, ChevronDown } from "lucide-react";
+import { Bell, Bot, Mic, Pencil, Plus, Trash2, Webhook, Loader2, ChevronDown } from "lucide-react";
 import { useDepartments } from "@/hooks/use-departments";
 import { useMyDepartments } from "@/hooks/use-my-departments";
 import { TemplateList } from "@/components/waba/TemplateList";
@@ -64,6 +65,7 @@ type ConnectedNumber = {
   departmentId?: number | null;
   departmentName?: string | null;
   iaAtivada: boolean;
+  respostaVoz: boolean;
 };
 
 type WebhookFormData = {
@@ -94,6 +96,7 @@ export default function ConexoesPage() {
   const [isLoadingWaba, setIsLoadingWaba] = useState(false);
   const [updatingPhoneDept, setUpdatingPhoneDept] = useState<number | null>(null);
   const [togglingIaId, setTogglingIaId] = useState<number | null>(null);
+  const [togglingVozId, setTogglingVozId] = useState<number | null>(null);
   const { departments } = useDepartments(data.auth?.institutionId);
   const { isOfficeAdmin: isMyOfficeAdmin, isGlobalAdmin: isMyGlobalAdmin } = useMyDepartments();
   const canManagePhoneDepts = isMyGlobalAdmin || isMyOfficeAdmin;
@@ -152,12 +155,15 @@ export default function ConexoesPage() {
             const parsedDeptId = deptId != null ? Number(deptId) : null;
             const iaRaw = String(record.ia_ativada ?? "").trim().toLowerCase();
             const iaAtivada = iaRaw === "sim" || iaRaw === "yes" || iaRaw === "true";
+            const vozRaw = String(record.resposta_voz ?? "").trim().toLowerCase();
+            const respostaVoz = vozRaw === "sim" || vozRaw === "yes" || vozRaw === "true";
             numbers.push({
               id: config.id,
               phoneNumber: normalizedPhone,
               departmentId: parsedDeptId && !Number.isNaN(parsedDeptId) ? parsedDeptId : null,
               departmentName: deptName != null ? String(deptName) : null,
               iaAtivada,
+              respostaVoz,
             });
           }
         }
@@ -227,6 +233,24 @@ export default function ConexoesPage() {
       );
     } finally {
       setTogglingIaId(null);
+    }
+  }, [connectedNumbers]);
+
+  const handleVozToggle = useCallback(async (configId: number, checked: boolean) => {
+    setTogglingVozId(configId);
+    const previous = connectedNumbers.find((n) => n.id === configId)?.respostaVoz ?? false;
+    setConnectedNumbers((prev) =>
+      prev.map((n) => (n.id === configId ? { ...n, respostaVoz: checked } : n)),
+    );
+    try {
+      await updateRespostaVozByConfigId(configId, checked ? "sim" : "não");
+    } catch (err) {
+      console.error("Erro ao alterar resposta por voz:", err);
+      setConnectedNumbers((prev) =>
+        prev.map((n) => (n.id === configId ? { ...n, respostaVoz: previous } : n)),
+      );
+    } finally {
+      setTogglingVozId(null);
     }
   }, [connectedNumbers]);
 
@@ -532,6 +556,33 @@ export default function ConexoesPage() {
                       {connection.iaAtivada ? "IA Ativa" : "IA Inativa"}
                     </span>
                   </div>
+                  {/* Toggle Resposta por Voz — somente SysAdmin (institutionId 4) */}
+                  {data.auth?.institutionId === 4 && (
+                    <div className="flex items-center gap-1.5">
+                      <Switch
+                        checked={connection.respostaVoz}
+                        onCheckedChange={(checked) =>
+                          handleVozToggle(connection.id, checked)
+                        }
+                        disabled={togglingVozId === connection.id || !connection.iaAtivada}
+                        aria-label="Ativar/desativar resposta por voz"
+                      />
+                      <Mic className={`h-3.5 w-3.5 ${
+                        connection.respostaVoz && connection.iaAtivada
+                          ? "text-violet-600 dark:text-violet-400"
+                          : "text-muted-foreground"
+                      }`} />
+                      <span
+                        className={`text-xs font-medium ${
+                          connection.respostaVoz && connection.iaAtivada
+                            ? "text-violet-600 dark:text-violet-400"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        {connection.respostaVoz ? "Voz Ativa" : "Voz Inativa"}
+                      </span>
+                    </div>
+                  )}
                   {/* Botão configurar agente */}
                   <Button
                     variant="outline"

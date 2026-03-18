@@ -60,4 +60,5 @@ export const config = pgTable("database_table_224", {
   phoneDepartmentName: text("field_1908"), // phone_department_name (text)
   wabaBusinessAccountId: text("field_1927"), // waba_business_account_id (text)
   riasignWabaConfigId: text("field_2005"), // riasign_waba_config_id (text)
+  respostaVoz: text("field_2008"), // resposta_voz (text)
 });

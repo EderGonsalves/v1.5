@@ -786,6 +786,7 @@ const CONFIG_FIELD_MAP: Record<string, keyof typeof cfgTable.$inferInsert> = {
   "phone_department_name": "phoneDepartmentName",
   "waba_business_account_id": "wabaBusinessAccountId",
   "riasign_waba_config_id": "riasignWabaConfigId",
+  "resposta_voz": "respostaVoz",
 };
 
 /** Reverse map: Drizzle column key → Baserow field name */
@@ -963,6 +964,16 @@ export const updateIaAtivadaByConfigId = async (
 ): Promise<BaserowConfigRow> => {
   const updatedRow = await updateBaserowConfig(configId, {
     ia_ativada: iaAtivada,
+  });
+  return updatedRow;
+};
+
+export const updateRespostaVozByConfigId = async (
+  configId: number,
+  respostaVoz: "sim" | "não",
+): Promise<BaserowConfigRow> => {
+  const updatedRow = await updateBaserowConfig(configId, {
+    resposta_voz: respostaVoz,
   });
   return updatedRow;
 };
