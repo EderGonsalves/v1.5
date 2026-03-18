@@ -3767,7 +3767,7 @@ const sortEvents = (
   return filtered.sort((a, b) => {
     const aStart = toTimestamp(a.start_datetime) ?? 0;
     const bStart = toTimestamp(b.start_datetime) ?? 0;
-    return aStart - bStart;
+    return bStart - aStart;
   });
 };
 

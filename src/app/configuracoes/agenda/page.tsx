@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 import { Controller, useFieldArray, useForm } from "react-hook-form";
@@ -590,16 +590,12 @@ type AgendaFilters = {
   endDate: string;
 };
 
-const buildInitialFilters = (): AgendaFilters => {
-  const now = new Date();
-  const start = new Date(now);
-  start.setDate(start.getDate() - 7);
-  const end = new Date(now);
-  end.setDate(end.getDate() + 30);
+const EVENTS_PER_PAGE = 20;
 
+const buildInitialFilters = (): AgendaFilters => {
   return {
-    startDate: formatDateOnly(start),
-    endDate: formatDateOnly(end),
+    startDate: "",
+    endDate: "",
   };
 };
 
@@ -937,6 +933,7 @@ const AgendaPage = () => {
 
   const [filters, setFilters] = useState<AgendaFilters>(buildInitialFilters);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [visibleCount, setVisibleCount] = useState(EVENTS_PER_PAGE);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -984,6 +981,35 @@ const AgendaPage = () => {
       return "UTC";
     }
   }, []);
+
+  // Infinite scroll
+  const visibleEvents = useMemo(
+    () => events.slice(0, visibleCount),
+    [events, visibleCount],
+  );
+  const hasMore = visibleCount < events.length;
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  // Reset visible count when filters change
+  useEffect(() => {
+    setVisibleCount(EVENTS_PER_PAGE);
+  }, [filters.startDate, filters.endDate, effectiveUserId]);
+
+  // IntersectionObserver for infinite scroll
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasMore) {
+          setVisibleCount((prev) => prev + EVENTS_PER_PAGE);
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore]);
 
   const fetchEvents = useCallback(
     async (fullScreen = false) => {
@@ -1303,7 +1329,7 @@ const AgendaPage = () => {
               </p>
             </div>
           ) : (
-            events.map((event) => (
+            visibleEvents.map((event) => (
               <div
                 key={event.id}
                 role="button"
@@ -1463,6 +1489,13 @@ const AgendaPage = () => {
             ))
           )}
         </div>
+
+        {/* Sentinel para scroll infinito */}
+        {hasMore && (
+          <div ref={sentinelRef} className="flex items-center justify-center py-4">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        )}
       </div>
 
       <EventFormDialog
