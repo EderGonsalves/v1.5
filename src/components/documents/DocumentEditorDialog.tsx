@@ -8,14 +8,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { RichTextEditor } from "./RichTextEditor";
+import { TemplateFormDialog } from "./TemplateFormDialog";
 import { AVAILABLE_VARIABLES } from "@/lib/documents/types";
 import type { DocumentTemplateRow, SignEnvelopeRow } from "@/lib/documents/types";
 import type { BaserowCaseRow, ClientRow } from "@/services/api";
 import {
   fetchTemplates,
   fetchTemplateWithContent,
-  createDocumentTemplate,
-  uploadDocumentTemplate,
 } from "@/services/doc-templates-client";
 import { createSignEnvelope } from "@/services/riasign-client";
 import {
@@ -58,15 +57,7 @@ type Props = {
   onEnvelopeCreated: (envelope: SignEnvelopeRow) => void;
 };
 
-type Step = "select" | "edit" | "sign" | "create-template";
-
-const CATEGORY_OPTIONS = [
-  { value: "contrato", label: "Contrato" },
-  { value: "procuracao", label: "Procuração" },
-  { value: "declaracao", label: "Declaração" },
-  { value: "termo", label: "Termo" },
-  { value: "outro", label: "Outro" },
-];
+type Step = "select" | "edit" | "sign";
 
 export function DocumentEditorDialog({
   open,
@@ -84,14 +75,8 @@ export function DocumentEditorDialog({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Create template form
-  const [newTemplateName, setNewTemplateName] = useState("");
-  const [newTemplateDesc, setNewTemplateDesc] = useState("");
-  const [newTemplateCategory, setNewTemplateCategory] = useState("contrato");
-  const [newTemplateHtml, setNewTemplateHtml] = useState("");
-  const [newTemplateFile, setNewTemplateFile] = useState<File | null>(null);
-  const [newTemplateMode, setNewTemplateMode] = useState<"html" | "upload">("html");
-  const [savingTemplate, setSavingTemplate] = useState(false);
+  // Create template dialog
+  const [templateFormOpen, setTemplateFormOpen] = useState(false);
 
   // Signer form
   const [subject, setSubject] = useState("");
@@ -118,59 +103,14 @@ export function DocumentEditorDialog({
     setError("");
     setSelectedTemplate(null);
     setHtmlContent("");
-    // Reset create form
-    setNewTemplateName("");
-    setNewTemplateDesc("");
-    setNewTemplateCategory("contrato");
-    setNewTemplateHtml("");
-    setNewTemplateFile(null);
-    setNewTemplateMode("html");
+    setTemplateFormOpen(false);
     fetchTemplates()
       .then(setTemplates)
       .catch(() => setTemplates([]));
   }, [open]);
 
-  const handleSaveTemplate = async () => {
-    if (!newTemplateName.trim()) {
-      setError("Nome do modelo é obrigatório");
-      return;
-    }
-    setSavingTemplate(true);
-    setError("");
-    try {
-      let created: DocumentTemplateRow;
-      if (newTemplateMode === "upload" && newTemplateFile) {
-        const ext = newTemplateFile.name.split(".").pop()?.toLowerCase();
-        const mode = ext === "pdf" ? "direct" : "editable";
-        const result = await uploadDocumentTemplate({
-          file: newTemplateFile,
-          name: newTemplateName.trim(),
-          description: newTemplateDesc.trim(),
-          category: newTemplateCategory,
-          mode,
-        });
-        created = result.template;
-      } else {
-        if (!newTemplateHtml.trim() || newTemplateHtml.trim().length < 10) {
-          setError("O conteúdo do modelo deve ter pelo menos 10 caracteres");
-          setSavingTemplate(false);
-          return;
-        }
-        created = await createDocumentTemplate({
-          name: newTemplateName.trim(),
-          description: newTemplateDesc.trim(),
-          category: newTemplateCategory,
-          html_content: newTemplateHtml,
-        });
-      }
-      // Add to list and go back to select
-      setTemplates((prev) => [created, ...prev]);
-      setStep("select");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao salvar modelo");
-    } finally {
-      setSavingTemplate(false);
-    }
+  const handleTemplateSaved = (template: DocumentTemplateRow) => {
+    setTemplates((prev) => [template, ...prev]);
   };
 
   // Load WABA phone numbers for selection
@@ -325,8 +265,6 @@ export function DocumentEditorDialog({
     setError("");
     if (step === "sign") {
       setStep(isDirectTemplate ? "select" : "edit");
-    } else if (step === "create-template") {
-      setStep("select");
     } else {
       setStep("select");
     }
@@ -356,7 +294,6 @@ export function DocumentEditorDialog({
             {step === "select" && "Selecionar Modelo"}
             {step === "edit" && "Editar Documento"}
             {step === "sign" && "Enviar para Assinatura"}
-            {step === "create-template" && "Criar Novo Modelo"}
           </DialogTitle>
         </DialogHeader>
 
@@ -373,16 +310,7 @@ export function DocumentEditorDialog({
               {/* Create template button */}
               <button
                 type="button"
-                onClick={() => {
-                  setError("");
-                  setNewTemplateName("");
-                  setNewTemplateDesc("");
-                  setNewTemplateCategory("contrato");
-                  setNewTemplateHtml("");
-                  setNewTemplateFile(null);
-                  setNewTemplateMode("html");
-                  setStep("create-template");
-                }}
+                onClick={() => setTemplateFormOpen(true)}
                 className="w-full flex items-center gap-2 p-3 border-2 border-dashed border-primary/30 rounded-lg text-primary hover:border-primary/60 hover:bg-primary/5 transition-colors"
               >
                 <Plus className="h-4 w-4" />
@@ -427,127 +355,6 @@ export function DocumentEditorDialog({
                       </div>
                     </button>
                   ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Step: Create new template */}
-          {step === "create-template" && (
-            <div className="space-y-4 max-w-lg mx-auto py-2">
-              {/* Mode toggle */}
-              <div className="flex gap-2 p-1 bg-muted/50 rounded-lg">
-                <button
-                  type="button"
-                  onClick={() => setNewTemplateMode("html")}
-                  className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${newTemplateMode === "html" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-                >
-                  <FileCode className="h-3.5 w-3.5" />
-                  Editor de texto
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setNewTemplateMode("upload")}
-                  className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${newTemplateMode === "upload" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-                >
-                  <Upload className="h-3.5 w-3.5" />
-                  Upload PDF/DOCX
-                </button>
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                  Nome do modelo *
-                </label>
-                <input
-                  type="text"
-                  value={newTemplateName}
-                  onChange={(e) => setNewTemplateName(e.target.value)}
-                  placeholder="Ex: Contrato de Honorários"
-                  className="w-full px-3 py-2 text-sm text-foreground border border-border rounded-md bg-background dark:bg-muted/30 focus:outline-none focus:ring-2 focus:ring-primary/20"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                  Descrição (opcional)
-                </label>
-                <input
-                  type="text"
-                  value={newTemplateDesc}
-                  onChange={(e) => setNewTemplateDesc(e.target.value)}
-                  placeholder="Descrição breve do modelo"
-                  className="w-full px-3 py-2 text-sm text-foreground border border-border rounded-md bg-background dark:bg-muted/30 focus:outline-none focus:ring-2 focus:ring-primary/20"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                  Categoria
-                </label>
-                <select
-                  value={newTemplateCategory}
-                  onChange={(e) => setNewTemplateCategory(e.target.value)}
-                  className="w-full px-3 py-2 text-sm text-foreground border border-border rounded-md bg-background dark:bg-muted/30 focus:outline-none focus:ring-2 focus:ring-primary/20 appearance-none"
-                >
-                  {CATEGORY_OPTIONS.map((c) => (
-                    <option key={c.value} value={c.value}>{c.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              {newTemplateMode === "html" ? (
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                    Conteúdo do documento
-                  </label>
-                  <p className="text-[11px] text-muted-foreground mb-2">
-                    Use {"{{variavel}}"} para campos dinâmicos. Ex: {"{{cliente.nome_completo}}"}, {"{{data.hoje}}"}
-                  </p>
-                  <RichTextEditor
-                    content={newTemplateHtml}
-                    onChange={setNewTemplateHtml}
-                    availableVariables={ALL_VAR_KEYS}
-                  />
-                </div>
-              ) : (
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">
-                    Arquivo PDF ou DOCX
-                  </label>
-                  <div className="border-2 border-dashed border-border/60 rounded-lg p-4 text-center">
-                    {newTemplateFile ? (
-                      <div className="flex items-center justify-center gap-2">
-                        <FileText className="h-5 w-5 text-primary" />
-                        <span className="text-sm text-foreground">{newTemplateFile.name}</span>
-                        <button
-                          type="button"
-                          onClick={() => setNewTemplateFile(null)}
-                          className="p-0.5 rounded text-muted-foreground hover:text-destructive"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    ) : (
-                      <>
-                        <Upload className="h-8 w-8 text-muted-foreground/40 mx-auto mb-1" />
-                        <label className="text-sm text-primary cursor-pointer hover:underline">
-                          Selecionar arquivo
-                          <input
-                            type="file"
-                            className="hidden"
-                            accept=".pdf,.docx"
-                            onChange={(e) => {
-                              const f = e.target.files?.[0];
-                              if (f) setNewTemplateFile(f);
-                              e.target.value = "";
-                            }}
-                          />
-                        </label>
-                        <p className="text-[11px] text-muted-foreground mt-1">PDF ou DOCX</p>
-                      </>
-                    )}
-                  </div>
                 </div>
               )}
             </div>
@@ -734,7 +541,7 @@ export function DocumentEditorDialog({
               <button
                 type="button"
                 onClick={handleBack}
-                disabled={sending || savingTemplate}
+                disabled={sending}
                 className="flex items-center gap-1 px-3 py-2 text-sm rounded-md border border-border text-foreground hover:bg-muted transition-colors"
               >
                 <ArrowLeft className="h-4 w-4" />
@@ -743,21 +550,6 @@ export function DocumentEditorDialog({
             )}
           </div>
           <div>
-            {step === "create-template" && (
-              <button
-                type="button"
-                onClick={handleSaveTemplate}
-                disabled={savingTemplate}
-                className="flex items-center gap-1 px-4 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
-              >
-                {savingTemplate ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Plus className="h-4 w-4" />
-                )}
-                Salvar Modelo
-              </button>
-            )}
             {step === "edit" && (
               <button
                 type="button"
@@ -789,6 +581,13 @@ export function DocumentEditorDialog({
           </div>
         </div>
       </DialogContent>
+
+      {/* Template creation dialog (full-featured) */}
+      <TemplateFormDialog
+        open={templateFormOpen}
+        onOpenChange={setTemplateFormOpen}
+        onSaved={handleTemplateSaved}
+      />
     </Dialog>
   );
 }

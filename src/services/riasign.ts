@@ -6,8 +6,6 @@
 
 import type {
   RiaSignEnvelope,
-  RiaSignDocument,
-  RiaSignSendResponse,
   RiaSignAuditTrail,
   RiaSignV2SendResponse,
 } from "@/lib/documents/types";
@@ -38,60 +36,15 @@ function ensureApiKey() {
 }
 
 // ---------------------------------------------------------------------------
-// Envelopes
+// Envelopes (v2)
 // ---------------------------------------------------------------------------
-
-export async function createEnvelope(params: {
-  subject: string;
-  message?: string;
-  webhookUrl: string;
-  signers: Array<{
-    name: string;
-    email?: string;
-    phone?: string;
-    cpf?: string;
-  }>;
-  callbackUrl?: string;
-  expiresAt?: string;
-  metadata?: Record<string, unknown>;
-  waba_config_id?: string;
-  use_template?: boolean;
-  require_otp?: boolean;
-  require_selfie?: boolean;
-}): Promise<RiaSignEnvelope> {
-  ensureApiKey();
-  const payload = {
-    subject: params.subject,
-    message: params.message,
-    webhookUrl: params.webhookUrl,
-    signers: params.signers,
-    callbackUrl: params.callbackUrl,
-    expiresAt: params.expiresAt,
-    metadata: params.metadata,
-    ...(params.waba_config_id ? { waba_config_id: params.waba_config_id } : {}),
-    use_template: params.use_template ?? false,
-    require_otp: params.require_otp ?? false,
-    require_selfie: params.require_selfie ?? false,
-  };
-  console.log("[riasign] createEnvelope payload:", JSON.stringify(payload, null, 2));
-  const res = await fetch(`${RIASIGN_BASE_URL}/api/envelopes`, {
-    method: "POST",
-    headers: jsonHeaders(),
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`RIA Sign createEnvelope falhou (${res.status}): ${text}`);
-  }
-  return (await res.json()) as RiaSignEnvelope;
-}
 
 export async function getEnvelope(
   envelopeId: string,
 ): Promise<RiaSignEnvelope> {
   ensureApiKey();
   const res = await fetch(
-    `${RIASIGN_BASE_URL}/api/envelopes/${envelopeId}`,
+    `${RIASIGN_BASE_URL}/api/v2/envelopes/${envelopeId}`,
     { headers: jsonHeaders() },
   );
   if (!res.ok) {
@@ -104,10 +57,16 @@ export async function getEnvelope(
 export async function listEnvelopes(
   limit = 50,
   offset = 0,
+  status?: "draft" | "sent" | "completed" | "cancelled",
 ): Promise<{ envelopes: RiaSignEnvelope[]; count: number }> {
   ensureApiKey();
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  if (status) params.set("status", status);
   const res = await fetch(
-    `${RIASIGN_BASE_URL}/api/envelopes?limit=${limit}&offset=${offset}`,
+    `${RIASIGN_BASE_URL}/api/v2/envelopes?${params}`,
     { headers: jsonHeaders() },
   );
   if (!res.ok) {
@@ -120,7 +79,7 @@ export async function listEnvelopes(
 export async function deleteEnvelope(envelopeId: string): Promise<void> {
   ensureApiKey();
   const res = await fetch(
-    `${RIASIGN_BASE_URL}/api/envelopes/${envelopeId}`,
+    `${RIASIGN_BASE_URL}/api/v2/envelopes/${envelopeId}`,
     { method: "DELETE", headers: jsonHeaders() },
   );
   if (!res.ok) {
@@ -132,74 +91,15 @@ export async function deleteEnvelope(envelopeId: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Documents
+// Documents (v2)
 // ---------------------------------------------------------------------------
-
-export async function uploadDocument(
-  envelopeId: string,
-  fileBuffer: Buffer,
-  filename: string,
-  mimeType = "application/pdf",
-  previewBuffers?: Buffer[],
-): Promise<RiaSignDocument> {
-  ensureApiKey();
-  const formData = new FormData();
-
-  const toBlob = (buf: Buffer, type: string) => {
-    const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
-    return new Blob([ab], { type });
-  };
-
-  formData.append("file", toBlob(fileBuffer, mimeType), filename);
-
-  // Append PNG previews (preview_0, preview_1, preview_2)
-  if (previewBuffers?.length) {
-    for (let i = 0; i < Math.min(previewBuffers.length, 3); i++) {
-      formData.append(`preview_${i}`, toBlob(previewBuffers[i], "image/png"), `preview_${i}.png`);
-    }
-  }
-
-  const res = await fetch(
-    `${RIASIGN_BASE_URL}/api/envelopes/${envelopeId}/documents`,
-    {
-      method: "POST",
-      headers: authHeader(), // no Content-Type — let fetch set multipart boundary
-      body: formData,
-    },
-  );
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(
-      `RIA Sign uploadDocument falhou (${res.status}): ${text}`,
-    );
-  }
-  return (await res.json()) as RiaSignDocument;
-}
-
-export async function downloadOriginalPdf(
-  envelopeId: string,
-  docId: string,
-): Promise<Buffer> {
-  ensureApiKey();
-  const res = await fetch(
-    `${RIASIGN_BASE_URL}/api/envelopes/${envelopeId}/documents/${docId}/download`,
-    { headers: authHeader() },
-  );
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(
-      `RIA Sign downloadOriginal falhou (${res.status}): ${text}`,
-    );
-  }
-  return Buffer.from(await res.arrayBuffer());
-}
 
 export async function downloadSealedPdf(
   envelopeId: string,
 ): Promise<Buffer> {
   ensureApiKey();
   const res = await fetch(
-    `${RIASIGN_BASE_URL}/api/envelopes/${envelopeId}/download`,
+    `${RIASIGN_BASE_URL}/api/v2/envelopes/${envelopeId}/pdf`,
     { headers: authHeader() },
   );
   if (!res.ok) {
@@ -212,26 +112,7 @@ export async function downloadSealedPdf(
 }
 
 // ---------------------------------------------------------------------------
-// Send
-// ---------------------------------------------------------------------------
-
-export async function sendEnvelope(
-  envelopeId: string,
-): Promise<RiaSignSendResponse> {
-  ensureApiKey();
-  const res = await fetch(
-    `${RIASIGN_BASE_URL}/api/envelopes/${envelopeId}/send`,
-    { method: "POST", headers: jsonHeaders() },
-  );
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`RIA Sign sendEnvelope falhou (${res.status}): ${text}`);
-  }
-  return (await res.json()) as RiaSignSendResponse;
-}
-
-// ---------------------------------------------------------------------------
-// v2 — Send in 1 call (POST /api/v2/send)
+// Send (v2 — POST /api/v2/send)
 // ---------------------------------------------------------------------------
 
 export async function sendV2(params: {
@@ -305,7 +186,7 @@ export async function sendV2(params: {
 }
 
 // ---------------------------------------------------------------------------
-// v2 — Remind (POST /api/v2/envelopes/:id/remind)
+// Remind (v2 — POST /api/v2/envelopes/:id/remind)
 // ---------------------------------------------------------------------------
 
 export async function remindEnvelope(
