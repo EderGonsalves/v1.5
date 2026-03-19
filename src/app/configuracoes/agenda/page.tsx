@@ -1201,7 +1201,8 @@ const AgendaPage = () => {
         try {
           const res = await fetch(`/api/v1/cases/${id}`);
           if (res.ok) {
-            const c = await res.json();
+            const raw = await res.json();
+            const c = raw.case ?? raw;
             return { id, data: { id: c.id, CaseId: c.CaseId, CustumerName: c.CustumerName, CustumerPhone: c.CustumerPhone, resultado: c.resultado ?? null } as CaseSearchResult };
           }
         } catch { /* ignore */ }
@@ -1349,7 +1350,7 @@ const AgendaPage = () => {
       const res = await fetch(`/api/v1/cases/${caseId}`);
       if (res.ok) {
         const data = await res.json();
-        setCaseModalData(data);
+        setCaseModalData(data.case ?? data);
       }
     } catch {
       // ignore
