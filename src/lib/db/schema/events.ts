@@ -27,4 +27,5 @@ export const events = pgTable("database_table_234", {
   notifyByEmail: text("field_1787"), // notify_by_email (text)
   notifyByPhone: text("field_1788"), // notify_by_phone (text)
   eventGuests: jsonb("field_1792"), // event_guests (link_row → table 235)
+  caseId: numeric("field_2009"), // case_id (number)
 });

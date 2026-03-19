@@ -6,8 +6,10 @@ import { calendarEventInputSchema } from "@/lib/calendar/schemas";
 import {
   createCalendarEvent,
   createCalendarEventGuest,
+  findCaseByPhone,
   listCalendarEvents,
   listCalendarEventGuests,
+  updateCalendarEvent,
   type CreateCalendarEventPayload,
 } from "@/services/api";
 import { serializeEvent, toTextFlag } from "./utils";
@@ -189,6 +191,11 @@ export async function POST(request: NextRequest) {
       payload.user_id = data.user_id;
     }
 
+    // Pass explicit case_id if provided
+    if (typeof data.case_id === "number" && Number.isFinite(data.case_id)) {
+      payload.case_id = data.case_id;
+    }
+
     const event = await createCalendarEvent(payload);
 
     if (data.guests.length > 0) {
@@ -205,6 +212,35 @@ export async function POST(request: NextRequest) {
           }),
         ),
       );
+    }
+
+    // Auto-link: if no case_id was provided, try to match by guest phone
+    if (!payload.case_id) {
+      const phones: string[] = [];
+      for (const g of data.guests) {
+        if (g.phone) phones.push(g.phone);
+      }
+      // Also extract phone from description (N8N format: "Telefone: XX XXXXXXXXX,")
+      if (data.description) {
+        const match = data.description.match(/Telefone:\s*([^,\n]+)/i);
+        if (match) {
+          const descPhone = match[1].trim();
+          if (/\d{4,}/.test(descPhone.replace(/\D/g, ""))) {
+            phones.push(descPhone);
+          }
+        }
+      }
+      if (phones.length > 0) {
+        for (const phone of phones) {
+          const found = await findCaseByPhone(phone, institutionId);
+          if (found) {
+            // Update the event with the auto-linked case_id
+            await updateCalendarEvent(event.id, { case_id: found.id });
+            event.case_id = found.id;
+            break;
+          }
+        }
+      }
     }
 
     return NextResponse.json(

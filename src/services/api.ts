@@ -1436,6 +1436,55 @@ export const getBaserowCaseById = async (
   }
 };
 
+/**
+ * Find the most recent case by phone number (last 8 digits) within an institution.
+ * Returns the case row ID or null if not found.
+ */
+export const findCaseByPhone = async (
+  phone: string,
+  institutionId: number,
+): Promise<{ id: number; CaseId?: number; CustumerName?: string } | null> => {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length < 8) return null;
+  const suffix = digits.slice(-8);
+
+  if (useDirectDb("api")) {
+    const _dr = await tryDrizzle("api", async () => {
+      const [row] = await db
+        .select({
+          id: casesTable.id,
+          caseId: casesTable.caseId,
+          custumerName: casesTable.custumerName,
+        })
+        .from(casesTable)
+        .where(
+          and(
+            like(casesTable.custumerPhone, `%${suffix}%`),
+            eq(casesTable.institutionID, String(institutionId)),
+          ),
+        )
+        .orderBy(sql`${casesTable.id} DESC`)
+        .limit(1);
+      if (!row) return null;
+      return { id: row.id, CaseId: row.caseId ?? undefined, CustumerName: row.custumerName ?? undefined };
+    });
+    if (_dr !== undefined) return _dr;
+  }
+
+  // Baserow fallback
+  try {
+    const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASES_TABLE_ID}/?user_field_names=true&size=1&order_by=-id&filter__CustumerPhone__contains=${suffix}&filter__InstitutionID__equal=${institutionId}`;
+    const resp = await baserowGet(url, 10000);
+    const data = resp.data as { results?: BaserowCaseRow[] } | undefined;
+    const rows = data?.results ?? [];
+    if (rows.length === 0) return null;
+    const r = rows[0];
+    return { id: r.id, CaseId: r.CaseId, CustumerName: r.CustumerName };
+  } catch {
+    return null;
+  }
+};
+
 const normalizeNextUrl = (value: unknown): string | null => {
   if (!value || typeof value !== "string") {
     return null;
@@ -3657,6 +3706,7 @@ export type CalendarEventRow = {
   created_at?: string | null;
   updated_at?: string | null;
   deleted_at?: string | null;
+  case_id?: number | string | null;
   event_guests?: { id: number; value: string }[];
   [key: string]: unknown;
 };
@@ -3699,6 +3749,7 @@ export type CreateCalendarEventPayload = {
   updated_at?: string;
   google_event_id?: string | null;
   sync_status?: string | null;
+  case_id?: number | null;
 };
 
 export type UpdateCalendarEventPayload = Partial<
@@ -3803,6 +3854,7 @@ function mapEventRow(row: typeof eventsTable.$inferSelect): CalendarEventRow {
     created_at: row.createdAt?.toISOString() ?? null,
     updated_at: row.updatedAt?.toISOString() ?? null,
     deleted_at: null, // field not in schema-map — will always be null via Drizzle
+    case_id: row.caseId ? Number(row.caseId) : null,
     event_guests: Array.isArray(row.eventGuests) ? row.eventGuests as { id: number; value: string }[] : [],
   };
 }
@@ -3841,13 +3893,14 @@ function buildEventSetObj(payload: Record<string, unknown>): Record<string, unkn
     sync_status: "syncStatus",
     created_at: "createdAt",
     updated_at: "updatedAt",
+    case_id: "caseId",
   };
   for (const [key, value] of Object.entries(payload)) {
     if (value === undefined) continue;
     const drizzleKey = map[key];
     if (!drizzleKey) continue;
     // Handle type conversions
-    if (drizzleKey === "institutionID" || drizzleKey === "userId" || drizzleKey === "reminderMinutesBefore") {
+    if (drizzleKey === "institutionID" || drizzleKey === "userId" || drizzleKey === "reminderMinutesBefore" || drizzleKey === "caseId") {
       setObj[drizzleKey] = value != null ? String(value) : null;
     } else if (drizzleKey === "startDatetime" || drizzleKey === "endDatetime" || drizzleKey === "createdAt" || drizzleKey === "updatedAt") {
       setObj[drizzleKey] = value ? new Date(value as string) : null;

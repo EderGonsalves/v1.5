@@ -1317,6 +1317,14 @@
         "primary": false,
         "readOnly": false,
         "linkRowTableId": 235
+      },
+      {
+        "fieldId": 2009,
+        "pgColumnName": "field_2009",
+        "name": "case_id",
+        "type": "number",
+        "primary": false,
+        "readOnly": false
       }
     ]
   },

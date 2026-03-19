@@ -6,7 +6,9 @@ import { z } from "zod";
 import { Controller, useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
+  Briefcase,
   CalendarDays,
+  Check,
   Clock,
   Loader2,
   Plus,
@@ -17,6 +19,7 @@ import {
   User,
   Mail,
   Phone,
+  X,
 } from "lucide-react";
 
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
@@ -48,6 +51,8 @@ import { useUsers } from "@/hooks/use-users";
 import { usePermissionsStatus } from "@/hooks/use-permissions-status";
 import { useMyDepartments } from "@/hooks/use-my-departments";
 import type { UserPublicRow } from "@/services/permissions";
+import { KanbanCardDetail } from "@/components/kanban/KanbanCardDetail";
+import type { BaserowCaseRow } from "@/services/api";
 
 const formatDateOnly = (date: Date): string => {
   const iso = date.toISOString();
@@ -159,6 +164,14 @@ const eventFormSchema = z.object({
 
 type EventFormValues = z.infer<typeof eventFormSchema>;
 
+type CaseSearchResult = {
+  id: number;
+  CaseId?: number;
+  CustumerName?: string;
+  CustumerPhone?: string;
+  resultado?: string | null;
+};
+
 type EventFormDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -170,6 +183,7 @@ type EventFormDialogProps = {
   isLoadingDetails?: boolean;
   agendaUsers?: UserPublicRow[];
   defaultUserId?: number;
+  linkedCase?: CaseSearchResult | null;
 };
 
 const mapGuestsFromEvent = (event?: CalendarEvent | null): EventFormValues["guests"] => {
@@ -242,8 +256,15 @@ const EventFormDialog = ({
   isLoadingDetails = false,
   agendaUsers = [],
   defaultUserId,
+  linkedCase: initialLinkedCase,
 }: EventFormDialogProps) => {
   const [formUserId, setFormUserId] = useState<number | undefined>(defaultUserId);
+  const [selectedCase, setSelectedCase] = useState<CaseSearchResult | null>(initialLinkedCase ?? null);
+  const [caseQuery, setCaseQuery] = useState("");
+  const [caseResults, setCaseResults] = useState<CaseSearchResult[]>([]);
+  const [caseSearching, setCaseSearching] = useState(false);
+  const [showCaseDropdown, setShowCaseDropdown] = useState(false);
+  const caseSearchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const form = useForm<EventFormValues>({
     resolver: zodResolver(eventFormSchema),
     defaultValues: buildDefaultFormValues(event, defaultTimezone),
@@ -261,8 +282,39 @@ const EventFormDialog = ({
     if (open) {
       form.reset(buildDefaultFormValues(event, defaultTimezone));
       setFormUserId(defaultUserId);
+      setSelectedCase(initialLinkedCase ?? null);
+      setCaseQuery("");
+      setCaseResults([]);
+      setShowCaseDropdown(false);
     }
-  }, [open, event, defaultTimezone, form, defaultUserId]);
+  }, [open, event, defaultTimezone, form, defaultUserId, initialLinkedCase]);
+
+  useEffect(() => {
+    if (caseSearchTimeout.current) clearTimeout(caseSearchTimeout.current);
+    if (!caseQuery || caseQuery.length < 2) {
+      setCaseResults([]);
+      setShowCaseDropdown(false);
+      return;
+    }
+    setCaseSearching(true);
+    caseSearchTimeout.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/v1/cases/search?q=${encodeURIComponent(caseQuery)}`);
+        if (res.ok) {
+          const data = await res.json();
+          setCaseResults(data.results ?? []);
+          setShowCaseDropdown(true);
+        }
+      } catch {
+        // ignore search errors
+      } finally {
+        setCaseSearching(false);
+      }
+    }, 300);
+    return () => {
+      if (caseSearchTimeout.current) clearTimeout(caseSearchTimeout.current);
+    };
+  }, [caseQuery]);
 
   const handleAddGuest = () => {
     appendGuest({ name: "", email: "", phone: "" });
@@ -292,6 +344,7 @@ const EventFormDialog = ({
       notify_by_email: values.notify_by_email,
       notify_by_phone: values.notify_by_phone,
       user_id: formUserId,
+      case_id: selectedCase?.id ?? undefined,
     };
 
     const guests: CalendarGuestInput[] = values.guests
@@ -391,6 +444,79 @@ const EventFormDialog = ({
                 </div>
               )}
             </div>
+            {/* Caso vinculado */}
+            <div className="space-y-2">
+              <Label>Caso vinculado (opcional)</Label>
+              {selectedCase ? (
+                <div className="flex items-center gap-2 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm dark:border-indigo-800 dark:bg-indigo-950/30">
+                  <Briefcase className="h-4 w-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                  <span className="text-indigo-700 dark:text-indigo-300 truncate">
+                    #{selectedCase.CaseId} - {selectedCase.CustumerName || "Sem nome"}
+                    {selectedCase.CustumerPhone ? ` (${selectedCase.CustumerPhone})` : ""}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 ml-auto shrink-0"
+                    onClick={() => {
+                      setSelectedCase(null);
+                      setCaseQuery("");
+                    }}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <Input
+                    placeholder="Buscar por nome, telefone ou nº do caso..."
+                    value={caseQuery}
+                    onChange={(e) => setCaseQuery(e.target.value)}
+                    onFocus={() => caseResults.length > 0 && setShowCaseDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowCaseDropdown(false), 200)}
+                  />
+                  {caseSearching && (
+                    <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+                  )}
+                  {showCaseDropdown && caseResults.length > 0 && (
+                    <div className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-md border bg-popover shadow-md">
+                      {caseResults.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            setSelectedCase(c);
+                            setCaseQuery("");
+                            setShowCaseDropdown(false);
+                          }}
+                        >
+                          <Briefcase className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                          <span className="truncate">
+                            #{c.CaseId} - {c.CustumerName || "Sem nome"}
+                            {c.CustumerPhone ? ` (${c.CustumerPhone})` : ""}
+                          </span>
+                          {c.resultado && (
+                            <span className={`ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                              c.resultado.toLowerCase() === "ganho"
+                                ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200"
+                                : c.resultado.toLowerCase() === "perdido"
+                                  ? "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200"
+                                  : "bg-muted text-muted-foreground"
+                            }`}>
+                              {c.resultado}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="location">Local</Label>
@@ -945,6 +1071,16 @@ const AgendaPage = () => {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [loadingEventDetails, setLoadingEventDetails] = useState(false);
 
+  // Case linking state
+  const [caseDataMap, setCaseDataMap] = useState<Map<number, CaseSearchResult>>(new Map());
+  const [caseModalData, setCaseModalData] = useState<BaserowCaseRow | null>(null);
+  const [isCaseModalOpen, setIsCaseModalOpen] = useState(false);
+  // Ganho/Perdido state
+  const [updatingResultado, setUpdatingResultado] = useState<number | null>(null);
+  const [showGanhoDialog, setShowGanhoDialog] = useState(false);
+  const [ganhoEventId, setGanhoEventId] = useState<number | null>(null);
+  const [ganhoValorInput, setGanhoValorInput] = useState("");
+
   // Calendar settings state
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(false);
@@ -1052,6 +1188,36 @@ const AgendaPage = () => {
       // handled na função
     });
   }, [fetchEvents, isHydrated]);
+
+  // Fetch case info for linked events
+  useEffect(() => {
+    const caseIds = events
+      .map((e) => (e.case_id ? Number(e.case_id) : null))
+      .filter((id): id is number => id != null && !caseDataMap.has(id));
+    if (caseIds.length === 0) return;
+    const uniqueIds = [...new Set(caseIds)];
+    Promise.all(
+      uniqueIds.map(async (id) => {
+        try {
+          const res = await fetch(`/api/v1/cases/${id}`);
+          if (res.ok) {
+            const c = await res.json();
+            return { id, data: { id: c.id, CaseId: c.CaseId, CustumerName: c.CustumerName, CustumerPhone: c.CustumerPhone, resultado: c.resultado ?? null } as CaseSearchResult };
+          }
+        } catch { /* ignore */ }
+        return null;
+      }),
+    ).then((results) => {
+      setCaseDataMap((prev) => {
+        const next = new Map(prev);
+        for (const r of results) {
+          if (r) next.set(r.id, r.data);
+        }
+        return next;
+      });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [events]);
 
   const handleRefresh = () => {
     fetchEvents(false).catch(() => {
@@ -1173,6 +1339,77 @@ const AgendaPage = () => {
       setFormError(err instanceof Error ? err.message : "Erro ao salvar evento");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const openCaseModal = async (caseId: number) => {
+    setCaseModalData(null);
+    setIsCaseModalOpen(true);
+    try {
+      const res = await fetch(`/api/v1/cases/${caseId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setCaseModalData(data);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleCaseUpdate = (caseId: number, updates: Partial<BaserowCaseRow>) => {
+    // Update caseDataMap so badge reflects changes
+    setCaseDataMap((prev) => {
+      const next = new Map(prev);
+      const existing = next.get(caseId);
+      if (existing) {
+        next.set(caseId, { ...existing, resultado: (updates.resultado as string) ?? existing.resultado });
+      }
+      return next;
+    });
+    // Update the modal data
+    if (caseModalData && caseModalData.id === caseId) {
+      setCaseModalData((prev) => (prev ? { ...prev, ...updates } : prev));
+    }
+  };
+
+  const formatCurrency = (value: number | string | null | undefined): string => {
+    if (value === null || value === undefined || value === "") return "R$ 0,00";
+    const num = typeof value === "string" ? parseFloat(value) : value;
+    if (isNaN(num)) return "R$ 0,00";
+    return num.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  };
+
+  const parseCurrencyInput = (value: string): number => {
+    const cleaned = value.replace(/[^\d.,]/g, "").replace(",", ".");
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? 0 : num;
+  };
+
+  const toggleResultado = async (eventCaseId: number, value: "ganho" | "perdido", extra?: Record<string, unknown>) => {
+    const caseInfo = caseDataMap.get(eventCaseId);
+    const current = (caseInfo?.resultado || "").toLowerCase();
+    const next = current === value ? "" : value;
+    setUpdatingResultado(eventCaseId);
+    try {
+      const patchData: Record<string, unknown> = { resultado: next };
+      if (extra) Object.assign(patchData, extra);
+      const proxyRes = await fetch(`/api/v1/baserow-proxy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: `/api/database/rows/table/225/${eventCaseId}/?user_field_names=true`,
+          method: "PATCH",
+          data: patchData,
+        }),
+      });
+      if (!proxyRes.ok) throw new Error("Erro ao atualizar caso");
+      handleCaseUpdate(eventCaseId, patchData as Partial<BaserowCaseRow>);
+      setFeedback(next ? `Caso marcado como ${next}` : "Resultado removido");
+      setTimeout(() => setFeedback(null), 3000);
+    } catch (err) {
+      console.error("Erro ao atualizar resultado:", err);
+    } finally {
+      setUpdatingResultado(null);
     }
   };
 
@@ -1365,7 +1602,79 @@ const AgendaPage = () => {
                         {event.description}
                       </p>
                     )}
+                    {/* Case badge */}
+                    {event.case_id != null && (() => {
+                      const caseInfo = caseDataMap.get(Number(event.case_id));
+                      const resultado = (caseInfo?.resultado || "").toLowerCase();
+                      return (
+                        <div className="flex items-center gap-2 mt-1">
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-medium text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900 dark:text-indigo-200 dark:hover:bg-indigo-800 transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openCaseModal(Number(event.case_id));
+                            }}
+                          >
+                            <Briefcase className="h-3 w-3" />
+                            #{caseInfo?.CaseId ?? event.case_id} - {caseInfo?.CustumerName || "..."}
+                          </button>
+                          {resultado && (
+                            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                              resultado === "ganho"
+                                ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200"
+                                : resultado === "perdido"
+                                  ? "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200"
+                                  : "bg-muted text-muted-foreground"
+                            }`}>
+                              {caseInfo?.resultado}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
+
+                  {/* Ganho/Perdido buttons */}
+                  {event.case_id != null && (() => {
+                    const caseInfo = caseDataMap.get(Number(event.case_id));
+                    const resultado = (caseInfo?.resultado || "").toLowerCase();
+                    const isGanho = resultado === "ganho";
+                    const isPerdido = resultado === "perdido";
+                    const isUpdating = updatingResultado === Number(event.case_id);
+                    return (
+                      <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className={`h-7 px-2 text-xs gap-1 border-green-200 ${isGanho ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200" : "text-green-600 hover:text-green-700 hover:bg-green-50"}`}
+                          onClick={() => {
+                            if (isGanho) {
+                              toggleResultado(Number(event.case_id), "ganho");
+                            } else {
+                              setGanhoEventId(Number(event.case_id));
+                              setGanhoValorInput("");
+                              setShowGanhoDialog(true);
+                            }
+                          }}
+                          disabled={isUpdating}
+                        >
+                          {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                          Ganho
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className={`h-7 px-2 text-xs gap-1 border-red-200 ${isPerdido ? "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200" : "text-red-600 hover:text-red-700 hover:bg-red-50"}`}
+                          onClick={() => toggleResultado(Number(event.case_id), "perdido")}
+                          disabled={isUpdating}
+                        >
+                          {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
+                          Perdido
+                        </Button>
+                      </div>
+                    );
+                  })()}
 
                   {/* Tags */}
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -1515,6 +1824,7 @@ const AgendaPage = () => {
         isLoadingDetails={loadingEventDetails}
         agendaUsers={isAdmin ? agendaUsers : []}
         defaultUserId={effectiveUserId}
+        linkedCase={editingEvent?.case_id ? caseDataMap.get(Number(editingEvent.case_id)) ?? null : null}
       />
 
       {/* Calendar Settings Dialog */}
@@ -1527,6 +1837,56 @@ const AgendaPage = () => {
         onSave={handleSaveSettings}
         userName={isAdmin && selectedUserId ? agendaUsers.find((u) => u.id === selectedUserId)?.name : undefined}
         onResetUserSettings={isAdmin && selectedUserId ? handleResetUserSettings : undefined}
+      />
+
+      {/* Ganho value dialog */}
+      <Dialog open={showGanhoDialog} onOpenChange={setShowGanhoDialog}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Marcar como Ganho</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-sm">Valor da Causa (opcional)</Label>
+              <Input
+                value={ganhoValorInput}
+                onChange={(e) => setGanhoValorInput(e.target.value)}
+                placeholder="0,00"
+              />
+              <span className="text-xs text-muted-foreground">
+                {formatCurrency(parseCurrencyInput(ganhoValorInput))}
+              </span>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setShowGanhoDialog(false)}>
+              Cancelar
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                if (ganhoEventId) {
+                  const valorNum = parseCurrencyInput(ganhoValorInput);
+                  toggleResultado(ganhoEventId, "ganho", valorNum > 0 ? { valor: valorNum } : undefined);
+                }
+                setShowGanhoDialog(false);
+              }}
+            >
+              Confirmar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Case detail modal */}
+      <KanbanCardDetail
+        caseData={caseModalData}
+        open={isCaseModalOpen}
+        onOpenChange={(open) => {
+          setIsCaseModalOpen(open);
+          if (!open) setCaseModalData(null);
+        }}
+        onCaseUpdate={handleCaseUpdate}
       />
     </div>
   );

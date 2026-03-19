@@ -22,6 +22,7 @@ export type CalendarEvent = {
   notify_by_phone?: boolean;
   created_at?: string | null;
   updated_at?: string | null;
+  case_id?: number | null;
   guests?: CalendarGuestInput[];
 };
 
@@ -37,6 +38,7 @@ export type CalendarEventPayload = {
   notify_by_email?: boolean;
   notify_by_phone?: boolean;
   user_id?: number;
+  case_id?: number | null;
   guests?: CalendarGuestInput[];
 };
 

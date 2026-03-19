@@ -59,6 +59,7 @@ const buildUpdatePayload = (
     payload.reminder_minutes_before = data.reminder_minutes_before;
   }
   if (data.user_id !== undefined) payload.user_id = data.user_id;
+  if (data.case_id !== undefined) payload.case_id = data.case_id;
   if (data.google_event_id !== undefined) payload.google_event_id = data.google_event_id;
   if (data.sync_status !== undefined) payload.sync_status = data.sync_status;
   if (data.deleted_at !== undefined) payload.deleted_at = data.deleted_at;

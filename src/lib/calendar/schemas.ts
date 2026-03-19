@@ -100,6 +100,7 @@ export const calendarEventInputSchema = z
     notify_by_email: z.coerce.boolean().optional(),
     notify_by_phone: z.coerce.boolean().optional(),
     user_id: z.coerce.number().int().optional(),
+    case_id: z.coerce.number().int().optional(),
     google_event_id: optionalText,
     sync_status: optionalText,
     deleted_at: optionalUtcDateTime,
