@@ -141,6 +141,7 @@ export const serializeEvent = (
   notify_by_phone: toBoolean(event.notify_by_phone),
   created_at: event.created_at,
   updated_at: event.updated_at,
+  case_id: event.case_id != null ? Number(event.case_id) : null,
   guests: guests ? mapGuests(guests) : [],
 });
 
