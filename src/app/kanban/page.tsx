@@ -42,12 +42,13 @@ import {
   type BaserowCaseRow,
 } from "@/services/api";
 import { KanbanColumn } from "@/components/kanban/KanbanColumn";
-import { KanbanCard } from "@/components/kanban/KanbanCard";
+import { KanbanCard, type CaseTagBadge } from "@/components/kanban/KanbanCard";
 import { KanbanCardDetail } from "@/components/kanban/KanbanCardDetail";
 import { ColumnEditorModal } from "@/components/kanban/ColumnEditorModal";
 import { QueueKanbanColumn } from "@/components/kanban/QueueKanbanColumn";
 import { getCaseStage } from "@/lib/case-stats";
 import { useQueueMode } from "@/hooks/use-queue-mode";
+import { fetchBatchCaseTagsClient } from "@/services/tags-client";
 
 type CaseWithStatus = BaserowCaseRow & {
   kanbanColumnId: number | null;
@@ -152,6 +153,7 @@ export default function KanbanPage() {
   const [pendingUpdates, setPendingUpdates] = useState<PendingKanbanUpdate[]>([]);
   const [activeColumn, setActiveColumn] = useState<KanbanColumnRow | null>(null);
   const [isDraggingColumn, setIsDraggingColumn] = useState(false);
+  const [caseTagsMap, setCaseTagsMap] = useState<Record<number, CaseTagBadge[]>>({});
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -348,6 +350,37 @@ export default function KanbanPage() {
 
     loadData();
   }, [isHydrated, data.auth, normalizedInstitutionId, selectedDepartmentId, loadData, router]);
+
+  // Load batch case tags
+  useEffect(() => {
+    if (!normalizedInstitutionId || cases.length === 0) return;
+    let cancelled = false;
+
+    const loadTags = async () => {
+      try {
+        const caseIds = cases.map((c) => c.id);
+        const batchTags = await fetchBatchCaseTagsClient(caseIds);
+        if (cancelled) return;
+        const mapped: Record<number, CaseTagBadge[]> = {};
+        for (const [key, tags] of Object.entries(batchTags)) {
+          mapped[Number(key)] = tags.map((t) => ({
+            id: t.tagId,
+            name: t.name,
+            color: t.color,
+            category: t.category,
+            assignedBy: t.assignedBy,
+            confidence: t.confidence,
+          }));
+        }
+        setCaseTagsMap(mapped);
+      } catch (err) {
+        console.error("Erro ao carregar tags dos casos:", err);
+      }
+    };
+
+    loadTags();
+    return () => { cancelled = true; };
+  }, [normalizedInstitutionId, cases]);
 
   // Sincronizar estado → cache em memória
   useEffect(() => {
@@ -796,6 +829,7 @@ export default function KanbanPage() {
                     key={column.id}
                     column={column}
                     cases={casesByColumn.get(Number(column.id)) || []}
+                    caseTagsMap={caseTagsMap}
                     onCardClick={handleCardClick}
                     onColumnUpdate={handleColumnNameUpdate}
                     isDraggingColumn={isDraggingColumn}

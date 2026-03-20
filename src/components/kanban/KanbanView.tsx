@@ -19,7 +19,7 @@ import {
   horizontalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Settings2, ChevronLeft, ChevronRight } from "lucide-react";
+import { RefreshCw, Settings2, ChevronLeft, ChevronRight, Tags, X } from "lucide-react";
 import { QueueKanbanColumn } from "@/components/kanban/QueueKanbanColumn";
 import type { QueueMode } from "@/services/queue-mode-client";
 import {
@@ -36,10 +36,17 @@ import {
   type BaserowCaseRow,
 } from "@/services/api";
 import { KanbanColumn } from "@/components/kanban/KanbanColumn";
-import { KanbanCard } from "@/components/kanban/KanbanCard";
+import { KanbanCard, type CaseTagBadge } from "@/components/kanban/KanbanCard";
 import { KanbanCardDetail } from "@/components/kanban/KanbanCardDetail";
 import { ColumnEditorModal } from "@/components/kanban/ColumnEditorModal";
 import { getCaseStage } from "@/lib/case-stats";
+import { fetchBatchCaseTagsClient, fetchTagsClient } from "@/services/tags-client";
+import type { TagPublicRow } from "@/services/tags";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 type CaseWithStatus = BaserowCaseRow & {
   kanbanColumnId: number | null;
@@ -118,6 +125,11 @@ export function KanbanView({
   const [pendingUpdates, setPendingUpdates] = useState<PendingKanbanUpdate[]>([]);
   const [activeColumn, setActiveColumn] = useState<KanbanColumnRow | null>(null);
   const [isDraggingColumn, setIsDraggingColumn] = useState(false);
+  // Tags state
+  const [caseTagsMap, setCaseTagsMap] = useState<Record<number, CaseTagBadge[]>>({});
+  const [availableFilterTags, setAvailableFilterTags] = useState<TagPublicRow[]>([]);
+  const [selectedTagFilters, setSelectedTagFilters] = useState<number[]>([]);
+  const [isTagFilterOpen, setIsTagFilterOpen] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -338,6 +350,42 @@ export function KanbanView({
     };
   }, []);
 
+  // Load batch case tags
+  useEffect(() => {
+    if (!institutionId || cases.length === 0) return;
+    let cancelled = false;
+
+    const loadTags = async () => {
+      try {
+        const caseIds = cases.map((c) => c.id);
+        const [batchTags, allTags] = await Promise.all([
+          fetchBatchCaseTagsClient(caseIds),
+          fetchTagsClient(institutionId),
+        ]);
+        if (cancelled) return;
+        // Convert to CaseTagBadge format
+        const mapped: Record<number, CaseTagBadge[]> = {};
+        for (const [key, tags] of Object.entries(batchTags)) {
+          mapped[Number(key)] = tags.map((t) => ({
+            id: t.tagId,
+            name: t.name,
+            color: t.color,
+            category: t.category,
+            assignedBy: t.assignedBy,
+            confidence: t.confidence,
+          }));
+        }
+        setCaseTagsMap(mapped);
+        setAvailableFilterTags(allTags.filter((t) => t.isActive));
+      } catch (err) {
+        console.error("Erro ao carregar tags dos casos:", err);
+      }
+    };
+
+    loadTags();
+    return () => { cancelled = true; };
+  }, [institutionId, cases]);
+
   // Separate unassigned cases for manual queue mode
   const unassignedCases = useMemo(() => {
     if (queueMode !== "manual") return [];
@@ -394,12 +442,23 @@ export function KanbanView({
     });
   }, [assignableCases, caseStatuses, columns]);
 
+  // Filter cases by selected tags (client-side)
+  const filteredCasesWithStatus = useMemo(() => {
+    if (selectedTagFilters.length === 0) return casesWithStatus;
+    const filterSet = new Set(selectedTagFilters);
+    return casesWithStatus.filter((caseRow) => {
+      const tags = caseTagsMap[caseRow.id];
+      if (!tags || tags.length === 0) return false;
+      return tags.some((t) => filterSet.has(t.id));
+    });
+  }, [casesWithStatus, selectedTagFilters, caseTagsMap]);
+
   // Group cases by column and sort by most recent first
   const casesByColumn = useMemo(() => {
     const grouped = new Map<number, CaseWithStatus[]>();
     columns.forEach((col) => grouped.set(Number(col.id), []));
 
-    casesWithStatus.forEach((caseRow) => {
+    filteredCasesWithStatus.forEach((caseRow) => {
       const colId = Number(caseRow.kanbanColumnId);
       if (colId && grouped.has(colId)) {
         grouped.get(colId)!.push(caseRow);
@@ -416,7 +475,7 @@ export function KanbanView({
     });
 
     return grouped;
-  }, [casesWithStatus, columns]);
+  }, [filteredCasesWithStatus, columns]);
 
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
@@ -679,7 +738,90 @@ export function KanbanView({
           <Button variant="outline" size="sm" onClick={handleRefresh}>
             <RefreshCw className="h-4 w-4" />
           </Button>
+          {/* Tag Filter */}
+          {availableFilterTags.length > 0 && (
+            <Popover open={isTagFilterOpen} onOpenChange={setIsTagFilterOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant={selectedTagFilters.length > 0 ? "default" : "outline"}
+                  size="sm"
+                  className="gap-1.5"
+                >
+                  <Tags className="h-4 w-4" />
+                  <span className="hidden sm:inline">Tags</span>
+                  {selectedTagFilters.length > 0 && (
+                    <span className="ml-1 px-1.5 py-0.5 text-[10px] rounded-full bg-white/20">
+                      {selectedTagFilters.length}
+                    </span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64 p-2" align="start">
+                <div className="flex items-center justify-between mb-2 px-1">
+                  <span className="text-xs font-medium text-muted-foreground">Filtrar por Tags</span>
+                  {selectedTagFilters.length > 0 && (
+                    <button
+                      onClick={() => setSelectedTagFilters([])}
+                      className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-0.5"
+                    >
+                      <X className="h-3 w-3" /> Limpar
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-[250px] overflow-y-auto space-y-0.5">
+                  {availableFilterTags.map((tag) => {
+                    const isSelected = selectedTagFilters.includes(tag.id);
+                    return (
+                      <button
+                        key={tag.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedTagFilters((prev) =>
+                            isSelected ? prev.filter((id) => id !== tag.id) : [...prev, tag.id],
+                          );
+                        }}
+                        className="w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md hover:bg-muted/50 transition-colors text-left"
+                      >
+                        <div
+                          className="w-3 h-3 rounded border flex-shrink-0"
+                          style={{
+                            borderColor: tag.color,
+                            backgroundColor: isSelected ? tag.color : "transparent",
+                          }}
+                        />
+                        <span
+                          className="w-2 h-2 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: tag.color }}
+                        />
+                        <span className="truncate">{tag.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
         </div>
+        {/* Active tag filter chips */}
+        {selectedTagFilters.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {selectedTagFilters.map((tagId) => {
+              const tag = availableFilterTags.find((t) => t.id === tagId);
+              if (!tag) return null;
+              return (
+                <span
+                  key={tagId}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full text-white cursor-pointer"
+                  style={{ backgroundColor: tag.color }}
+                  onClick={() => setSelectedTagFilters((prev) => prev.filter((id) => id !== tagId))}
+                >
+                  {tag.name}
+                  <X className="h-2.5 w-2.5" />
+                </span>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Kanban Board with Slider Navigation */}
@@ -755,6 +897,7 @@ export function KanbanView({
                     key={column.id}
                     column={column}
                     cases={casesByColumn.get(Number(column.id)) || []}
+                    caseTagsMap={caseTagsMap}
                     onCardClick={handleCardClick}
                     onColumnUpdate={handleColumnNameUpdate}
                     isDraggingColumn={isDraggingColumn}

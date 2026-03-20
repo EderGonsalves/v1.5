@@ -3,18 +3,29 @@
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
-import { Phone, Calendar, User, GripVertical, Scale, DollarSign } from "lucide-react";
+import { Phone, Calendar, User, GripVertical, Scale, DollarSign, Bot } from "lucide-react";
 import type { BaserowCaseRow } from "@/services/api";
 import { getCaseStage, stageLabels, stageColors } from "@/lib/case-stats";
 
+export type CaseTagBadge = {
+  id: number;
+  name: string;
+  color: string;
+  category: string;
+  assignedBy?: string;
+  confidence?: number | null;
+};
+
 type KanbanCardProps = {
   caseData: BaserowCaseRow;
+  caseTags?: CaseTagBadge[];
   isDragging?: boolean;
   onClick?: () => void;
 };
 
 export function KanbanCard({
   caseData,
+  caseTags,
   isDragging,
   onClick,
 }: KanbanCardProps) {
@@ -135,6 +146,27 @@ export function KanbanCard({
               <span className="px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-200" title="Processo monitorado">
                 <Scale className="h-3 w-3 inline-block" />
               </span>
+            )}
+            {/* Case Tags */}
+            {caseTags && caseTags.length > 0 && (
+              <>
+                {caseTags.slice(0, 3).map((tag) => (
+                  <span
+                    key={tag.id}
+                    className="inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-medium rounded-full text-white"
+                    style={{ backgroundColor: tag.color }}
+                    title={tag.assignedBy === "ai" ? `IA${tag.confidence != null ? ` - ${Math.round(tag.confidence * 100)}%` : ""}` : undefined}
+                  >
+                    {tag.assignedBy === "ai" && <Bot className="h-2.5 w-2.5" />}
+                    {tag.name}
+                  </span>
+                ))}
+                {caseTags.length > 3 && (
+                  <span className="px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-muted text-muted-foreground">
+                    +{caseTags.length - 3}
+                  </span>
+                )}
+              </>
             )}
           </div>
         </div>

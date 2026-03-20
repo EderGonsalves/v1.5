@@ -13,6 +13,7 @@ import {
   Shuffle,
   ShieldCheck,
   Bot,
+  Tags,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useOnboarding } from "@/components/onboarding/onboarding-context";
@@ -33,6 +34,7 @@ const SETTINGS_NAV: SettingsNavItem[] = [
   { href: "/configuracoes/conexoes", label: "Conexões", icon: Plug },
   { href: "/configuracoes/follow-up", label: "Follow-up", icon: Repeat2 },
   { href: "/configuracoes/departamentos", label: "Departamentos", icon: Building2 },
+  { href: "/configuracoes/tags", label: "Tags", icon: Tags },
   { href: "/configuracoes/usuarios", label: "Usuários", icon: Users },
   { href: "/configuracoes/templates", label: "Modelos", icon: FileCode },
   { href: "/configuracoes/distribuicao", label: "Distribuição", icon: Shuffle },

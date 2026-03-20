@@ -56,6 +56,7 @@ const sendAssignmentGhostMessage = async (caseId: number, message: string) => {
   }
 };
 import { LawsuitTab } from "@/components/lawsuit/LawsuitTab";
+import { CaseTagSelector } from "@/components/kanban/CaseTagSelector";
 import { SignatureTab } from "@/components/documents/SignatureTab";
 import { PenLine } from "lucide-react";
 
@@ -644,6 +645,19 @@ export function KanbanCardDetail({
                     </div>
                   </div>
                 </div>
+
+                {/* Tags de Classificação */}
+                {institutionId && (
+                  <div className="pt-4 border-t mt-4">
+                    <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">
+                      Tags de Classificação
+                    </Label>
+                    <CaseTagSelector
+                      caseId={caseData.id}
+                      institutionId={institutionId}
+                    />
+                  </div>
+                )}
 
                 {/* Save Button */}
                 <div className="flex flex-col items-end gap-2 pt-6">

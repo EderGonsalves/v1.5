@@ -21,6 +21,8 @@ import { config } from "./schema/config";
 import { kanbanColumns } from "./schema/kanbanColumns";
 import { followUpConfig } from "./schema/followUpConfig";
 import { caseKanbanStatus } from "./schema/caseKanbanStatus";
+import { institutionTags } from "./schema/institutionTags";
+import { caseTags } from "./schema/caseTags";
 
 // ---------------------------------------------------------------------------
 // Users (table 236) — Auth + RBAC, highest frequency
@@ -276,6 +278,31 @@ const getKanbanStatusByInstitution = db
   .prepare("get_kanban_status_by_institution");
 
 // ---------------------------------------------------------------------------
+// Tags (tables 258, 259)
+// ---------------------------------------------------------------------------
+
+/** getTagsByInstitution — all tags for an institution */
+const getTagsByInstitution = db
+  .select()
+  .from(institutionTags)
+  .where(eq(institutionTags.institutionId, sql.placeholder("institutionId")))
+  .prepare("get_tags_by_institution");
+
+/** getCaseTagsByCaseId — tags assigned to a case */
+const getCaseTagsByCaseId = db
+  .select()
+  .from(caseTags)
+  .where(eq(caseTags.caseId, sql.placeholder("caseId")))
+  .prepare("get_case_tags_by_case_id");
+
+/** getCaseTagsByInstitution — all case-tag assignments for an institution */
+const getCaseTagsByInstitution = db
+  .select()
+  .from(caseTags)
+  .where(eq(caseTags.institutionId, sql.placeholder("institutionId")))
+  .prepare("get_case_tags_by_institution");
+
+// ---------------------------------------------------------------------------
 // Export
 // ---------------------------------------------------------------------------
 
@@ -310,4 +337,8 @@ export const prepared = {
   getKanbanStatusByInstitution,
   // Follow-up
   getFollowUpConfigsByInstitution,
+  // Tags
+  getTagsByInstitution,
+  getCaseTagsByCaseId,
+  getCaseTagsByInstitution,
 } as const;

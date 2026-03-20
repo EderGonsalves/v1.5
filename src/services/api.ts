@@ -1163,6 +1163,8 @@ export type BaserowCaseRow = {
   sign_status?: string | null;
   /** ISO timestamp of the most recent message (from messages table) */
   last_message_at?: string | null;
+  /** Computed: tags assigned to this case (populated client-side) */
+  _tags?: Array<{ id: number; name: string; color: string; category: string }>;
   [key: string]: unknown;
 };
 

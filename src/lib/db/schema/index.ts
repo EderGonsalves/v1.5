@@ -34,3 +34,5 @@ export { pushSubscriptions } from "./pushSubscriptions";
 export { pushNotifications } from "./pushNotifications";
 export { signEnvelopes } from "./signEnvelopes";
 export { documentTemplates } from "./documentTemplates";
+export { institutionTags } from "./institutionTags";
+export { caseTags } from "./caseTags";

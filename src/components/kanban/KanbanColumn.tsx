@@ -6,7 +6,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
 import { GripVertical } from "lucide-react";
-import { KanbanCard } from "./KanbanCard";
+import { KanbanCard, type CaseTagBadge } from "./KanbanCard";
 import type { KanbanColumnRow, BaserowCaseRow } from "@/services/api";
 
 const colorMap: Record<string, string> = {
@@ -38,6 +38,7 @@ const countColorMap: Record<string, string> = {
 type KanbanColumnProps = {
   column: KanbanColumnRow;
   cases: BaserowCaseRow[];
+  caseTagsMap?: Record<number, CaseTagBadge[]>;
   onCardClick: (caseData: BaserowCaseRow) => void;
   onColumnUpdate?: (columnId: number, name: string) => void;
   isDraggingColumn?: boolean;
@@ -46,6 +47,7 @@ type KanbanColumnProps = {
 export function KanbanColumn({
   column,
   cases,
+  caseTagsMap,
   onCardClick,
   onColumnUpdate,
   isDraggingColumn
@@ -216,6 +218,7 @@ export function KanbanColumn({
             <KanbanCard
               key={caseData.id}
               caseData={caseData}
+              caseTags={caseTagsMap?.[caseData.id]}
               onClick={() => onCardClick(caseData)}
             />
           ))
