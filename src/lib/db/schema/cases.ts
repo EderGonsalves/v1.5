@@ -1,4 +1,4 @@
-import { integer, jsonb, numeric, pgTable, serial, text } from "drizzle-orm/pg-core";
+import { boolean, integer, jsonb, numeric, pgTable, serial, text } from "drizzle-orm/pg-core";
 
 /**
  * cases — Baserow table 225
@@ -42,4 +42,5 @@ export const cases = pgTable("database_table_225", {
   signEnvelopeId: text("field_2000"), // sign_envelope_id (text)
   signStatus: text("field_2001"), // sign_status (text)
   displayPhoneNumber: text("field_2007"), // display_phone_number (text)
+  trashed: boolean("trashed"),           // Baserow internal soft-delete flag
 });

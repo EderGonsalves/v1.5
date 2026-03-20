@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, or, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { cases } from "@/lib/db/schema/cases";
 import { users } from "@/lib/db/schema/users";
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
         custumerName: cases.custumerName,
       })
       .from(cases)
-      .where(eq(cases.id, sql`${caseId}`))
+      .where(and(eq(cases.id, sql`${caseId}`), or(eq(cases.trashed, false), isNull(cases.trashed))))
       .limit(1);
 
     if (!caseRow) {

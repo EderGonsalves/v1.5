@@ -9,7 +9,7 @@
  *   const rows = await prepared.getUsersByInstitution.execute({ institutionId: "123" });
  */
 
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ne, or, isNull, sql } from "drizzle-orm";
 import { db } from "./index";
 import { users } from "./schema/users";
 import { cases } from "./schema/cases";
@@ -73,15 +73,15 @@ const getUserByEmailAndInstitution = db
 // Cases (table 225) — Dashboard + Kanban, very high frequency
 // ---------------------------------------------------------------------------
 
-/** getBaserowCaseById — single case lookup */
+/** getBaserowCaseById — single case lookup (excludes trashed) */
 const getCaseById = db
   .select()
   .from(cases)
-  .where(eq(cases.id, sql.placeholder("id")))
+  .where(and(eq(cases.id, sql.placeholder("id")), or(eq(cases.trashed, false), isNull(cases.trashed))))
   .limit(1)
   .prepare("get_case_by_id");
 
-/** countUserCases — assignment queue round-robin */
+/** countUserCases — assignment queue round-robin (excludes trashed) */
 const countUserCases = db
   .select({ count: sql<number>`cast(count(*) as integer)` })
   .from(cases)
@@ -89,6 +89,7 @@ const countUserCases = db
     and(
       eq(cases.assignedToUserId, sql.placeholder("userId")),
       eq(cases.institutionID, sql.placeholder("institutionId")),
+      or(eq(cases.trashed, false), isNull(cases.trashed)),
     ),
   )
   .prepare("count_user_cases");
@@ -123,11 +124,14 @@ export const caseLightFields = {
   displayPhoneNumber: cases.displayPhoneNumber,
 };
 
+/** Filtro para excluir registros na lixeira do Baserow (trashed = true) */
+const notTrashed = or(eq(cases.trashed, false), isNull(cases.trashed));
+
 /** getCasesLightByInstitution — all light cases for an institution, newest first */
 const getCasesLightByInstitution = db
   .select(caseLightFields)
   .from(cases)
-  .where(eq(cases.institutionID, sql.placeholder("institutionId")))
+  .where(and(eq(cases.institutionID, sql.placeholder("institutionId")), notTrashed))
   .orderBy(desc(cases.id))
   .prepare("get_cases_light_by_institution");
 
@@ -135,6 +139,7 @@ const getCasesLightByInstitution = db
 const getAllCasesLight = db
   .select(caseLightFields)
   .from(cases)
+  .where(notTrashed)
   .orderBy(desc(cases.id))
   .prepare("get_all_cases_light");
 

@@ -1525,8 +1525,8 @@ export const getCaseStatisticsSQL = async (
   const result = await tryDrizzle("api", async () => {
     const isSysAdmin = institutionId === 4 || institutionId === undefined;
     const whereClause = isSysAdmin
-      ? sql``
-      : sql`WHERE field_1692 = ${String(institutionId)}`;
+      ? sql`WHERE (trashed IS NOT TRUE)`
+      : sql`WHERE field_1692 = ${String(institutionId)} AND (trashed IS NOT TRUE)`;
 
     const result = await db.execute(sql`
       SELECT
@@ -1605,8 +1605,8 @@ export const getResponsavelStatsSQL = async (
   const result = await tryDrizzle("api", async () => {
     const isSysAdmin = institutionId === 4 || institutionId === undefined;
     const whereClause = isSysAdmin
-      ? sql``
-      : sql`WHERE field_1692 = ${String(institutionId)}`;
+      ? sql`WHERE (trashed IS NOT TRUE)`
+      : sql`WHERE field_1692 = ${String(institutionId)} AND (trashed IS NOT TRUE)`;
 
     const result = await db.execute(sql`
       SELECT

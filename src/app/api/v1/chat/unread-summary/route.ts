@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, desc, sql } from "drizzle-orm";
+import { and, eq, desc, or, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { cases } from "@/lib/db/schema/cases";
 import { getRequestAuth } from "@/lib/auth/session";
@@ -53,10 +53,11 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Get case IDs for this institution
+    // Get case IDs for this institution (excluding trashed)
+    const notTrashed = or(eq(cases.trashed, false), isNull(cases.trashed));
     const whereClause = isSysAdmin
-      ? undefined
-      : eq(cases.institutionID, String(institutionId));
+      ? notTrashed
+      : and(eq(cases.institutionID, String(institutionId)), notTrashed);
 
     const caseRows = await db
       .select({ id: cases.id, caseId: cases.caseId })
