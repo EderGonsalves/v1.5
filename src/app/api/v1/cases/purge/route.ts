@@ -1,6 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestAuth } from "@/lib/auth/session";
 import { isGlobalAdmin } from "@/services/departments";
+
+const CALENDAR_API_KEY = process.env.CALENDAR_API_KEY;
+const SYSADMIN_INSTITUTION_ID = 4;
+
+/** Auth via cookie (browser) OU Bearer API key (N8N / server-to-server) */
+const getPurgeAuth = (request: NextRequest) => {
+  // 1. Cookie auth
+  const cookieAuth = getRequestAuth(request);
+  if (cookieAuth) return cookieAuth;
+
+  // 2. Bearer token
+  const bearer = request.headers.get("authorization")?.replace("Bearer ", "");
+  if (CALENDAR_API_KEY && bearer && bearer === CALENDAR_API_KEY) {
+    return { institutionId: SYSADMIN_INSTITUTION_ID };
+  }
+
+  return null;
+};
 import {
   baserowGet,
   baserowDelete,
@@ -254,7 +272,7 @@ const batchProcess = async <T>(
 // }
 
 export async function POST(request: NextRequest) {
-  const auth = getRequestAuth(request);
+  const auth = getPurgeAuth(request);
   if (!auth) {
     return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   }
