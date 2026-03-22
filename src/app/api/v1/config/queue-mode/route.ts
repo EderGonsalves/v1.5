@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getRequestAuth, resolveLegacyIdentifier } from "@/lib/auth/session";
-import { getQueueMode, getLatestConfigRowId } from "@/lib/queue-mode";
-import { updateBaserowConfig } from "@/services/api";
+import { getQueueMode, getLatestConfigRowId, updateQueueModeServer } from "@/lib/queue-mode";
 import { fetchPermissionsStatus } from "@/services/permissions";
 
 export async function GET(request: NextRequest) {
@@ -67,7 +66,7 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    await updateBaserowConfig(rowId, { queue_mode: queueMode });
+    await updateQueueModeServer(rowId, queueMode);
     return NextResponse.json({ success: true, queueMode });
   } catch (err) {
     console.error("Erro ao atualizar queue mode:", err);
