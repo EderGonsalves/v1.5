@@ -250,6 +250,9 @@ const batchProcess = async <T>(
   return errors;
 };
 
+// Force dynamic — never cache this route
+export const dynamic = "force-dynamic";
+
 // ---------------------------------------------------------------------------
 // POST /api/v1/cases/purge
 // ---------------------------------------------------------------------------
@@ -290,7 +293,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Body inválido" }, { status: 400 });
   }
 
-  const { customerPhone, wabaPhone, dryRun = false } = body;
+  const { customerPhone, wabaPhone } = body;
+  const dryRun = body.dryRun === true || body.dryRun === "true";
 
   if (!customerPhone || !wabaPhone) {
     return NextResponse.json(
