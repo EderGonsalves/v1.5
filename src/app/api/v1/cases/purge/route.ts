@@ -294,7 +294,7 @@ export async function POST(request: NextRequest) {
   }
 
   const { customerPhone, wabaPhone } = body;
-  const dryRun = body.dryRun === true || body.dryRun === "true";
+  const dryRun = body.dryRun === true || String(body.dryRun) === "true";
 
   if (!customerPhone || !wabaPhone) {
     return NextResponse.json(
