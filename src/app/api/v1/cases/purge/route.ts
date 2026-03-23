@@ -208,10 +208,11 @@ const fetchOrphanedMessages = async (
 /** Delete a case row (Drizzle first, Baserow fallback) */
 const deleteCaseRow = async (rowId: number): Promise<void> => {
   if (useDirectDb("api")) {
-    const _ok = await tryDrizzle("cases", async () => {
+    const ok = await tryDrizzle("cases", async () => {
       await db.delete(casesTable).where(eq(casesTable.id, rowId));
+      return true as const;
     });
-    if (_ok !== undefined) return;
+    if (ok !== undefined) return;
   }
 
   const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASES_TABLE_ID}/${rowId}/`;
@@ -221,10 +222,11 @@ const deleteCaseRow = async (rowId: number): Promise<void> => {
 /** Delete a message row (Drizzle first, Baserow fallback) */
 const deleteMessageRow = async (rowId: number): Promise<void> => {
   if (useDirectDb("api")) {
-    const _ok = await tryDrizzle("cases", async () => {
+    const ok = await tryDrizzle("cases", async () => {
       await db.delete(caseMessages).where(eq(caseMessages.id, rowId));
+      return true as const;
     });
-    if (_ok !== undefined) return;
+    if (ok !== undefined) return;
   }
 
   const url = `${BASEROW_API_URL}/database/rows/table/${BASEROW_CASE_MESSAGES_TABLE_ID}/${rowId}/`;
